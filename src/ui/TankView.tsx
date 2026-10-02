@@ -1,0 +1,187 @@
+// Hosts the tank canvas and the renderer. React never draws fish; it only mounts the canvas
+// and routes input: collect a drop > sponge (Clean) / drop food (Feed/Premium) > fish > decor (drag to move).
+import { useEffect, useRef } from 'react';
+import { DRAG_THRESHOLD_PX, SAND_Y, TANK_HEIGHT, TANK_WIDTH, XP } from '../game/constants';
+import { algaeTouchedBySponge } from '../game/sim';
+import { sound } from '../audio/sound';
+import { Renderer } from '../render/renderer';
+import { subscribeSimEvents, useGameStore } from '../store/gameStore';
+import { DailyGift } from './DailyGift';
+
+type Point = { x: number; y: number };
+
+/** What a press in the tank started. */
+type Gesture =
+  | { kind: 'sponge'; last: Point }
+  | { kind: 'decor'; id: string; grabOffset: number; startClientX: number; dragging: boolean }
+  | null;
+
+/** Wipes every algae spot the sponge touched between two tank-space points. */
+function sponge(renderer: Renderer, from: Point, to: Point): void {
+  const store = useGameStore.getState();
+  const tank = store.game.tanks.find((t) => t.id === store.game.activeTankId);
+  if (!tank) return;
+  renderer.suds(to.x, to.y);
+  for (const id of algaeTouchedBySponge(tank.algaeSpots, from, to)) {
+    renderer.wipeEffect(id, XP.algaeWiped);
+    useGameStore.getState().wipeAlgae(id);
+    sound.play('squeak');
+  }
+}
+
+function handleTankPress(renderer: Renderer, clientX: number, clientY: number): Gesture {
+  const { x, y } = renderer.toTank(clientX, clientY);
+  if (x < 0 || x > TANK_WIDTH || y < 0 || y > TANK_HEIGHT) return null;
+  const store = useGameStore.getState();
+
+  // During a break the tank is just for looking (fish still react to a poke).
+  if (store.breakSession) {
+    const fishId = renderer.fishAt(x, y);
+    if (fishId) {
+      renderer.poke(fishId);
+      sound.play('bubble');
+    }
+    return null;
+  }
+
+  const dropId = renderer.dropAt(x, y);
+  if (dropId) {
+    renderer.popDrop(dropId);
+    store.collectDrop(dropId);
+    sound.play('coin');
+    return null;
+  }
+
+  if (store.mode === 'clean') {
+    sponge(renderer, { x, y }, { x, y });
+    return { kind: 'sponge', last: { x, y } };
+  }
+
+  if (store.mode === 'feed' || store.mode === 'premium') {
+    if (y >= SAND_Y) return null;
+    const premium = store.mode === 'premium';
+    if (premium && store.game.inventory.premiumFood <= 0) {
+      store.addToast('Out of premium food 🌟');
+      store.setMode('feed');
+      return null;
+    }
+    const dropped = store.dropPellet(x, premium);
+    if (dropped) sound.play('plop');
+    if (dropped && premium && useGameStore.getState().game.inventory.premiumFood === 0) {
+      store.addToast('That was your last premium food 🌟');
+      store.setMode('feed');
+    }
+    return null;
+  }
+
+  const fishId = renderer.fishAt(x, y);
+  if (fishId) {
+    renderer.poke(fishId);
+    sound.play('bubble');
+    store.selectFish(fishId);
+    return null;
+  }
+
+  const decorId = renderer.decorAt(x, y);
+  if (decorId) {
+    const placed = store.game.tanks.find((t) => t.id === store.game.activeTankId)?.decor.find((d) => d.id === decorId);
+    store.selectDecor(decorId);
+    return { kind: 'decor', id: decorId, grabOffset: x - (placed?.x ?? x), startClientX: clientX, dragging: false };
+  }
+
+  store.selectFish(null);
+  store.selectDecor(null);
+  return null;
+}
+
+export function TankView() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rendererRef = useRef<Renderer | null>(null);
+  const mode = useGameStore((s) => s.mode);
+  /** The gesture in progress (sponge stroke or decor drag), if any. */
+  const gestureRef = useRef<Gesture>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const canvas = canvasRef.current;
+    if (!container || !canvas) return;
+    const renderer = new Renderer(canvas, {
+      getGame: () => useGameStore.getState().game,
+      onEat: (fishId, pelletId) => useGameStore.getState().eatPellet(fishId, pelletId),
+      getSelectedFishId: () => useGameStore.getState().selectedFishId,
+      getSelectedDecorId: () => useGameStore.getState().selectedDecorId,
+    });
+    rendererRef.current = renderer;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) renderer.resize(entry.contentRect.width, entry.contentRect.height);
+    });
+    observer.observe(container);
+    const rect = container.getBoundingClientRect();
+    renderer.resize(rect.width, rect.height);
+    renderer.start();
+    const unsubscribe = subscribeSimEvents((events) => {
+      renderer.handleEvents(events);
+      if (events.some((e) => e.type === 'hatched' || e.type === 'eggLaid')) sound.play('bubble');
+    });
+    return () => {
+      unsubscribe();
+      observer.disconnect();
+      renderer.stop();
+      rendererRef.current = null;
+    };
+  }, []);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.button !== 0) return;
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+    const gesture = handleTankPress(renderer, e.clientX, e.clientY);
+    gestureRef.current = gesture;
+    if (gesture) e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+    const gesture = gestureRef.current;
+    const point = renderer.toTank(e.clientX, e.clientY);
+
+    if (gesture?.kind === 'sponge') {
+      if (useGameStore.getState().mode !== 'clean') return;
+      sponge(renderer, gesture.last, point);
+      gesture.last = point;
+      return;
+    }
+    if (gesture?.kind === 'decor') {
+      if (!gesture.dragging && Math.abs(e.clientX - gesture.startClientX) < DRAG_THRESHOLD_PX) return;
+      gesture.dragging = true;
+      e.currentTarget.style.cursor = 'grabbing';
+      useGameStore.getState().moveDecor(gesture.id, point.x - gesture.grabOffset);
+      return;
+    }
+    // Hover: hint that decor can be grabbed (look mode only; other modes use their CSS cursors).
+    const look = useGameStore.getState().mode === 'look';
+    e.currentTarget.style.cursor = look && !renderer.fishAt(point.x, point.y) && renderer.decorAt(point.x, point.y) ? 'grab' : '';
+  };
+
+  const endGesture = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (gestureRef.current?.kind === 'decor') e.currentTarget.style.cursor = '';
+    gestureRef.current = null;
+  };
+
+  return (
+    <div className="tank" ref={containerRef} data-onboarding="tank">
+      <canvas
+        ref={canvasRef}
+        className="tank-canvas"
+        data-mode={mode}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endGesture}
+        onPointerCancel={endGesture}
+      />
+      <DailyGift />
+    </div>
+  );
+}
