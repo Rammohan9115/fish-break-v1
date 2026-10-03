@@ -2153,6 +2153,11 @@ body {
   font-weight: 700;
 }
 
+.login-privacy {
+  font-size: 12px;
+  color: #6b62a8;
+}
+
 .login-back {
   border: none;
   background: none;

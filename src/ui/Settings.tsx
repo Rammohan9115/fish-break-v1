@@ -116,6 +116,9 @@ function LoginForm({ onBack }: { onBack: () => void }) {
       <button type="button" className="login-back" onClick={onBack}>
         Maybe later
       </button>
+      <a className="login-privacy" href="/privacy.html" target="_blank" rel="noopener">
+        Privacy policy
+      </a>
     </form>
   );
 }
