@@ -233,6 +233,11 @@ body {
   gap: 8px;
 }
 
+.dev-slider {
+  flex-direction: column;
+  align-items: stretch;
+}
+
 .dev-row select {
   flex: 1;
   max-width: 130px;
@@ -1784,6 +1789,61 @@ body {
   border-color: #2a1f6a;
 }
 
+/* Slide-out tray: only the handle shows until the player asks for the tools. */
+.app .toolbar.dock {
+  gap: 0;
+  align-items: center;
+  touch-action: none;
+}
+
+.dock-tools {
+  display: flex;
+  gap: 6px;
+  max-width: 520px;
+  margin-right: 6px;
+  overflow: hidden;
+  /* Room for the badge and pressed-button shadow inside the clipped tray. */
+  padding: 6px 2px 4px;
+  margin-block: -6px -4px;
+  transition: max-width 260ms cubic-bezier(0.3, 0.9, 0.3, 1.1), margin-right 260ms ease, opacity 200ms ease;
+}
+
+.dock-closed .dock-tools {
+  max-width: 0;
+  margin-right: 0;
+  padding-inline: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dock-tools .tool {
+  flex: none;
+}
+
+.app .dock-handle .tool-icon {
+  transition: transform 260ms ease;
+}
+
+.dock-closed .dock-handle:not(.tool-active) .tool-icon {
+  animation: dock-nudge 3.2s ease-in-out 1s 2;
+}
+
+@keyframes dock-nudge {
+  0%, 80%, 100% { transform: none; }
+  88% { transform: translateX(-4px) rotate(-8deg); }
+  94% { transform: translateX(2px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock-tools,
+  .app .dock-handle .tool-icon {
+    transition: none;
+  }
+  .dock-closed .dock-handle .tool-icon {
+    animation: none;
+  }
+}
+
 /* ---- Overlays positioned around the HUD and dock ---- */
 .app .toasts {
   bottom: calc(var(--dock-h) + 24px + env(safe-area-inset-bottom));
@@ -1892,7 +1952,7 @@ body {
     padding: 3px;
   }
   .app .toolbar {
-    left: calc(6px + env(safe-area-inset-left));
+    left: auto;
     right: calc(6px + env(safe-area-inset-right));
     bottom: calc(6px + env(safe-area-inset-bottom));
     width: auto;
@@ -1905,6 +1965,24 @@ body {
     min-width: 0;
     height: 52px;
     font-size: 9px;
+  }
+  /* Open tray fills the row: screen minus margins, dock padding/border, gap and handle. */
+  .dock-tools {
+    gap: 4px;
+    margin-right: 4px;
+    max-width: none;
+    width: calc(100vw - 78px - env(safe-area-inset-left) - env(safe-area-inset-right));
+    transition: width 260ms cubic-bezier(0.3, 0.9, 0.3, 1.1), margin-right 260ms ease, opacity 200ms ease;
+  }
+  .dock-closed .dock-tools {
+    width: 0;
+  }
+  .dock-tools .tool {
+    flex: 1 1 0;
+  }
+  .app .dock-handle {
+    flex: none;
+    width: 46px;
   }
   .app .tool-icon {
     font-size: 22px;
@@ -1967,6 +2045,10 @@ body {
   .app .toolbar {
     padding: 5px;
     gap: 4px;
+  }
+  .dock-tools {
+    gap: 4px;
+    margin-right: 4px;
   }
   .app .tool {
     width: 48px;
@@ -2313,20 +2395,86 @@ body {
   text-shadow: 0 2px 0 rgba(10, 60, 110, 0.5);
 }
 
+.loading-track {
+  position: relative;
+  width: min(280px, 72vw);
+  padding-block: 14px 6px;
+}
+
 .loading-bar {
-  width: min(260px, 70vw);
-  height: 16px;
+  height: 20px;
   border-radius: 999px;
   background: rgba(10, 50, 100, 0.45);
   border: 3px solid #0f4f86;
+  box-shadow: inset 0 3px 6px rgba(0, 20, 60, 0.35);
   overflow: hidden;
 }
 
 .loading-bar-fill {
+  position: relative;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(180deg, #ffe680 0%, #f7b42c 100%);
-  transition: width 0.25s ease-out;
+  background: linear-gradient(180deg, #b6f3ff 0%, #4fc7ef 55%, #2a94d6 100%);
+  box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.55);
+  overflow: hidden;
+  transition: width 0.3s ease-out;
+}
+
+/* Little bubbles rising inside the filled part. */
+.loading-bubble {
+  position: absolute;
+  bottom: -6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.25);
+  animation: loading-bubble 2.4s ease-in infinite;
+}
+
+/* The shell rides the leading edge of the fill. */
+.loading-shell {
+  position: absolute;
+  /* Centered on the bar (track padding 14px + half the 26px bar). */
+  top: 27px;
+  width: 40px;
+  height: auto;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 3px 0 rgba(10, 50, 100, 0.45));
+  transition: left 0.3s ease-out;
+  animation: loading-shell-bob 1.8s ease-in-out infinite;
+}
+
+.loading-pct {
+  font-size: 14px;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+@keyframes loading-bubble {
+  0% {
+    transform: translateY(0) scale(0.6);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-26px) scale(1);
+    opacity: 0;
+  }
+}
+
+@keyframes loading-shell-bob {
+  0%,
+  100% {
+    margin-top: 0;
+    rotate: -6deg;
+  }
+  50% {
+    margin-top: -4px;
+    rotate: 6deg;
+  }
 }
 
 @keyframes loading-swim {
@@ -2340,7 +2488,81 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .loading-fish {
+  .loading-fish,
+  .loading-shell,
+  .loading-bubble {
+    animation: none;
+  }
+  .loading-bubble {
+    display: none;
+  }
+}
+
+/* ---- Sprite icons (shell / pearl) in the DOM UI ---- */
+.icon {
+  display: inline-block;
+  height: auto;
+  vertical-align: middle;
+  pointer-events: none;
+  user-select: none;
+}
+
+.icon-inline {
+  width: 1.35em;
+  margin-block: -0.3em;
+}
+
+.icon-inline.icon-pearl {
+  width: 1.15em;
+}
+
+img.hud-bar-icon {
+  width: 34px;
+  margin-left: -14px;
+}
+
+.hud-pearl-icon {
+  width: 24px;
+  margin-left: -8px;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.3));
+}
+
+span.hud-pearl-icon {
+  width: 18px;
+  height: 18px;
+  margin-left: -4px;
+}
+
+/* The purple shop header sets white text; keep the wallet pills readable. */
+.shop-head .price {
+  color: #3b4a5a;
+  text-shadow: none;
+}
+
+/* A collected shell/pearl landing on its HUD counter. */
+.hud-bump-a {
+  animation: hud-bump-a 420ms cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+
+.hud-bump-b {
+  animation: hud-bump-b 420ms cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+
+@keyframes hud-bump-a {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.14); }
+  100% { transform: scale(1); }
+}
+
+@keyframes hud-bump-b {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.14); }
+  100% { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-bump-a,
+  .hud-bump-b {
     animation: none;
   }
 }

@@ -1,7 +1,11 @@
 // Canvas render loop. Reads game state every frame; fish positions live only here.
 import {
-  BACKGROUND_SAND_OVERLAP,
   DECOR_BASE_OFFSET,
+  DECOR_DROP_PUFFS,
+  DECOR_LIFT_SMOOTHING,
+  EGG_BURST_CHIPS,
+  RAY_SPEED,
+  SHADOW_SHIFT,
   EGG_EDGE_MARGIN,
   PAIR_LINGER_MS,
   DROP_HIT_RADIUS,
@@ -22,10 +26,10 @@ import {
   TANK_HEIGHT,
   TANK_WIDTH,
 } from '../game/constants';
-import { getSpecies, getVariant } from '../game/species';
+import { getSpecies, getVariant, SHINY_OUTLINE, SHINY_SPARKLE } from '../game/species';
 import type { Fish, GameState, Tank, ThemeId } from '../game/types';
 import { createActor, isSad, setSwimExtent, updateActor, type FishActor, type FoodTarget } from './behavior';
-import { drawFish, fishHalfHeight, FISH_ART, fishScale, mouthOffset } from './drawFish';
+import { drawFish, drawStar, fishHalfHeight, FISH_ART, fishScale, mouthOffset } from './drawFish';
 import { eatSquash, pokeBounce, speedFraction } from './fishMotion';
 import { dropShadow } from './paint';
 import {
@@ -33,20 +37,27 @@ import {
   bakeFrontLayer,
   drawAlgae,
   drawBubbler,
-  drawCaustics,
   drawFrontPlants,
   drawGlass,
-  drawLightRays,
-  drawSurface,
   THEME_PALETTES,
   type Extent,
   type ThemePalette,
   WORLD_EXTENT,
 } from './drawTank';
-import { chestOpenAmount, DECOR_BOUNDS, drawDecor } from './drawDecor';
+import { chestOpenAmount, drawDecor } from './drawDecor';
 import { drawThemeScenery } from './drawScenery';
-import { drawEgg } from './drawEgg';
-import { themeBackground } from './sprites';
+import { drawEgg, eggProgress } from './drawEgg';
+import { iconSprite } from './assets';
+import { ThemeBackground } from './background';
+import { decorBox, decorLayer, decorSpriteSize, drawIconAt, drawSandItem, dropSquash, type PixelGrid } from './drawSprites';
+import { THEME_ART, type IconId } from './artConfig';
+import { BackgroundFx, type FxFrame } from './ambient/backgroundFx';
+import { Currents } from './ambient/currents';
+import { currentHour, dayLight, getHourOverride, setHourOverride, type DayLight } from './ambient/dayCycle';
+import { DecorBehaviors } from './ambient/decorBehaviors';
+import { QualityManager, type QualityLevel } from './ambient/quality';
+import { SandItems } from './ambient/sandItems';
+import type { DecorId } from '../game/types';
 import type { SimEvent } from '../game/sim';
 import { drawDrop, drawPellet, Particles } from './particles';
 
@@ -59,6 +70,10 @@ export interface RendererDeps {
   getSelectedFishId: () => string | null;
   /** Decor to highlight (the open decor card), if any. */
   getSelectedDecorId: () => string | null;
+  /** Where a HUD counter's icon is on screen (client px), so collected drops can fly to it. */
+  getHudTarget?: (icon: IconId) => { x: number; y: number } | null;
+  /** A collected drop reached its HUD counter (the counter bumps). */
+  onHudArrive?: (icon: IconId) => void;
 }
 
 const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
@@ -76,14 +91,6 @@ function pelletY(p: Tank['pellets'][number], game: GameState): number {
   return Math.min(SAND_Y, p.y + p.vy * since);
 }
 
-/** Draws an image scaled to cover the box (cropping the overflow), anchored to the box's bottom center. */
-function drawCover(ctx: Ctx, img: HTMLImageElement, x: number, y: number, w: number, h: number): void {
-  const k = Math.max(w / img.naturalWidth, h / img.naturalHeight);
-  const dw = img.naturalWidth * k;
-  const dh = img.naturalHeight * k;
-  ctx.drawImage(img, x + (w - dw) / 2, y + h - dh, dw, dh);
-}
-
 function puffAmount(actor: FishActor, now: number): number {
   if (actor.inflateUntil <= 0) return 0;
   const start = actor.inflateUntil - PUFF_DURATION_MS;
@@ -91,6 +98,13 @@ function puffAmount(actor: FishActor, now: number): number {
   if (now < start + PUFF_ATTACK_MS) return (now - start) / PUFF_ATTACK_MS;
   if (now < actor.inflateUntil) return 1;
   return Math.max(0, 1 - (now - actor.inflateUntil) / PUFF_RELEASE_MS);
+}
+
+let activeRenderer: Renderer | null = null;
+
+/** The renderer currently drawing the tank (dev tools reach the living-tank controls through it). */
+export function currentRenderer(): Renderer | null {
+  return activeRenderer;
 }
 
 export class Renderer {
@@ -108,6 +122,22 @@ export class Renderer {
   /** Spawn points for fish that just hatched (consumed when their actor is created). */
   private readonly spawnAt = new Map<string, { x: number; y: number }>();
   private readonly motionQuery: MediaQueryList | null;
+  /** Theme picture (cover + parallax); the drawn water and sand are the fallback. */
+  private readonly background = new ThemeBackground();
+  /** Decor under the cursor (edit-mode glow), set by TankView. */
+  private hoverDecorId: string | null = null;
+  /** Eased lift (0..1) of decor being dragged, and when each piece was last set down (drop bounce). */
+  private readonly decorLift = new Map<string, { v: number; target: number }>();
+  private readonly decorDropAt = new Map<string, number>();
+  /** The living tank: effect quality, the water current, background life, decor behaviors, sand items. */
+  readonly quality = new QualityManager();
+  private readonly currents = new Currents();
+  private readonly fx = new BackgroundFx();
+  private readonly behaviors = new DecorBehaviors();
+  private readonly sandItems = new SandItems();
+  /** Pellets already seen (a new one makes a ripple ring at the surface). */
+  private seenPellets: Set<string> | null = null;
+  private day: DayLight = dayLight(12);
   private raf = 0;
   private last = 0;
   private dpr = 1;
@@ -184,6 +214,7 @@ export class Renderer {
   }
 
   start(): void {
+    activeRenderer = this;
     if (this.raf) return;
     this.last = performance.now();
     this.raf = requestAnimationFrame(this.frame);
@@ -192,6 +223,8 @@ export class Renderer {
   stop(): void {
     cancelAnimationFrame(this.raf);
     this.raf = 0;
+    this.background.dispose();
+    if (activeRenderer === this) activeRenderer = null;
   }
 
   /** Converts a client (mouse) point to tank units. */
@@ -223,13 +256,41 @@ export class Renderer {
     const game = this.deps.getGame();
     const tank = game.tanks.find((t) => t.id === game.activeTankId);
     if (!tank) return null;
-    const baseY = SAND_Y + DECOR_BASE_OFFSET;
     for (let i = tank.decor.length - 1; i >= 0; i--) {
       const d = tank.decor[i]!;
-      const [w, h] = DECOR_BOUNDS[d.decorId];
+      const [w, h] = decorBox(d.decorId);
+      const baseY = this.decorBaseY(d.decorId);
       if (Math.abs(x - d.x) <= w / 2 && y <= baseY && y >= baseY - h) return d.id;
     }
     return null;
+  }
+
+  /** Where a decor item's base sits: sprites rest on the sand line, the drawn art slightly below it. */
+  private decorBaseY(decorId: DecorId): number {
+    return decorSpriteSize(decorId) ? SAND_Y : SAND_Y + DECOR_BASE_OFFSET;
+  }
+
+  /** Decor under the cursor (look mode) gets a soft outline glow; null clears it. */
+  setHoverDecor(decorId: string | null): void {
+    this.hoverDecorId = decorId;
+  }
+
+  /** Dragging decor: it lifts off the sand. */
+  liftDecor(decorId: string): void {
+    const lift = this.decorLift.get(decorId);
+    if (lift) lift.target = 1;
+    else this.decorLift.set(decorId, { v: 0, target: 1 });
+  }
+
+  /** Setting decor down: it settles with a squash bounce and kicks up a little sand. */
+  dropDecor(decorId: string): void {
+    const lift = this.decorLift.get(decorId);
+    if (lift) lift.target = 0;
+    this.decorDropAt.set(decorId, performance.now());
+    const game = this.deps.getGame();
+    const tank = game.tanks.find((t) => t.id === game.activeTankId);
+    const placed = tank?.decor.find((d) => d.id === decorId);
+    if (placed) this.particles.spawnSandPuff(placed.x, SAND_Y, decorBox(placed.decorId)[0], DECOR_DROP_PUFFS);
   }
 
   /** Uncollected shell/pearl drop under a tank-space point, or null. */
@@ -249,8 +310,12 @@ export class Renderer {
     const game = this.deps.getGame();
     const drop = game.tanks.flatMap((t) => t.shells).find((d) => d.id === dropId);
     if (!drop) return;
-    const text = drop.pearl ? `+${drop.value} ⚪` : `+${drop.value} 🐚`;
-    this.particles.spawnPop(drop.x, SAND_Y - 4, text, drop.pearl ? '#8a6be0' : '#e07a5f');
+    const icon = drop.pearl ? 'pearl' : 'shell';
+    const color = drop.pearl ? '#8a6be0' : '#e07a5f';
+    const target = this.deps.getHudTarget?.(icon);
+    if (target && iconSprite(icon)) this.sandItems.fly(icon, { x: drop.x, y: SAND_Y - 8 }, this.toTank(target.x, target.y), performance.now());
+    if (iconSprite(icon)) this.particles.spawnPop(drop.x, SAND_Y - 4, `+${drop.value}`, color, icon);
+    else this.particles.spawnPop(drop.x, SAND_Y - 4, drop.pearl ? `+${drop.value} ⚪` : `+${drop.value} 🐚`, color);
   }
 
   /** Sparkle burst + "+XP" pop where an algae spot was wiped. Call before removing it. */
@@ -292,6 +357,7 @@ export class Renderer {
         this.spawnAt.set(e.fishId, { x, y: SAND_Y - 24 });
         this.eggX.delete(e.eggId);
         for (let i = 0; i < 8; i++) this.particles.spawnSparkle(x + (Math.random() - 0.5) * 30, SAND_Y - Math.random() * 24);
+        this.particles.spawnChips(x, SAND_Y - 10, '#ffb347', EGG_BURST_CHIPS);
       }
     }
   }
@@ -314,6 +380,35 @@ export class Renderer {
     const now = performance.now();
     actor.pokeAt = now;
     if (getSpecies(actor.speciesId).traits.includes('inflates')) actor.inflateUntil = now + PUFF_DURATION_MS;
+  }
+
+  /** Dev: a gust of current now. */
+  forceGust(): void {
+    this.currents.forceGust();
+  }
+
+  /** Dev: a distant school crosses now. */
+  forceSchool(): void {
+    this.fx.forceSchool({ ext: this.extent, view: this.view });
+  }
+
+  /** Dev: scrub the time of day (null = follow the clock). */
+  setHour(hour: number | null): void {
+    setHourOverride(hour);
+  }
+
+  get hourOverride(): number | null {
+    return getHourOverride();
+  }
+
+  /** Dev/fidget: pop a chest open now. */
+  openChest(placedId: string): void {
+    this.behaviors.openNow(placedId);
+  }
+
+  /** Dev: pin the effect quality (null = automatic). */
+  setQuality(level: QualityLevel | null): void {
+    this.quality.setOverride(level);
   }
 
   /** Where the cursor is (tank units), or null when it leaves; fish eyes follow it. */
@@ -364,13 +459,14 @@ export class Renderer {
   }
 
   private frame = (t: number): void => {
+    this.quality.sample(t - this.last, t);
     const dt = Math.min(MAX_FRAME_DT_SEC, Math.max(0, (t - this.last) / SECOND_MS));
     this.last = t;
     const game = this.deps.getGame();
     const tank = game.tanks.find((tk) => tk.id === game.activeTankId) ?? game.tanks[0];
     if (tank) {
       this.update(game, tank, t, dt);
-      this.draw(game, tank, t);
+      this.draw(game, tank, t, dt);
     }
     this.raf = requestAnimationFrame(this.frame);
   };
@@ -403,7 +499,8 @@ export class Renderer {
       }
     }
     for (const d of tank.decor) {
-      if (d.decorId !== 'chest') continue;
+      // Sprite chests run the lidOpen behavior; this is the drawn chest's puff.
+      if (d.decorId !== 'chest' || decorSpriteSize(d.decorId)) continue;
       const open = chestOpenAmount(now, d.x);
       if (open > 0.3 && !this.openChests.has(d.id)) {
         this.openChests.add(d.id);
@@ -413,10 +510,46 @@ export class Renderer {
         this.openChests.delete(d.id);
       }
     }
-    this.particles.update(dt, reduced);
+    for (const [id, lift] of this.decorLift) {
+      lift.v += (lift.target - lift.v) * Math.min(1, dt * DECOR_LIFT_SMOOTHING);
+      if (lift.target === 0 && lift.v < 0.002) this.decorLift.delete(id);
+    }
+    const current = this.currents.update(dt);
+    this.day = dayLight(currentHour());
+    this.fx.update(this.fxFrame(dt, now / SECOND_MS, reduced, tank));
+    this.behaviors.update(dt, tank.decor, {
+      current,
+      fish: fish.map((f) => this.actors.get(f.id)!).map((a) => ({ x: a.x, y: a.y })),
+      particles: this.particles,
+      reduced,
+    });
+    this.sandItems.update(tank.shells, now);
+    // Food dropping in leaves a ripple ring on the surface.
+    const ids = new Set(tank.pellets.map((p) => p.id));
+    if (this.seenPellets) for (const p of tank.pellets) if (!this.seenPellets.has(p.id)) this.fx.ripple(p.x);
+    this.seenPellets = ids;
+    this.particles.update(dt, reduced, current.total);
   }
 
-  private draw(game: GameState, tank: Tank, now: number): void {
+  /** Everything the background effects need this frame. */
+  private fxFrame(dt: number, timeSec: number, reduced: boolean, tank: Tank): FxFrame {
+    return {
+      ctx: this.ctx,
+      view: this.view,
+      ext: this.extent,
+      k: this.scale * this.dpr,
+      camY: this.camY,
+      dt,
+      timeSec,
+      preset: this.quality.preset(reduced),
+      reduced,
+      current: this.currents.state,
+      day: this.day,
+      pal: THEME_PALETTES[tank.theme],
+    };
+  }
+
+  private draw(game: GameState, tank: Tank, now: number, dt: number): void {
     const { ctx, dpr } = this;
     const pal = THEME_PALETTES[tank.theme];
     const reduced = this.reducedMotion(game);
@@ -433,23 +566,40 @@ export class Renderer {
     ctx.clip();
 
     const sceneTime = reduced ? 0 : timeSec;
-    this.drawBaked('back', tank.theme, pal, px);
-    if (!reduced) drawLightRays(ctx, pal, timeSec, view);
-    this.drawBaked('front', tank.theme, pal, px);
-    drawCaustics(ctx, pal, sceneTime, px, view);
-    drawSurface(ctx, pal, sceneTime, px, view);
+    const grid: PixelGrid = { k: this.scale * dpr, camX: this.camX, camY: this.camY, dpr };
+    const fx = this.fxFrame(dt, timeSec, reduced, tank);
+    const day = this.day;
+    const pointerFrac = this.pointer ? (this.pointer.x - (view.x0 + view.x1) / 2) / ((view.x1 - view.x0) / 2) : null;
+    const picture = this.background.draw(ctx, tank.theme, this.extent, view, grid, pointerFrac, dt, sceneTime, reduced, fx.preset.warpStrips);
+    if (!picture) {
+      this.drawBaked('back', tank.theme, pal, px);
+      this.drawBaked('front', tank.theme, pal, px);
+    }
+    // Far layer: distant school and the farthest specks, then light shafts and the floor's caustics.
+    this.fx.drawSchool(fx);
+    this.fx.drawSpecks(fx, 0);
+    this.fx.drawRays(fx);
+    this.fx.drawCaustics(fx);
+    this.fx.drawSurface(fx, px);
     drawBubbler(ctx, px);
-    drawThemeScenery(ctx, tank.theme, timeSec, px, reduced);
-    const selectedDecor = this.deps.getSelectedDecorId();
+    // The pictures already paint their own coral, lily pads and glow plants.
+    if (!picture) drawThemeScenery(ctx, tank.theme, timeSec, px, reduced);
+    // Shadows slide gently with the sun angle and the swaying rays.
+    const shadowShift = (-day.sunX + Math.sin(timeSec * RAY_SPEED) * 0.25) * SHADOW_SHIFT;
     for (const d of tank.decor) {
-      if (d.id === selectedDecor) this.drawDecorSelection(d.decorId, d.x, timeSec, px);
-      drawDecor(ctx, d.decorId, d.x, SAND_Y + DECOR_BASE_OFFSET, now, px);
+      if (decorLayer(d.decorId) === 'back' || !decorSpriteSize(d.decorId)) this.drawDecorItem(d, tank, now, timeSec, px, grid, shadowShift, fx);
     }
     const wallNow = Date.now();
     for (const egg of game.eggs) {
-      if (egg.tankId === tank.id) drawEgg(ctx, egg, this.eggPosition(egg.id), wallNow, timeSec, px, reduced ? REDUCED_WOBBLE : 1);
+      if (egg.tankId === tank.id) this.drawEggItem(egg, wallNow, timeSec, px, grid, reduced);
     }
-    for (const drop of tank.shells) drawDrop(ctx, drop, px, timeSec);
+    for (const drop of tank.shells) {
+      const lift = this.sandItems.lift(drop.id, now);
+      if (!drawSandItem(ctx, drop.pearl ? 'pearl' : 'shell', drop.x, grid, { lift: -lift })) drawDrop(ctx, drop, px, timeSec);
+      else if (lift === 0) this.sandItems.drawGlint(ctx, drop, timeSec, px);
+    }
+    this.particles.drawSandPuffs(ctx, pal.sandLight);
+    this.fx.drawSpecks(fx, 1);
     for (const p of tank.pellets) drawPellet(ctx, p.x, Math.min(pelletY(p, game), SAND_Y - 1), p.premium, px, timeSec);
     this.particles.drawBubbles(ctx, px);
 
@@ -496,41 +646,111 @@ export class Renderer {
       const actor = this.actors.get(f.id);
       if (actor?.indicator && f.tankId === tank.id) this.drawIndicator(actor, f, now, px);
     }
-    drawFrontPlants(ctx, pal, sceneTime, px, view);
-    // Scene-wide ambient light (e.g. moonlit blue at night) so decor and fish share the theme's lighting.
-    if (pal.ambient) {
-      ctx.save();
-      ctx.globalCompositeOperation = 'multiply';
-      ctx.globalAlpha = pal.ambient.alpha;
-      ctx.fillStyle = pal.ambient.color;
-      ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0);
-      ctx.restore();
+    for (const d of tank.decor) {
+      if (decorLayer(d.decorId) === 'front' && decorSpriteSize(d.decorId)) this.drawDecorItem(d, tank, now, timeSec, px, grid, shadowShift, fx);
     }
-    this.particles.drawMotes(ctx, pal.mote, timeSec);
+    if (!picture) drawFrontPlants(ctx, pal, sceneTime, px, view);
+    // Scene-wide light: the theme's ambient tint (e.g. moonlit blue), then the time of day.
+    this.drawSceneLight(tank.theme, view);
+    const lights = Math.max(day.lights, THEME_ART[tank.theme].minLights);
+    for (const d of tank.decor) this.behaviors.drawLights(ctx, d, tank.theme, grid.k, lights, timeSec);
+    this.fx.drawSpecks(fx, 2);
     this.particles.drawHearts(ctx, px);
     this.particles.drawSparkles(ctx, px);
-    this.particles.drawPops(ctx, px);
+    this.particles.drawChips(ctx, px);
+    const paintIcon = (icon: IconId, x: number, y: number, size: number) => drawIconAt(ctx, icon, x, y, size, grid.k);
+    this.particles.drawPops(ctx, px, paintIcon);
     drawAlgae(ctx, pal, tank.algaeSpots);
     drawGlass(ctx, view);
+    this.sandItems.drawFlights(ctx, now, paintIcon, (icon) => this.deps.onHudArrive?.(icon));
     ctx.restore();
   }
 
-  /** Dashed glow box behind the selected decor, with ◀ ▶ drag hints. */
-  private drawDecorSelection(decorId: keyof typeof DECOR_BOUNDS, x: number, timeSec: number, px: number): void {
+  /** The theme's ambient tint and the time-of-day tint + warm haze, over the whole scene. */
+  private drawSceneLight(theme: ThemeId, view: Extent): void {
+    const { ctx, day } = this;
+    const pal = THEME_PALETTES[theme];
+    const fill = () => ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0);
+    ctx.save();
+    if (pal.ambient) {
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.globalAlpha = pal.ambient.alpha;
+      ctx.fillStyle = pal.ambient.color;
+      fill();
+    }
+    const strength = THEME_ART[theme].dayTint;
+    if (day.tintAlpha > 0.005) {
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.globalAlpha = day.tintAlpha * strength;
+      ctx.fillStyle = day.tint;
+      fill();
+    }
+    if (day.glowAlpha > 0.005) {
+      ctx.globalCompositeOperation = 'screen';
+      ctx.globalAlpha = day.glowAlpha * strength;
+      ctx.fillStyle = day.glow;
+      fill();
+    }
+    ctx.restore();
+  }
+
+  /** One decor item: the sprite (with edit-mode glow, lift and drop bounce) or the drawn art. */
+  private drawDecorItem(d: Tank['decor'][number], tank: Tank, now: number, timeSec: number, px: number, grid: PixelGrid, shadowShift: number, fx: FxFrame): void {
+    const selected = d.id === this.deps.getSelectedDecorId();
+    const lift = this.decorLift.get(d.id)?.v ?? 0;
+    const glow = selected ? 0.75 + 0.25 * Math.sin(timeSec * 3) : d.id === this.hoverDecorId ? 0.6 : 0;
+    const drawn = this.behaviors.draw(this.ctx, d, {
+      theme: tank.theme,
+      grid,
+      lift,
+      squash: dropSquash(now - (this.decorDropAt.get(d.id) ?? -Infinity)),
+      glow,
+      shadowShift,
+      timeSec,
+      preset: fx.preset,
+    });
+    if (selected) this.drawDecorSelection(d.decorId, d.x, timeSec, px, drawn);
+    if (!drawn) drawDecor(this.ctx, d.decorId, d.x, SAND_Y + DECOR_BASE_OFFSET, now, px);
+  }
+
+  /** An egg on the sand, rocking more as hatching nears: the egg sprite, or the drawn egg. */
+  private drawEggItem(egg: GameState['eggs'][number], wallNow: number, timeSec: number, px: number, grid: PixelGrid, reduced: boolean): void {
+    const x = this.eggPosition(egg.id);
+    const wobble = reduced ? REDUCED_WOBBLE : 1;
+    const progress = eggProgress(egg, wallNow);
+    const burst = Math.sin(timeSec * 1.3 + x) > 0.2 ? 1 : 0.35;
+    const angle = Math.sin(timeSec * (6 + progress * 6) + x) * (0.04 + 0.22 * progress * progress) * burst * wobble;
+    // In the last stretch it gives little hops, as if something inside is eager to come out.
+    const eager = Math.max(0, (progress - 0.85) / 0.15);
+    const hop = -Math.max(0, Math.sin(timeSec * 5 + x)) * 2.5 * eager * burst * wobble;
+    if (!drawSandItem(this.ctx, 'egg', x, grid, { angle, lift: hop, scale: 1 + eager * 0.04 * Math.sin(timeSec * 10) })) {
+      drawEgg(this.ctx, egg, x, wallNow, timeSec, px, wobble);
+      return;
+    }
+    if (egg.shiny) {
+      const tw = (Math.sin(timeSec * 4 + x) + 1) / 2;
+      drawStar(this.ctx, x + 12, SAND_Y - 22, 3.5 * tw, SHINY_SPARKLE, SHINY_OUTLINE, 0.6 * px);
+    }
+  }
+
+  /** Behind the selected decor: a dashed box for the drawn art (sprites glow instead), plus ◀ ▶ drag hints. */
+  private drawDecorSelection(decorId: DecorId, x: number, timeSec: number, px: number, sprite: boolean): void {
     const { ctx } = this;
-    const [w, h] = DECOR_BOUNDS[decorId];
-    const baseY = SAND_Y + DECOR_BASE_OFFSET;
+    const [w, h] = decorBox(decorId);
+    const baseY = this.decorBaseY(decorId);
     const pad = 8 + Math.sin(timeSec * 4) * 2;
     ctx.save();
-    ctx.beginPath();
-    ctx.roundRect(x - w / 2 - pad, baseY - h - pad, w + pad * 2, h + pad, 12);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
-    ctx.fill();
-    ctx.setLineDash([6 * px, 5 * px]);
-    ctx.lineWidth = 2 * px;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-    ctx.stroke();
-    ctx.setLineDash([]);
+    if (!sprite) {
+      ctx.beginPath();
+      ctx.roundRect(x - w / 2 - pad, baseY - h - pad, w + pad * 2, h + pad, 12);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+      ctx.fill();
+      ctx.setLineDash([6 * px, 5 * px]);
+      ctx.lineWidth = 2 * px;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
     ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
     ctx.font = '700 14px Nunito, system-ui, sans-serif';
     ctx.textAlign = 'center';
@@ -561,8 +781,7 @@ export class Renderer {
   /** Draws a static layer from its cache, (re)baking it when theme, size or DPR changed. */
   private drawBaked(which: 'back' | 'front', theme: ThemeId, pal: ThemePalette, px: number): void {
     const ext = this.extent;
-    const picture = which === 'back' ? themeBackground(theme) : null;
-    const key = `${which}:${theme}:${picture ? 'img' : 'drawn'}:${ext.x0.toFixed(1)},${ext.x1.toFixed(1)},${ext.y0.toFixed(1)},${ext.y1.toFixed(1)}:${this.scale.toFixed(4)}:${this.dpr}`;
+    const key = `${which}:${theme}:${ext.x0.toFixed(1)},${ext.x1.toFixed(1)},${ext.y0.toFixed(1)},${ext.y1.toFixed(1)}:${this.scale.toFixed(4)}:${this.dpr}`;
     let layer = which === 'back' ? this.backLayer : this.frontLayer;
     if (!layer || layer.key !== key) {
       const canvas = document.createElement('canvas');
@@ -572,8 +791,7 @@ export class Renderer {
       const bctx = canvas.getContext('2d');
       if (bctx) {
         bctx.setTransform(k, 0, 0, k, -ext.x0 * k, -ext.y0 * k);
-        if (picture) drawCover(bctx, picture, ext.x0, ext.y0, ext.x1 - ext.x0, SAND_Y + BACKGROUND_SAND_OVERLAP - ext.y0);
-        else if (which === 'back') bakeBackLayer(bctx, pal, ext, px);
+        if (which === 'back') bakeBackLayer(bctx, pal, ext, px);
         else bakeFrontLayer(bctx, pal, px, ext);
       }
       layer = { key, canvas };

@@ -7,6 +7,7 @@ import { sound } from '../audio/sound';
 import { Renderer } from '../render/renderer';
 import { subscribeSimEvents, useGameStore } from '../store/gameStore';
 import { DailyGift } from './DailyGift';
+import { HUD_BUMP_EVENT } from './Hud';
 
 type Point = { x: number; y: number };
 
@@ -115,6 +116,12 @@ export function TankView() {
       onEat: (fishId, pelletId) => useGameStore.getState().eatPellet(fishId, pelletId),
       getSelectedFishId: () => useGameStore.getState().selectedFishId,
       getSelectedDecorId: () => useGameStore.getState().selectedDecorId,
+      getHudTarget: (icon) => {
+        const el = document.querySelector(icon === 'pearl' ? '.hud-pearls .icon, .hud-pearls .hud-pearl' : '.hud-coins .icon, .hud-coins .hud-bar-icon');
+        const r = el?.getBoundingClientRect();
+        return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null;
+      },
+      onHudArrive: (icon) => window.dispatchEvent(new CustomEvent(HUD_BUMP_EVENT, { detail: icon })),
     });
     rendererRef.current = renderer;
     // Dev-only handle for debugging/tests (stripped from production builds).
@@ -178,18 +185,28 @@ export function TankView() {
     }
     if (gesture?.kind === 'decor') {
       if (!gesture.dragging && Math.abs(e.clientX - gesture.startClientX) < DRAG_THRESHOLD_PX) return;
+      if (!gesture.dragging) renderer.liftDecor(gesture.id);
       gesture.dragging = true;
       e.currentTarget.style.cursor = 'grabbing';
       useGameStore.getState().moveDecor(gesture.id, point.x - gesture.grabOffset);
       return;
     }
-    // Hover: hint that decor can be grabbed (look mode only; other modes use their CSS cursors).
+    // Hover: decor glows and the cursor hints it can be grabbed (look mode only; other modes use their CSS cursors).
     const look = useGameStore.getState().mode === 'look';
-    e.currentTarget.style.cursor = look && !renderer.fishAt(point.x, point.y) && renderer.decorAt(point.x, point.y) ? 'grab' : '';
+    const hover = look && e.pointerType === 'mouse' && !renderer.fishAt(point.x, point.y) ? renderer.decorAt(point.x, point.y) : null;
+    renderer.setHoverDecor(hover);
+    e.currentTarget.style.cursor = hover ? 'grab' : '';
   };
 
   const endGesture = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (gestureRef.current?.kind === 'decor') e.currentTarget.style.cursor = '';
+    const gesture = gestureRef.current;
+    if (gesture?.kind === 'decor') {
+      e.currentTarget.style.cursor = '';
+      if (gesture.dragging) {
+        rendererRef.current?.dropDecor(gesture.id);
+        sound.play('plop');
+      }
+    }
     gestureRef.current = null;
   };
 
@@ -203,7 +220,10 @@ export function TankView() {
         onPointerMove={onPointerMove}
         onPointerUp={endGesture}
         onPointerCancel={endGesture}
-        onPointerLeave={() => rendererRef.current?.setPointer(null)}
+        onPointerLeave={() => {
+          rendererRef.current?.setPointer(null);
+          rendererRef.current?.setHoverDecor(null);
+        }}
       />
       <DailyGift />
     </div>

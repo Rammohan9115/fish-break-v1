@@ -10,6 +10,7 @@ import type { GameState } from '../game/types';
 import { getSpecies, getVariant } from '../game/species';
 import type { Fish, Stage } from '../game/types';
 import { useGameStore } from '../store/gameStore';
+import { Icon } from './Icon';
 
 const STAGE_LABEL: Record<Stage, string> = { egg: 'Egg', baby: 'Baby', juvenile: 'Juvenile', adult: 'Adult' };
 
@@ -145,7 +146,7 @@ function SellButton({ fish }: { fish: Fish }) {
   if (!confirming) {
     return (
       <button type="button" className="fishcard-sell" onClick={() => setConfirming(true)}>
-        Sell for {value} 🐚
+        Sell for {value} <Icon id="shell" className="icon-inline" />
       </button>
     );
   }

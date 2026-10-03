@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { FISH_ART_SCALE } from '../game/constants';
 import { getVariant, SPECIES } from '../game/species';
 import type { DecorId, SpeciesId } from '../game/types';
+import { decorSprite } from '../render/assets';
 import { DECOR_BOUNDS, drawDecor } from '../render/drawDecor';
 import { drawFish, FISH_ART } from '../render/drawFish';
 
@@ -66,6 +67,13 @@ export function FishPreview({ speciesId, variant }: { speciesId: SpeciesId; vari
 export function DecorPreview({ decorId }: { decorId: DecorId }) {
   const ref = useCanvas(
     (ctx) => {
+      const sprite = decorSprite(decorId);
+      if (sprite) {
+        const k = Math.min((W - 8) / sprite.w, (H - 6) / sprite.h);
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(sprite.canvas, (W - sprite.w * k) / 2, H - 3 - sprite.h * k, sprite.w * k, sprite.h * k);
+        return;
+      }
       const [w, h] = DECOR_BOUNDS[decorId];
       const k = Math.min(1, (W - 10) / w, (H - 10) / h);
       ctx.translate(W / 2, H - 6);

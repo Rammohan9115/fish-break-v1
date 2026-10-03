@@ -8,6 +8,7 @@ import type { GameState, Price, ThemeId } from '../game/types';
 import { sound } from '../audio/sound';
 import { useGameStore, type ShopTab } from '../store/gameStore';
 import { DecorPreview, FishPreview } from './Preview';
+import { Icon, RichText } from './Icon';
 
 const TABS: { id: ShopTab; label: string }[] = [
   { id: 'fish', label: '🐟 Fish' },
@@ -19,7 +20,8 @@ const TABS: { id: ShopTab; label: string }[] = [
 export function PriceTag({ price }: { price: Price }) {
   return (
     <span className="price">
-      {price.currency === 'shells' ? '🐚' : <span className="hud-pearl" aria-label="pearls" />} {price.amount.toLocaleString()}
+      {price.currency === 'shells' ? <Icon id="shell" className="icon-inline" label="shells" /> : <Icon id="pearl" className="icon-inline" label="pearls" />}{' '}
+      {price.amount.toLocaleString()}
     </span>
   );
 }
@@ -33,7 +35,7 @@ interface ItemProps {
   /** Text shown on the button when buying is blocked for a non-lock reason. */
   blockedText?: string;
   buyLabel?: string;
-  note?: string;
+  note?: ReactNode;
   /** Returns true on success (plays the coin sound). */
   onBuy: () => boolean | void;
 }
@@ -92,7 +94,7 @@ function FishTab({ game }: { game: GameState }) {
               unlockLevel={s.unlockLevel}
               error={error}
               blockedText={error === 'theme' && s.themeOnly ? `Needs ${THEMES[s.themeOnly].name}` : undefined}
-              note={`Grows in ${s.growMinutes >= 60 ? `${s.growMinutes / 60}h` : `${s.growMinutes}m`} · drops ${s.dropValue} 🐚`}
+              note={<RichText text={`Grows in ${s.growMinutes >= 60 ? `${s.growMinutes / 60}h` : `${s.growMinutes}m`} · drops ${s.dropValue} 🐚`} />}
               onBuy={() => buyFish(s.id)}
             />
           );

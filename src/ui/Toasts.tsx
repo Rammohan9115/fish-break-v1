@@ -2,6 +2,7 @@
 import { useEffect } from 'react';
 import { MAX_VISIBLE_TOASTS, TOAST_DURATION_MS } from '../game/constants';
 import { useGameStore, type Toast } from '../store/gameStore';
+import { RichText } from './Icon';
 
 function ToastItem({ toast }: { toast: Toast }) {
   const dismiss = useGameStore((s) => s.dismissToast);
@@ -11,7 +12,7 @@ function ToastItem({ toast }: { toast: Toast }) {
   }, [toast.id, dismiss]);
   return (
     <div className="toast" role="status" onClick={() => dismiss(toast.id)}>
-      {toast.text}
+      <RichText text={toast.text} />
     </div>
   );
 }

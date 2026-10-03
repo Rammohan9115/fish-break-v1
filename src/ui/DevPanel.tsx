@@ -4,6 +4,10 @@ import { SPECIES, SPECIES_LIST } from '../game/species';
 import type { SpeciesId, ThemeId } from '../game/types';
 import { useGameStore } from '../store/gameStore';
 import { EyeEditor } from './EyeEditor';
+import { sandLineY, setSandLineY } from '../render/artConfig';
+import { QUALITY_LEVELS } from '../render/ambient/quality';
+import { currentRenderer } from '../render/renderer';
+import { LidEditor } from './LidEditor';
 
 type SpawnStage = 'baby' | 'juvenile' | 'adult';
 const STAGES: SpawnStage[] = ['baby', 'juvenile', 'adult'];
@@ -19,6 +23,10 @@ export default function DevPanel() {
   const [shiny, setShiny] = useState(false);
 
   const species = SPECIES[speciesId];
+  const theme = useGameStore((s) => s.game.tanks.find((t) => t.id === s.game.activeTankId)?.theme ?? 'classic');
+  // The override lives outside React; bump this to re-render after changing it.
+  const [, setSandTick] = useState(0);
+  const sandLine = sandLineY(theme);
 
   const spawn = () => dev.spawnFish({ speciesId, stage, variant: variant || undefined, shiny });
   const spawnAllSpecies = () => SPECIES_LIST.forEach((s) => dev.spawnFish({ speciesId: s.id, stage }));
@@ -126,9 +134,116 @@ export default function DevPanel() {
           </button>
         ))}
       </div>
+      <label className="dev-row dev-slider">
+        <span>
+          Sand line ({theme}): {sandLine.toFixed(1)}%
+        </span>
+        <input
+          type="range"
+          min={60}
+          max={98}
+          step={0.5}
+          value={sandLine}
+          onChange={(e) => {
+            setSandLineY(theme, Number(e.target.value));
+            setSandTick((n) => n + 1);
+          }}
+        />
+      </label>
+      <div className="dev-label">Copy the % into THEME_ART.sandLineY (render/artConfig.ts) to keep it.</div>
+      <LivingTankControls />
+      <div className="dev-label">Chest lid: click to set the cut line / hinge</div>
+      <LidEditor />
       <div className="dev-label">Sprite eye ({stage === 'baby' ? 'baby' : 'adult/juvenile'}): click the eye</div>
       <EyeEditor speciesId={speciesId} art={stage === 'baby' ? 'baby' : 'adult'} />
       <div className="dev-label">Tip: click a fish to make it bounce (Puffy inflates).</div>
     </aside>
+  );
+}
+
+const fmtHour = (h: number) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
+
+/** Time of day scrub, current gust, distant school, and the effect quality switch. */
+function LivingTankControls() {
+  const [, setTick] = useState(0);
+  const refresh = () => setTick((n) => n + 1);
+  const renderer = currentRenderer();
+  const hour = renderer?.hourOverride ?? null;
+  const quality = renderer?.quality;
+  return (
+    <>
+      <div className="dev-label">Living tank</div>
+      <label className="dev-row dev-slider">
+        <span>Time of day: {hour === null ? 'live clock' : fmtHour(hour)}</span>
+        <input
+          type="range"
+          min={0}
+          max={23.99}
+          step={0.05}
+          value={hour ?? new Date().getHours() + new Date().getMinutes() / 60}
+          onChange={(e) => {
+            renderer?.setHour(Number(e.target.value));
+            refresh();
+          }}
+        />
+      </label>
+      <div className="dev-buttons">
+        {[7.5, 13, 18.5, 23].map((h) => (
+          <button
+            key={h}
+            type="button"
+            onClick={() => {
+              renderer?.setHour(h);
+              refresh();
+            }}
+          >
+            {fmtHour(h)}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => {
+            renderer?.setHour(null);
+            refresh();
+          }}
+        >
+          Live
+        </button>
+      </div>
+      <div className="dev-buttons">
+        <button type="button" onClick={() => renderer?.forceGust()}>
+          🌊 Gust
+        </button>
+        <button type="button" onClick={() => renderer?.forceSchool()}>
+          🐟 Far school
+        </button>
+      </div>
+      <div className="dev-label">
+        Quality: {quality ? `${quality.level}${quality.overridden ? ' (pinned)' : ' (auto)'}` : '–'}
+      </div>
+      <div className="dev-buttons">
+        <button
+          type="button"
+          onClick={() => {
+            renderer?.setQuality(null);
+            refresh();
+          }}
+        >
+          Auto
+        </button>
+        {QUALITY_LEVELS.map((q) => (
+          <button
+            key={q}
+            type="button"
+            onClick={() => {
+              renderer?.setQuality(q);
+              refresh();
+            }}
+          >
+            {q}
+          </button>
+        ))}
+      </div>
+    </>
   );
 }

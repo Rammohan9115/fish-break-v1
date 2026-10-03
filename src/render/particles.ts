@@ -1,7 +1,8 @@
 // Particles (bubbles, sparkles) plus small sprites: food pellets and shell/pearl drops.
-import { BUBBLER_X, BUBBLES_PER_SEC, BUBBLES_PER_SEC_REDUCED, POP_TEXT_DURATION_MS, SAND_Y, SECOND_MS, TANK_WIDTH } from '../game/constants';
+import { BUBBLE_CURRENT_DRIFT, BUBBLER_X, BUBBLES_PER_SEC, BUBBLES_PER_SEC_REDUCED, POP_TEXT_DURATION_MS, SAND_Y, SECOND_MS } from '../game/constants';
 import { SHINY_OUTLINE, SHINY_SPARKLE } from '../game/species';
 import type { ShellDrop } from '../game/types';
+import type { IconId } from './artConfig';
 import { bubblerTop } from './drawTank';
 import { drawStar } from './drawFish';
 import { blobPath, celShade, COOL_SHADOW, hashSeq, rgba } from './paint';
@@ -25,19 +26,6 @@ interface Sparkle {
   size: number;
 }
 
-/** Drifting light motes (dust in the sun rays). */
-interface Mote {
-  x: number;
-  y: number;
-  r: number;
-  vx: number;
-  vy: number;
-  phase: number;
-}
-
-const MOTES = 36;
-const MOTES_REDUCED = 10;
-
 interface Heart {
   x: number;
   y: number;
@@ -52,7 +40,37 @@ interface PopText {
   text: string;
   color: string;
   age: number;
+  /** Drawn after the text when its sprite is loaded (else the text carries an emoji). */
+  icon: IconId | null;
 }
+
+/** A tumbling bit of eggshell. */
+interface Chip {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  spin: number;
+  vspin: number;
+  size: number;
+  color: string;
+  age: number;
+  life: number;
+}
+
+/** A soft cloud of sand kicked up when decor is set down. */
+interface Puff {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  r: number;
+  age: number;
+  life: number;
+}
+
+/** Draws an icon sprite centered at (x, y), `size` tank units wide; false if it isn't loaded. */
+export type IconDrawer = (icon: IconId, x: number, y: number, size: number) => boolean;
 
 const SURFACE_Y = 8;
 const POP_LIFE_SEC = POP_TEXT_DURATION_MS / SECOND_MS;
@@ -63,29 +81,11 @@ export class Particles {
   private bubbleAcc = 0;
   private pops: PopText[] = [];
   private hearts: Heart[] = [];
-  private motes: Mote[] = [];
+  private chips: Chip[] = [];
+  private puffs: Puff[] = [];
 
-  update(dt: number, reducedMotion: boolean): void {
-    const moteCount = reducedMotion ? MOTES_REDUCED : MOTES;
-    while (this.motes.length < moteCount) {
-      this.motes.push({
-        x: Math.random() * TANK_WIDTH,
-        y: 20 + Math.random() * (SAND_Y - 40),
-        r: 0.6 + Math.random() * 1.4,
-        vx: (Math.random() - 0.5) * 4,
-        vy: -1 - Math.random() * 3,
-        phase: Math.random() * 6,
-      });
-    }
-    this.motes.length = moteCount;
-    for (const m of this.motes) {
-      m.x += (m.vx + Math.sin(m.phase) * 2) * dt;
-      m.y += m.vy * dt;
-      m.phase += dt * 0.7;
-      if (m.y < 10) m.y = SAND_Y - 20;
-      if (m.x < -5) m.x = TANK_WIDTH + 5;
-      if (m.x > TANK_WIDTH + 5) m.x = -5;
-    }
+  /** `current` (−1..1 and beyond in gusts) pushes bubbles sideways. */
+  update(dt: number, reducedMotion: boolean, current = 0): void {
     const rate = reducedMotion ? BUBBLES_PER_SEC_REDUCED : BUBBLES_PER_SEC;
     this.bubbleAcc += dt * rate;
     while (this.bubbleAcc >= 1) {
@@ -94,6 +94,7 @@ export class Particles {
     }
     for (const b of this.bubbles) {
       b.y -= b.vy * dt;
+      b.x += current * BUBBLE_CURRENT_DRIFT * dt;
       b.phase += dt * 3;
       b.r += dt * 0.4;
     }
@@ -102,22 +103,24 @@ export class Particles {
     this.sparkles = this.sparkles.filter((s) => s.age < s.life);
     for (const p of this.pops) p.age += dt;
     this.pops = this.pops.filter((p) => p.age < POP_LIFE_SEC);
+    for (const p of this.puffs) {
+      p.age += dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= 1 - Math.min(1, dt * 3);
+      p.vy *= 1 - Math.min(1, dt * 3);
+    }
+    this.puffs = this.puffs.filter((p) => p.age < p.life);
+    for (const c of this.chips) {
+      c.age += dt;
+      c.vy += 260 * dt;
+      c.x += c.vx * dt;
+      c.y = Math.min(SAND_Y + 2, c.y + c.vy * dt);
+      c.spin += c.vspin * dt;
+    }
+    this.chips = this.chips.filter((c) => c.age < c.life);
     for (const h of this.hearts) h.age += dt;
     this.hearts = this.hearts.filter((h) => h.age < HEART_LIFE_SEC);
-  }
-
-  /** Soft glowing dust motes drifting through the light. */
-  drawMotes(ctx: Ctx, color: string, timeSec: number): void {
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    for (const m of this.motes) {
-      const a = 0.25 + 0.25 * Math.sin(timeSec * 1.3 + m.phase * 3);
-      ctx.beginPath();
-      ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2);
-      ctx.fillStyle = rgba(color, a);
-      ctx.fill();
-    }
-    ctx.restore();
   }
 
   /** A floating heart (e.g. between a pair that just laid an egg). */
@@ -153,13 +156,69 @@ export class Particles {
     }
   }
 
-  /** Floating "+N" coin-pop text with a little sparkle burst. */
-  spawnPop(x: number, y: number, text: string, color: string): void {
-    this.pops.push({ x, y, text, color, age: 0 });
+  /** A puff of sand along the floor at x (decor being set down). */
+  spawnSandPuff(x: number, y: number, width: number, count: number): void {
+    for (let i = 0; i < count; i++) {
+      const side = i % 2 === 0 ? -1 : 1;
+      this.puffs.push({
+        x: x + side * (width * 0.3 + Math.random() * width * 0.2),
+        y: y - Math.random() * 3,
+        vx: side * (14 + Math.random() * 22),
+        vy: -(4 + Math.random() * 10),
+        r: 3 + Math.random() * 4,
+        age: 0,
+        life: 0.7 + Math.random() * 0.5,
+      });
+    }
+  }
+
+  /** Eggshell chips flying out of a hatching egg. */
+  spawnChips(x: number, y: number, color: string, count: number): void {
+    for (let i = 0; i < count; i++) {
+      const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.2;
+      const v = 60 + Math.random() * 70;
+      this.chips.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, spin: Math.random() * 6, vspin: (Math.random() - 0.5) * 14, size: 2.5 + Math.random() * 2.5, color, age: 0, life: 0.9 + Math.random() * 0.3 });
+    }
+  }
+
+  drawChips(ctx: Ctx, px: number): void {
+    for (const c of this.chips) {
+      const t = c.age / c.life;
+      ctx.save();
+      ctx.globalAlpha = t > 0.7 ? (1 - t) / 0.3 : 1;
+      ctx.translate(c.x, c.y);
+      ctx.rotate(c.spin);
+      ctx.beginPath();
+      ctx.moveTo(-c.size, c.size * 0.6);
+      ctx.lineTo(0, -c.size);
+      ctx.lineTo(c.size, c.size * 0.5);
+      ctx.closePath();
+      ctx.fillStyle = c.color;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(120, 60, 20, 0.7)';
+      ctx.lineWidth = 0.8 * px;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  drawSandPuffs(ctx: Ctx, color: string): void {
+    for (const p of this.puffs) {
+      const t = p.age / p.life;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * (1 + t * 1.6), 0, Math.PI * 2);
+      ctx.fillStyle = rgba(color, 0.45 * (1 - t));
+      ctx.fill();
+    }
+  }
+
+  /** Floating "+N" coin-pop text (with an icon after it, if given) and a little sparkle burst. */
+  spawnPop(x: number, y: number, text: string, color: string, icon: IconId | null = null): void {
+    this.pops.push({ x, y, text, color, age: 0, icon });
     for (let i = 0; i < 5; i++) this.spawnSparkle(x + (Math.random() - 0.5) * 24, y - Math.random() * 14);
   }
 
-  drawPops(ctx: Ctx, px: number): void {
+  drawPops(ctx: Ctx, px: number, drawIcon?: IconDrawer): void {
     ctx.save();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -173,11 +232,14 @@ export class Particles {
       ctx.save();
       ctx.translate(p.x, y);
       ctx.scale(scale, scale);
+      const iconW = 20;
+      const offset = p.icon ? -iconW * 0.55 : 0;
       ctx.lineWidth = 4 * px;
       ctx.strokeStyle = '#ffffff';
-      ctx.strokeText(p.text, 0, 0);
+      ctx.strokeText(p.text, offset, 0);
       ctx.fillStyle = p.color;
-      ctx.fillText(p.text, 0, 0);
+      ctx.fillText(p.text, offset, 0);
+      if (p.icon && drawIcon) drawIcon(p.icon, ctx.measureText(p.text).width / 2 + offset + iconW * 0.6, 0, iconW);
       ctx.restore();
     }
     ctx.restore();

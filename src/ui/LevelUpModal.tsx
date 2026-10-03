@@ -5,6 +5,7 @@ import { levelUpReward, unlocksAtLevel, type Unlock } from '../game/levels';
 import type { DecorId, SpeciesId } from '../game/types';
 import { useGameStore } from '../store/gameStore';
 import { DecorPreview, FishPreview } from './Preview';
+import { Icon } from './Icon';
 
 const KIND_ICON: Record<Unlock['kind'], string> = {
   species: '🐟',
@@ -36,7 +37,9 @@ export function LevelUpModal() {
           🎉
         </div>
         <h2 id="levelup-title">Level {level}!</h2>
-        <p className="levelup-reward">+{levelUpReward(level)} 🐚</p>
+        <p className="levelup-reward">
+          +{levelUpReward(level)} <Icon id="shell" className="icon-inline" />
+        </p>
         {unlocks.length > 0 ? (
           <>
             <h3 className="shop-heading">New unlocks</h3>

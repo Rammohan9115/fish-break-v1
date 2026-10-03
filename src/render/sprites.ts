@@ -1,5 +1,5 @@
-// PNG sprite art from /public/assets: fish (adult + baby per species) and per-theme tank backgrounds.
-// Everything is preloaded once behind the loading screen. Any file that fails to load simply stays
+// PNG fish sprites from /public/assets/fish (adult + baby per species). Preloaded once behind the
+// loading screen by assets.ts (preloadAssets), together with the other generated art. Any file that fails to load simply stays
 // missing and the renderer falls back to the code-drawn art for it.
 import {
   SPRITE_ALPHA_TRIM,
@@ -8,7 +8,7 @@ import {
   SPRITE_LOAD_TIMEOUT_MS,
   SPRITE_MAX_PX,
 } from '../game/constants';
-import type { SpeciesId, Stage, ThemeId } from '../game/types';
+import type { SpeciesId, Stage } from '../game/types';
 
 /** A trimmed, downscaled sprite. Its art faces +x (right). */
 export interface Sprite {
@@ -37,15 +37,7 @@ const FISH_FILES: Record<SpeciesId, { adult: string; baby: string }> = {
   koi: { adult: 'koi.PNG', baby: 'koibaby.PNG' },
 };
 
-const THEMES: ThemeId[] = ['classic', 'night', 'coral', 'pond'];
-
-/** Tank backgrounds: /assets/backgrounds/background<theme>.png (or .PNG). */
-function backgroundUrls(theme: ThemeId): string[] {
-  return [`${BASE}backgrounds/background${theme}.png`, `${BASE}backgrounds/background${theme}.PNG`];
-}
-
 const fishSprites = new Map<string, Sprite>();
-const backgrounds = new Map<ThemeId, HTMLImageElement>();
 
 function fishKey(speciesId: SpeciesId, art: 'adult' | 'baby'): string {
   return `${speciesId}:${art}`;
@@ -54,11 +46,6 @@ function fishKey(speciesId: SpeciesId, art: 'adult' | 'baby'): string {
 /** The sprite for a fish at this stage, or null (draw the code art instead). */
 export function fishSprite(speciesId: SpeciesId, stage: Stage): Sprite | null {
   return fishSprites.get(fishKey(speciesId, stage === 'baby' ? 'baby' : 'adult')) ?? null;
-}
-
-/** The background picture for a tank theme, or null (bake the code-drawn water instead). */
-export function themeBackground(theme: ThemeId): HTMLImageElement | null {
-  return backgrounds.get(theme) ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -136,7 +123,7 @@ export function alphaBounds(data: Uint8ClampedArray, w: number, h: number): { x:
 // Loading
 // ---------------------------------------------------------------------------
 
-function loadImage(url: string): Promise<HTMLImageElement> {
+export function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const timer = window.setTimeout(() => reject(new Error(`timeout: ${url}`)), SPRITE_LOAD_TIMEOUT_MS);
@@ -150,17 +137,6 @@ function loadImage(url: string): Promise<HTMLImageElement> {
     };
     img.src = url;
   });
-}
-
-async function loadFirst(urls: string[]): Promise<HTMLImageElement | null> {
-  for (const url of urls) {
-    try {
-      return await loadImage(url);
-    } catch {
-      // Try the next candidate.
-    }
-  }
-  return null;
 }
 
 function makeCanvas(w: number, h: number): HTMLCanvasElement {
@@ -207,52 +183,18 @@ function prepareSprite(img: HTMLImageElement): Sprite | null {
   return { canvas: out, w: out.width, h: out.height };
 }
 
-let preload: Promise<void> | null = null;
-const progress = { done: 0, total: 0 };
-const listeners = new Set<(done: number, total: number) => void>();
-
-/**
- * Loads every sprite and background once (later calls share the same promise). Never rejects:
- * missing files are skipped. `onProgress(done, total)` fires now and as each file settles.
- */
-export function preloadArt(onProgress?: (done: number, total: number) => void): Promise<void> {
-  if (onProgress) {
-    listeners.add(onProgress);
-    onProgress(progress.done, progress.total);
-  }
-  if (preload) return preload;
+/** One loader job per fish sprite file (run by preloadAssets). A job may reject; the fish then uses its drawn art. */
+export function fishPreloadJobs(): (() => Promise<void>)[] {
   const jobs: (() => Promise<void>)[] = [];
   for (const [speciesId, files] of Object.entries(FISH_FILES) as [SpeciesId, { adult: string; baby: string }][]) {
     for (const art of ['adult', 'baby'] as const) {
       jobs.push(async () => {
-        const img = await loadFirst([`${BASE}fish/${files[art]}`]);
-        const sprite = img && prepareSprite(img);
+        const sprite = prepareSprite(await loadImage(`${BASE}fish/${files[art]}`));
         if (sprite) fishSprites.set(fishKey(speciesId, art), sprite);
       });
     }
   }
-  for (const theme of THEMES) {
-    jobs.push(async () => {
-      const img = await loadFirst(backgroundUrls(theme));
-      if (img) backgrounds.set(theme, img);
-    });
-  }
-  progress.total = jobs.length;
-  const report = () => {
-    for (const l of listeners) l(progress.done, progress.total);
-  };
-  report();
-  preload = Promise.all(
-    jobs.map((job) =>
-      job()
-        .catch(() => undefined)
-        .finally(() => {
-          progress.done++;
-          report();
-        }),
-    ),
-  ).then(() => listeners.clear());
-  return preload;
+  return jobs;
 }
 
 /** Colors (r, g, b, a) of the sprite at normalized points (u from the left, v from the top). Slow; cache the result. */

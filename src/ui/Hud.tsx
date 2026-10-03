@@ -7,6 +7,24 @@ import { xpToNext } from '../game/levels';
 import { useGameStore } from '../store/gameStore';
 import { fullscreenSupported, toggleFullscreen } from './fullscreen';
 import { SyncBadge } from './SyncIndicator';
+import { Icon } from './Icon';
+
+/** Window event fired when a collected shell/pearl lands on its counter (detail: 'shell' | 'pearl'). */
+export const HUD_BUMP_EVENT = 'fishbowl-hud-bump';
+
+/** Bumps a counter briefly whenever a collected icon arrives at it. */
+function useBump(kind: 'shell' | 'pearl'): string {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    const onBump = (e: Event) => {
+      if ((e as CustomEvent<string>).detail === kind) setN((v) => v + 1);
+    };
+    window.addEventListener(HUD_BUMP_EVENT, onBump);
+    return () => window.removeEventListener(HUD_BUMP_EVENT, onBump);
+  }, [kind]);
+  // Alternate two identical animations so every arrival restarts it.
+  return n === 0 ? '' : n % 2 ? ' hud-bump-a' : ' hud-bump-b';
+}
 
 export function Hud() {
   const level = useGameStore((s) => s.game.level);
@@ -19,6 +37,8 @@ export function Hud() {
   const tankCount = useGameStore((s) => s.game.tanks.length);
   const openPanel = useGameStore((s) => s.openPanel);
   const [isFullscreen, setIsFullscreen] = useState(() => Boolean(document.fullscreenElement));
+  const shellBump = useBump('shell');
+  const pearlBump = useBump('pearl');
 
   useEffect(() => {
     const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -32,14 +52,12 @@ export function Hud() {
   return (
     <header className="hud" aria-label="Game status">
       <div className="hud-left">
-        <div className="hud-bar hud-coins" title="Shells">
-          <span className="hud-bar-icon" aria-hidden="true">
-            🐚
-          </span>
+        <div className={`hud-bar hud-coins${shellBump}`} title="Shells">
+          <Icon id="shell" className="hud-bar-icon" />
           <strong>{shells.toLocaleString()}</strong>
         </div>
-        <div className="hud-bar hud-pearls" title="Pearls">
-          <span className="hud-pearl" aria-hidden="true" />
+        <div className={`hud-bar hud-pearls${pearlBump}`} title="Pearls">
+          <Icon id="pearl" className="hud-pearl-icon" />
           <strong>{pearls.toLocaleString()}</strong>
         </div>
         <div className="hud-icons">

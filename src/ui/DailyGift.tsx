@@ -5,6 +5,7 @@ import { GIFT_BOX_POSITION, GIFT_DAY_CHECK_MS, GIFT_REVEAL_MS, XP } from '../gam
 import { localDateKey, type DailyGiftContents } from '../game/economy';
 import { sound } from '../audio/sound';
 import { useGameStore } from '../store/gameStore';
+import { Icon } from './Icon';
 
 function GiftBoxArt({ open }: { open: boolean }) {
   return (
@@ -30,9 +31,15 @@ function Reveal({ gift }: { gift: DailyGiftContents }) {
   return (
     <div className="gift-reveal" role="status">
       <strong>🎁 Daily gift!</strong>
-      <span>+{gift.shells} 🐚 shells</span>
+      <span>
+        +{gift.shells} <Icon id="shell" className="icon-inline" /> shells
+      </span>
       <span>+{gift.premiumFood} 🌟 premium food</span>
-      {gift.pearls > 0 && <span className="gift-pearl">+{gift.pearls} ⚪ pearl!</span>}
+      {gift.pearls > 0 && (
+        <span className="gift-pearl">
+          +{gift.pearls} <Icon id="pearl" className="icon-inline" /> pearl!
+        </span>
+      )}
       <span className="gift-xp">+{XP.dailyGift} XP</span>
       <small>See you tomorrow ✨</small>
     </div>

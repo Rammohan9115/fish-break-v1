@@ -419,8 +419,142 @@ export const SPRITE_PUFF_X = 0.22;
 export const SPRITE_PUFF_Y = 0.38;
 /** Shiny sprites: golden outline glow radius in CSS pixels. */
 export const SPRITE_SHINY_GLOW_PX = 3;
-/** A theme background picture covers the water down to this far below SAND_Y (the drawn sand overlaps it). */
-export const BACKGROUND_SAND_OVERLAP = 30;
+
+// Generated sprite assets (decor, icons, eggs, theme backgrounds; render/assets.ts + render/artConfig.ts)
+/** Stray blobs smaller than this fraction of the biggest blob are cut-out leftovers from a sprite sheet and get removed. */
+export const ASSET_MIN_ISLAND = 0.15;
+/** Defringe: alpha erosion radius and how far in (px) edge pixels are pulled toward the darkest nearby outline color. */
+export const ASSET_ERODE_PX = 1;
+export const ASSET_DEFRINGE_PX = 2;
+/** Only edge pixels at least this light (max channel) are treated as halo. */
+export const ASSET_FRINGE_MIN_LIGHT = 150;
+/** Scaled sprite copies are cached at device-pixel widths rounded up to this. */
+export const ASSET_SIZE_BUCKET_PX = 4;
+/** Background parallax: the picture is drawn this much larger than "cover" and slides up to half the excess. */
+export const PARALLAX_OVERSCAN = 1.04;
+/** How quickly the parallax follows the pointer / device tilt (per second). */
+export const PARALLAX_SMOOTHING = 2.2;
+/** Device tilt (degrees) that maps to the full parallax shift. */
+export const PARALLAX_TILT_DEG = 20;
+/** Decor contact shadow: width as a fraction of the sprite width, and its opacity. */
+export const DECOR_SHADOW_W = 0.42;
+export const DECOR_SHADOW_ALPHA = 0.32;
+/** Water tint over decor sprites (theme water color, source-atop), by depth layer. */
+export const DECOR_TINT_BACK = 0.16;
+export const DECOR_TINT_FRONT = 0.03;
+/** Shared top light over every sprite: white at the top fading to a soft shade at the base. */
+export const SPRITE_TOP_LIGHT = 0.1;
+export const SPRITE_BASE_SHADE = 0.12;
+/** Edit-mode glow: outline radius (CSS px) and strength. */
+export const DECOR_GLOW_PX = 5;
+export const DECOR_GLOW_ALPHA = 1;
+/** Dragging decor lifts it this high (tank units) and this much bigger; the lift eases at this rate (per second). */
+export const DECOR_LIFT = 10;
+export const DECOR_LIFT_SCALE = 0.04;
+export const DECOR_LIFT_SMOOTHING = 14;
+/** Dropping decor: squash-bounce spring (peak squash, length, wobble rate in radians per second) and sand puff size. */
+export const DECOR_DROP_SQUASH = 0.14;
+export const DECOR_DROP_MS = 700;
+export const DECOR_DROP_FREQ = 18;
+export const DECOR_DROP_PUFFS = 9;
+
+// Living tank (render/ambient/*): everything moves gently, nothing is ever fully still, nothing is fast.
+/** Per-quality effect budgets. Reduced motion uses 'low' plus no parallax, warp or light rays. */
+export const QUALITY_PRESETS = {
+  high: { warpStrips: 48, rays: 6, causticW: 200, causticEveryFrames: 2, particles: [26, 22, 12], plantStrips: 22, silhouettes: true, sheen: true },
+  medium: { warpStrips: 24, rays: 5, causticW: 150, causticEveryFrames: 3, particles: [14, 12, 8], plantStrips: 14, silhouettes: true, sheen: true },
+  low: { warpStrips: 0, rays: 4, causticW: 112, causticEveryFrames: 4, particles: [6, 6, 4], plantStrips: 8, silhouettes: false, sheen: false },
+} as const;
+/** Quality auto-pick: measure frame times for this long after start, then pick by the median. */
+export const QUALITY_PROBE_MS = 5000;
+/** Median frame time (ms) at or under which the probe picks high / medium (else low). */
+export const QUALITY_HIGH_MS = 20;
+export const QUALITY_MEDIUM_MS = 30;
+/** After the probe: drop one level when the average of the last QUALITY_WINDOW frames exceeds this (ms) for that level. */
+export const QUALITY_DOWNGRADE_MS = { high: 24, medium: 36 } as const;
+export const QUALITY_WINDOW = 120;
+/** Frame gaps longer than this (ms) are tab switches or hitches, not rendering cost; they're ignored. */
+export const QUALITY_IGNORE_MS = 250;
+
+/** Water warp on the background: horizontal sway (CSS px) and how slowly it moves; it calms to this share below the sand line. */
+export const WARP_AMP_PX = 1.5;
+export const WARP_SPEED = 0.55;
+export const WARP_WAVELENGTH = 120;
+export const WARP_SAND_SHARE = 0.35;
+
+/** Global current: slow noise-driven drift (signed, −1..1) and gusts every few minutes that settle over ~5s. */
+export const CURRENT_NOISE_SPEED = 0.018;
+export const GUST_MIN_S = 120;
+export const GUST_MAX_S = 300;
+export const GUST_FIRST_MIN_S = 45;
+export const GUST_RISE_S = 1.2;
+export const GUST_HOLD_S = 1.8;
+export const GUST_SETTLE_S = 5;
+/** How much a gust adds on top of the drift (in drift units). */
+export const GUST_STRENGTH = 2.2;
+/** Sideways drift (tank units per second) of particles and bubbles at current 1, by depth layer far → near. */
+export const CURRENT_DRIFT = [4, 7, 11] as const;
+export const BUBBLE_CURRENT_DRIFT = 9;
+
+/** God rays: base opacity, sway (radians), and how slowly they sway, fade and breathe in width. */
+export const RAY_ALPHA = 0.16;
+export const RAY_SWAY = 0.07;
+export const RAY_SPEED = 0.06;
+/** Caustics on the sand: opacity, band height above the sand line (tank units), and animation speed. */
+export const CAUSTIC_ALPHA = 0.22;
+export const CAUSTIC_ABOVE_SAND = 70;
+export const CAUSTIC_SPEED = 0.45;
+/** Water surface: shimmer band height (tank units), highlight count, ripple ring life (s) and size. */
+export const SURFACE_BAND = 26;
+export const SURFACE_GLINTS = 14;
+export const RIPPLE_LIFE_S = 1.6;
+export const RIPPLE_RADIUS = 34;
+/** Distant schools crossing the back: how often (s), how many fish, opacity, and speed (tank units/s). */
+export const SCHOOL_MIN_S = 60;
+export const SCHOOL_MAX_S = 180;
+export const SCHOOL_FIRST_S = 25;
+export const SCHOOL_SIZE = [7, 13] as const;
+export const SCHOOL_ALPHA = 0.2;
+export const SCHOOL_SPEED = 26;
+
+/** Day cycle: how strongly the time-of-day tint applies (1 = full); the night theme picture is already dark. */
+export const DAY_TINT_STRENGTH = 1;
+
+/** Decor idle "breathing": scale ±this, at a random rate between these (radians per second). */
+export const DECOR_BREATHE = 0.01;
+export const DECOR_BREATHE_FREQ = [0.35, 0.7] as const;
+/** Contact shadows slide with the light: tank units at full sun angle. */
+export const SHADOW_SHIFT = 5;
+/** Plant sway spring: stiffness and damping (per second²/per second); lean per unit of current; push from passing fish. */
+export const PLANT_STIFFNESS = 9;
+export const PLANT_DAMPING = 3.2;
+export const PLANT_CURRENT_LEAN = 0.45;
+export const PLANT_FISH_PUSH = 0.9;
+/** Rock bubble streams and sheen: gaps between events (s). */
+export const ROCK_BUBBLE_GAP = [8, 20] as const;
+export const SHEEN_GAP = [12, 26] as const;
+export const SHEEN_MS = 1800;
+/** Castle: doorway visitor gap (s) and how long its swim lasts (ms). */
+export const DOOR_FISH_GAP = [55, 140] as const;
+export const DOOR_FISH_MS = 4200;
+/** Chest: open every this many seconds, stay open this long (ms); lid spring stiffness/damping. */
+export const CHEST_OPEN_GAP = [30, 45] as const;
+export const CHEST_OPEN_HOLD_MS = 3500;
+export const LID_STIFFNESS = 26;
+export const LID_DAMPING = 5;
+export const LID_CLOSE_STIFFNESS = 5;
+export const LID_CLOSE_DAMPING = 3.4;
+/** Shipwreck: rocking (degrees) and rate; bubble trail gap (s). */
+export const WRECK_ROCK_DEG = 1;
+export const WRECK_ROCK_SPEED = 0.45;
+export const WRECK_TRAIL_GAP = [0.45, 0.9] as const;
+/** Shell/pearl drops: landing bounce length (ms) and drop height (tank units); glint gaps (s); fly-to-HUD length (ms). */
+export const DROP_LAND_MS = 900;
+export const DROP_FALL_HEIGHT = 26;
+export const DROP_GLINT_GAP = [3, 6] as const;
+export const DROP_FLY_MS = 750;
+/** Eggs: shell chips and sparkles in the hatch burst. */
+export const EGG_BURST_CHIPS = 7;
 /** Night theme: glow radius around sprites in CSS pixels. */
 export const SPRITE_NIGHT_GLOW_PX = 8;
 /** On tall (portrait) screens, zoom in up to this multiple of "fit width" and let the player pan sideways. */
