@@ -634,6 +634,7 @@ export class Renderer {
         gaze: { x: actor.gazeX, y: actor.gazeY },
         blinking: now < actor.blinkUntil,
         sad: isSad(f),
+        gloom: actor.gloom,
         inflate: puffAmount(actor, now),
         glow: pal.glowFish ? getVariant(f.speciesId, f.variant).accent : null,
         px,

@@ -236,3 +236,35 @@ describe('fish behavior', () => {
     expect(actor.blinkUntil).toBeGreaterThan(0);
   });
 });
+
+describe('sad look', () => {
+  it('gloom eases in while a fish is sad and back out when it cheers up', () => {
+    const rng = seededRng(3);
+    const happy = makeFish({ stage: 'adult', happiness: 80, hunger: 80 });
+    const actor = createActor(happy, rng, 0);
+    expect(actor.gloom).toBe(0);
+    const sad = { ...happy, happiness: 10 };
+    let now = 0;
+    for (let i = 0; i < 30; i++) updateActor(actor, { fish: sad, now: (now += 16.7), dt: 1 / 60, rng, food: [], schoolmates: [] });
+    expect(actor.gloom).toBeGreaterThan(0);
+    expect(actor.gloom).toBeLessThan(0.6);
+    for (let i = 0; i < 600; i++) updateActor(actor, { fish: sad, now: (now += 16.7), dt: 1 / 60, rng, food: [], schoolmates: [] });
+    expect(actor.gloom).toBeGreaterThan(0.95);
+    for (let i = 0; i < 600; i++) updateActor(actor, { fish: happy, now: (now += 16.7), dt: 1 / 60, rng, food: [], schoolmates: [] });
+    expect(actor.gloom).toBeLessThan(0.05);
+  });
+
+  it('sad fish pick wander targets in the lower part of the water', () => {
+    const rng = seededRng(9);
+    const sad = makeFish({ stage: 'adult', happiness: 5, hunger: 80 });
+    const b = swimBounds(sad.speciesId);
+    const floor = b.minY + (b.maxY - b.minY) * 0.4;
+    let now = 0;
+    const actor = createActor(sad, rng, now);
+    for (let i = 0; i < 40; i++) {
+      actor.nextWanderAt = 0;
+      updateActor(actor, { fish: sad, now: (now += 16.7), dt: 1 / 60, rng, food: [], schoolmates: [] });
+      expect(actor.targetY).toBeGreaterThanOrEqual(floor);
+    }
+  });
+});

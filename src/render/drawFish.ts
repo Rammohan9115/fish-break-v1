@@ -6,6 +6,9 @@ import {
   MIN_FLIP_SCALE,
   OUTLINE_PX,
   SAD_DROOP,
+  SAD_TEAR_PERIOD_S,
+  EYE_LOOK_RANGE,
+  SAD_WAVE_DAMP,
   SPRITE_NIGHT_GLOW_PX,
   SPRITE_PUFF_X,
   SPRITE_PUFF_Y,
@@ -50,6 +53,8 @@ export interface FishDrawParams {
   gaze: { x: number; y: number };
   blinking: boolean;
   sad: boolean;
+  /** 0..1 eased sadness for sprites (heavy lid, worried brow, tear, limp body); defaults to `sad`. */
+  gloom?: number;
   /** Puffer inflation 0..1. */
   inflate: number;
   /** Night theme glow color, or null. */
@@ -1299,7 +1304,8 @@ function drawSpriteFish(ctx: Ctx, x: number, y: number, p: FishDrawParams, s: Sp
   const left = art.mouthX * scale - len;
   const dir = p.facing >= 0 ? 1 : -1;
   const bob = bodyBob(motion.gait, baby, p.time, p.phase, p.speedFrac);
-  const tilt = (p.pitch + (p.sad ? SAD_DROOP : 0) + bob.rock * p.wobbleAmp) * dir;
+  const gloom = p.gloom ?? (p.sad ? 1 : 0);
+  const tilt = (p.pitch + SAD_DROOP * gloom + bob.rock * p.wobbleAmp) * dir;
   const flipX = dir * Math.max(MIN_FLIP_SCALE, Math.abs(p.facing));
   // Squash & stretch (acceleration, gulps, click bounce) plus the puffer's inflation.
   const ss = squashStretch(p.stretch, p.eat, p.bounce);
@@ -1309,7 +1315,7 @@ function drawSpriteFish(ctx: Ctx, x: number, y: number, p: FishDrawParams, s: Sp
   // Bend at the resolution the sprite appears on screen (device pixels per tank unit). Squash/stretch is
   // left out so the cached size stays stable from frame to frame; it only rescales the final blit slightly.
   const sc = scaledSprite(s, (len * p.dpr) / p.px);
-  const ampFrac = waveAmplitude(motion, p.speedFrac, baby, p.wobbleAmp) * (1 - p.inflate);
+  const ampFrac = waveAmplitude(motion, p.speedFrac, baby, p.wobbleAmp) * (1 - p.inflate) * (1 - SAD_WAVE_DAMP * gloom);
 
   ctx.save();
   ctx.translate(x, y + bob.dy * ht * p.wobbleAmp);
@@ -1346,7 +1352,7 @@ function drawSpriteFish(ctx: Ctx, x: number, y: number, p: FishDrawParams, s: Sp
   } else {
     ctx.drawImage(s.canvas, left, -ht / 2, len, ht);
   }
-  drawSpriteEye(ctx, p, s, { left, len, ht, x, y, tilt, flipX });
+  drawSpriteEye(ctx, p, s, { left, len, ht, x, y, tilt, flipX }, gloom);
   if (p.shiny) drawSpriteGlints(ctx, left, len, ht, scale, p);
   ctx.restore();
 }
@@ -1393,6 +1399,7 @@ function drawSpriteEye(
   p: FishDrawParams,
   s: Sprite,
   f: { left: number; len: number; ht: number; x: number; y: number; tilt: number; flipX: number },
+  gloom: number,
 ): void {
   const eye = spriteEye(p.speciesId, p.stage);
   const ex = f.left + eye.x * f.len;
@@ -1422,7 +1429,9 @@ function drawSpriteEye(
   const gy = p.gaze.y - (f.y + ey);
   const cos = Math.cos(-f.tilt);
   const sin = Math.sin(-f.tilt);
-  const look = pupilOffset((gx * cos - gy * sin) * side, gx * sin + gy * cos, r * 8);
+  const raw = pupilOffset((gx * cos - gy * sin) * side, gx * sin + gy * cos, r * 8);
+  // A sad fish looks down at the sand.
+  const look = { x: raw.x * (1 - 0.6 * gloom), y: raw.y + (EYE_LOOK_RANGE - raw.y) * 0.8 * gloom };
 
   const sclera = ctx.createRadialGradient(-r * 0.25, -r * 0.3, r * 0.1, 0, 0, r);
   sclera.addColorStop(0, '#ffffff');
@@ -1451,6 +1460,7 @@ function drawSpriteEye(
   ctx.arc(px, py, ir * 0.6, 0, Math.PI * 2);
   ctx.fillStyle = PUPIL;
   ctx.fill();
+  if (gloom > 0.01) drawSadLid(ctx, r, gloom, lidColor(s, eye), p.px);
   ctx.restore();
 
   // Highlights stay put (lit from the upper left on screen) while the pupil moves.
@@ -1461,6 +1471,69 @@ function drawSpriteEye(
   ctx.beginPath();
   ctx.arc(r * 0.24 * side, r * 0.26, r * EYE_HIGHLIGHT * 0.45, 0, Math.PI * 2);
   ctx.fill();
+  if (gloom > 0.01) drawSadBrowAndTear(ctx, r, gloom, p);
+  ctx.restore();
+}
+
+/**
+ * Heavy upper lid for a sad eye (inside the eye clip): it hangs lower at the back corner than at the
+ * front, so the eye reads as droopy. Local space: +x is toward the nose.
+ */
+function drawSadLid(ctx: Ctx, r: number, gloom: number, skin: string, px: number): void {
+  const back = -r * (0.75 - 0.75 * gloom);
+  const front = -r * (0.95 - 0.5 * gloom);
+  ctx.beginPath();
+  ctx.moveTo(-r * 1.2, -r * 1.2);
+  ctx.lineTo(r * 1.2, -r * 1.2);
+  ctx.lineTo(r * 1.2, front);
+  ctx.quadraticCurveTo(0, (back + front) / 2 + r * 0.12 * gloom, -r * 1.2, back);
+  ctx.closePath();
+  ctx.fillStyle = skin;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(r * 1.2, front);
+  ctx.quadraticCurveTo(0, (back + front) / 2 + r * 0.12 * gloom, -r * 1.2, back);
+  ctx.strokeStyle = EYE_LINE;
+  ctx.globalAlpha = Math.min(1, gloom * 1.5);
+  ctx.lineWidth = Math.max(r * 0.16, px);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+/** Worried brow (raised toward the nose) and, every few seconds, a tear that wells up and rolls away. */
+function drawSadBrowAndTear(ctx: Ctx, r: number, gloom: number, p: FishDrawParams): void {
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, gloom * 1.4);
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.95, -r * 1.2);
+  ctx.quadraticCurveTo(-r * 0.1, -r * 1.35, r * 0.8, -r * 1.75);
+  ctx.strokeStyle = EYE_LINE;
+  ctx.lineWidth = Math.max(r * 0.2, p.px * 1.2);
+  ctx.lineCap = 'round';
+  ctx.stroke();
+
+  const t = ((p.time + p.phase) / SAD_TEAR_PERIOD_S) % 1;
+  if (gloom > 0.6 && t < 0.45) {
+    const u = t / 0.45;
+    const well = Math.min(1, u / 0.3);
+    const fall = Math.max(0, (u - 0.3) / 0.7);
+    const tr = r * 0.32 * well;
+    const ty = r * 0.95 + fall * r * 1.8;
+    ctx.globalAlpha = (1 - fall) * gloom;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.15, ty - tr * 1.6);
+    ctx.quadraticCurveTo(-r * 0.15 + tr * 1.1, ty - tr * 0.2, -r * 0.15, ty + tr);
+    ctx.quadraticCurveTo(-r * 0.15 - tr * 1.1, ty - tr * 0.2, -r * 0.15, ty - tr * 1.6);
+    ctx.fillStyle = '#8fd8ff';
+    ctx.fill();
+    ctx.strokeStyle = '#3a8fc8';
+    ctx.lineWidth = Math.max(r * 0.08, p.px * 0.7);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(-r * 0.22, ty - tr * 0.2, tr * 0.25, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+  }
   ctx.restore();
 }
 

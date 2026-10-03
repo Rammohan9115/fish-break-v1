@@ -328,6 +328,12 @@ export const TILT_SMOOTHING = 6;
 /** Narrowest a fish is drawn mid-turn (fraction of full width), so it never fully vanishes for a frame. */
 export const MIN_FLIP_SCALE = 0.04;
 export const SAD_DROOP = 0.18;
+/** Sad look (sprites): how fast the gloom fades in/out (per second), how much it calms the body wave,
+ * how far down the water sad fish drift (share of the swim band they avoid at the top), and the tear rhythm. */
+export const GLOOM_SMOOTHING = 0.9;
+export const SAD_WAVE_DAMP = 0.4;
+export const SAD_SINK = 0.45;
+export const SAD_TEAR_PERIOD_S = 4.5;
 /** Sad (rain cloud) / hungry (shrimp bubble) indicators. */
 export const INDICATOR_DURATION_MS = 2500;
 export const INDICATOR_GAP_MIN_MS = 6 * SECOND_MS;

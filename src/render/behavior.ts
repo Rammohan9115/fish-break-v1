@@ -27,6 +27,8 @@ import {
   MAX_PITCH,
   MIN_CRUISE_FRACTION,
   SAD_HAPPINESS,
+  SAD_SINK,
+  GLOOM_SMOOTHING,
   SAD_SPEED_MULTIPLIER,
   SAND_Y,
   SCHOOL_COHESION,
@@ -88,6 +90,8 @@ export interface FishActor {
   indicator: { kind: IndicatorKind; start: number; until: number } | null;
   nextIndicatorAt: number;
   inflateUntil: number;
+  /** 0..1, eases toward 1 while the fish is sad (drives the sad face, droop and sinking). */
+  gloom: number;
 }
 
 export interface Bounds {
@@ -145,7 +149,8 @@ export function swimBounds(speciesId: SpeciesId): Bounds {
 function pickWanderTarget(actor: FishActor, rng: Rng, now: number): void {
   const b = swimBounds(actor.speciesId);
   actor.targetX = rand(rng, b.minX, b.maxX);
-  actor.targetY = rand(rng, b.minY, b.maxY);
+  // Sad fish mope lower in the water.
+  actor.targetY = rand(rng, b.minY + (b.maxY - b.minY) * SAD_SINK * actor.gloom, b.maxY);
   actor.nextWanderAt = now + rand(rng, WANDER_MIN_MS, WANDER_MAX_MS);
 }
 
@@ -179,6 +184,7 @@ export function createActor(fish: Fish, rng: Rng, now: number, at?: { x: number;
     indicator: null,
     nextIndicatorAt: now + rand(rng, INDICATOR_GAP_MIN_MS / 2, INDICATOR_GAP_MAX_MS / 2),
     inflateUntil: 0,
+    gloom: isSad(fish) ? 1 : 0,
   };
   pickWanderTarget(actor, rng, now);
   actor.gazeX = actor.x + facing * 100;
@@ -275,6 +281,7 @@ export function updateActor(actor: FishActor, input: BehaviorInput): string | nu
   const { fish, now, dt, rng } = input;
   const species = getSpecies(fish.speciesId);
   const swim = swimBounds(fish.speciesId);
+  actor.gloom += ((isSad(fish) ? 1 : 0) - actor.gloom) * Math.min(1, dt * GLOOM_SMOOTHING);
 
   // Blink
   if (now >= actor.blinkAt) {
