@@ -1,9 +1,24 @@
 // Painterly, cel-shaded fish (Breath-of-the-Wild-inspired): naturalistic silhouettes, cool two-step
 // shadows, warm highlight bands, soft rim light, translucent rayed fins, painted scale texture.
 // Every species faces +x in its own design space; drawFish() handles position, flip, tilt and scale.
-import { FISH_ART_SCALE, MIN_FLIP_SCALE, OUTLINE_PX, SAD_DROOP, STAGE_SCALE } from '../game/constants';
+import {
+  FISH_ART_SCALE,
+  MIN_FLIP_SCALE,
+  OUTLINE_PX,
+  SAD_DROOP,
+  SPRITE_NIGHT_GLOW_PX,
+  SPRITE_PUFF_X,
+  SPRITE_PUFF_Y,
+  SPRITE_SHINY_GLOW_PX,
+  SPRITE_SQUASH,
+  SPRITE_WAVE_AMP,
+  SPRITE_WAVE_LAG,
+  SPRITE_WAVE_STRIPS,
+  STAGE_SCALE,
+} from '../game/constants';
 import { SHINY_OUTLINE, SHINY_SPARKLE } from '../game/species';
 import type { FishVariant, SpeciesId, Stage } from '../game/types';
+import { fishSprite, type Sprite } from './sprites';
 import { COOL_SHADOW, glossHighlight, GLOSS_SATURATION, hashSeq, mix, RIM_LIGHT, rgba, saturate, WARM_LIGHT } from './paint';
 
 /** Eye size multipliers (big, expressive cartoon eyes). */
@@ -40,18 +55,21 @@ export interface FishDrawParams {
   time: number;
 }
 
-/** Per-species metadata in design units (before stage scale and FISH_ART_SCALE). */
-export const FISH_ART: Record<SpeciesId, { mouthX: number; halfHeight: number }> = {
-  danio: { mouthX: 22, halfHeight: 10 },
-  guppy: { mouthX: 16, halfHeight: 13 },
-  goldfish: { mouthX: 20, halfHeight: 20 },
-  tetra: { mouthX: 18, halfHeight: 9 },
-  betta: { mouthX: 20, halfHeight: 22 },
-  angelfish: { mouthX: 18, halfHeight: 36 },
-  clownfish: { mouthX: 22, halfHeight: 13 },
-  puffer: { mouthX: 19, halfHeight: 19 },
-  axolotl: { mouthX: 31, halfHeight: 16 },
-  koi: { mouthX: 34, halfHeight: 14 },
+/**
+ * Per-species metadata in design units (before stage scale and FISH_ART_SCALE). `spriteLen` is the
+ * PNG sprite's drawn length, tail tip to nose; the sprite's nose sits at `mouthX`.
+ */
+export const FISH_ART: Record<SpeciesId, { mouthX: number; halfHeight: number; spriteLen: number }> = {
+  danio: { mouthX: 22, halfHeight: 10, spriteLen: 50 },
+  guppy: { mouthX: 16, halfHeight: 13, spriteLen: 46 },
+  goldfish: { mouthX: 20, halfHeight: 20, spriteLen: 50 },
+  tetra: { mouthX: 18, halfHeight: 9, spriteLen: 44 },
+  betta: { mouthX: 20, halfHeight: 22, spriteLen: 56 },
+  angelfish: { mouthX: 18, halfHeight: 36, spriteLen: 62 },
+  clownfish: { mouthX: 22, halfHeight: 13, spriteLen: 50 },
+  puffer: { mouthX: 19, halfHeight: 19, spriteLen: 46 },
+  axolotl: { mouthX: 31, halfHeight: 16, spriteLen: 72 },
+  koi: { mouthX: 34, halfHeight: 14, spriteLen: 74 },
 };
 
 export function fishScale(stage: Stage): number {
@@ -1127,8 +1145,13 @@ export function drawStar(ctx: Ctx, x: number, y: number, r: number, fill: string
   }
 }
 
-/** Draws a fish centered at (x, y) in tank units. */
+/** Draws a fish centered at (x, y) in tank units: the PNG sprite if loaded, else the code-drawn art. */
 export function drawFish(ctx: Ctx, x: number, y: number, p: FishDrawParams): void {
+  const sprite = fishSprite(p.speciesId, p.stage);
+  if (sprite) {
+    drawSpriteFish(ctx, x, y, p, sprite);
+    return;
+  }
   const scale = fishScale(p.stage);
   const dir = p.facing >= 0 ? 1 : -1;
   const tilt = (p.pitch + (p.sad ? SAD_DROOP : 0)) * dir;
@@ -1154,4 +1177,105 @@ export function drawFish(ctx: Ctx, x: number, y: number, p: FishDrawParams): voi
   SPECIES_DRAW[p.speciesId](paint);
   if (p.shiny) drawShinyGlints(paint);
   ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// Sprite fish
+// ---------------------------------------------------------------------------
+
+/** Reused offscreen canvas where the sprite is bent into its swimming wave (grows, never shrinks). */
+let waveCanvas: HTMLCanvasElement | null = null;
+
+function waveScratch(w: number, h: number): CanvasRenderingContext2D | null {
+  waveCanvas ??= document.createElement('canvas');
+  if (waveCanvas.width < w) waveCanvas.width = w;
+  if (waveCanvas.height < h) waveCanvas.height = h;
+  const c = waveCanvas.getContext('2d');
+  c?.clearRect(0, 0, w, h);
+  return c;
+}
+
+/**
+ * Bends the sprite into a travelling sine wave (head steady, tail swinging most) by slicing it
+ * into vertical strips, rendered at on-screen resolution. Returns the scratch size and padding.
+ */
+function bendSprite(s: Sprite, w: number, h: number, amp: number, phase: number): { pad: number } | null {
+  const pad = Math.ceil(amp) + 2;
+  const c = waveScratch(w, h + pad * 2);
+  if (!c) return null;
+  c.imageSmoothingQuality = 'high';
+  const n = SPRITE_WAVE_STRIPS;
+  for (let i = 0; i < n; i++) {
+    const sx0 = Math.floor((i * s.w) / n);
+    const sx1 = Math.min(s.w, Math.floor(((i + 1) * s.w) / n) + 1);
+    // Art faces +x, so the tail is at u = 0 and the head at u = 1.
+    const tail = 1 - (sx0 + sx1) / 2 / s.w;
+    const dy = amp * tail ** 1.5 * Math.sin(phase - tail * SPRITE_WAVE_LAG);
+    c.drawImage(s.canvas, sx0, 0, sx1 - sx0, s.h, (sx0 / s.w) * w, pad + dy, ((sx1 - sx0) / s.w) * w, h);
+  }
+  return { pad };
+}
+
+function drawSpriteFish(ctx: Ctx, x: number, y: number, p: FishDrawParams, s: Sprite): void {
+  const scale = fishScale(p.stage);
+  const art = FISH_ART[p.speciesId];
+  const len = art.spriteLen * scale;
+  const ht = (len * s.h) / s.w;
+  const left = art.mouthX * scale - len;
+  const dir = p.facing >= 0 ? 1 : -1;
+  const tilt = (p.pitch + (p.sad ? SAD_DROOP : 0)) * dir;
+  const flipX = dir * Math.max(MIN_FLIP_SCALE, Math.abs(p.facing));
+  // Squash & stretch on each swim stroke, plus the puffer's inflation.
+  const squash = Math.sin(p.phase * 2) * SPRITE_SQUASH * p.wobbleAmp;
+  const sx = (1 + squash) * (1 + SPRITE_PUFF_X * p.inflate);
+  const sy = (1 - squash) * (1 + SPRITE_PUFF_Y * p.inflate);
+
+  // Bend at the resolution the sprite will appear on screen (device pixels per tank unit).
+  const k = (p.dpr / p.px) * Math.max(sx, sy);
+  const bw = Math.max(1, Math.ceil(len * k));
+  const bh = Math.max(1, Math.ceil(ht * k));
+  const amp = SPRITE_WAVE_AMP * bh * p.wobbleAmp * (p.inflate > 0 ? 1 - p.inflate : 1);
+  const bent = bendSprite(s, bw, bh, amp, p.phase);
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(tilt);
+  ctx.scale(flipX * sx, sy);
+  if (bent && waveCanvas) {
+    const pad = bent.pad / k;
+    const blit = () => ctx.drawImage(waveCanvas!, 0, 0, bw, bh + bent.pad * 2, left, -ht / 2 - pad, len, ht + pad * 2);
+    if (p.glow) {
+      ctx.shadowColor = p.glow;
+      ctx.shadowBlur = SPRITE_NIGHT_GLOW_PX * p.dpr;
+      blit();
+    }
+    if (p.shiny) {
+      // Golden outline: a tight gold glow, stacked so it reads as a rim.
+      ctx.shadowColor = SHINY_OUTLINE;
+      ctx.shadowBlur = SPRITE_SHINY_GLOW_PX * p.dpr;
+      blit();
+      blit();
+    }
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    blit();
+  } else {
+    ctx.drawImage(s.canvas, left, -ht / 2, len, ht);
+  }
+  if (p.shiny) drawSpriteGlints(ctx, left, len, ht, scale, p);
+  ctx.restore();
+}
+
+/** Shiny sparkle overlay for sprites: three twinkling stars spread over the body. */
+function drawSpriteGlints(ctx: Ctx, left: number, len: number, ht: number, scale: number, p: FishDrawParams): void {
+  const spots: [number, number, number][] = [
+    [0.68, -0.22, 0],
+    [0.4, 0.08, 2.1],
+    [0.82, 0.18, 4.2],
+  ];
+  for (const [u, v, offset] of spots) {
+    const tw = (Math.sin(p.time * 3 + offset) + 1) / 2;
+    if (tw < 0.25) continue;
+    drawStar(ctx, left + u * len, v * ht, 3.8 * scale * tw, SHINY_SPARKLE, SHINY_OUTLINE, p.px);
+  }
 }

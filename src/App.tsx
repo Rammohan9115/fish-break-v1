@@ -9,6 +9,7 @@ import { DecorCard } from './ui/DecorCard';
 import { FishCard } from './ui/FishCard';
 import { Hud } from './ui/Hud';
 import { IosInstallHint } from './ui/IosInstallHint';
+import { LoadingScreen, useArtPreload } from './ui/LoadingScreen';
 import { LevelUpModal } from './ui/LevelUpModal';
 import { Onboarding } from './ui/Onboarding';
 import { Settings } from './ui/Settings';
@@ -68,6 +69,7 @@ export function App() {
   useSoundSync();
   useLandscapeFullscreen();
   const onBreak = useGameStore((s) => s.breakSession !== null);
+  const art = useArtPreload();
 
   // Esc ends a break, or closes cards/panels and leaves Feed/Premium/Clean mode.
   useEffect(() => {
@@ -87,6 +89,8 @@ export function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  if (!art.ready) return <LoadingScreen done={art.done} total={art.total} />;
 
   return (
     <div className={`app${onBreak ? ' app-break' : ''}`}>

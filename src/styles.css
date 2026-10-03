@@ -2238,3 +2238,61 @@ body {
     animation: none;
   }
 }
+
+/* Loading screen (sprite preload) */
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: linear-gradient(180deg, #5fd3f0 0%, #1f7fc4 70%, #155d9c 100%);
+  color: #fff;
+  font-family: 'Fredoka', 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+.loading-fish {
+  font-size: 64px;
+  animation: loading-swim 1.6s ease-in-out infinite;
+}
+
+.loading-title {
+  font-size: 22px;
+  font-weight: 700;
+  text-shadow: 0 2px 0 rgba(10, 60, 110, 0.5);
+}
+
+.loading-bar {
+  width: min(260px, 70vw);
+  height: 16px;
+  border-radius: 999px;
+  background: rgba(10, 50, 100, 0.45);
+  border: 3px solid #0f4f86;
+  overflow: hidden;
+}
+
+.loading-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffe680 0%, #f7b42c 100%);
+  transition: width 0.25s ease-out;
+}
+
+@keyframes loading-swim {
+  0%,
+  100% {
+    transform: translate(-14px, 0) rotate(-6deg);
+  }
+  50% {
+    transform: translate(14px, -6px) rotate(6deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-fish {
+    animation: none;
+  }
+}

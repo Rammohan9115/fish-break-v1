@@ -345,6 +345,34 @@ export const PUFF_DURATION_MS = 2200;
 export const PUFF_ATTACK_MS = 180;
 export const PUFF_RELEASE_MS = 500;
 export const REDUCED_WOBBLE = 0.4;
+
+// Sprite art (PNG fish in /public/assets; render/sprites.ts)
+/** Longest side of a prepared sprite, in pixels (source PNGs are downscaled to this once at load). */
+export const SPRITE_MAX_PX = 512;
+/** Pixels with alpha at or below this are trimmed away around the art. */
+export const SPRITE_ALPHA_TRIM = 8;
+/** A baked-in checkerboard pixel is at least this light (min channel) and at most this saturated (max − min). */
+export const SPRITE_BG_MIN_LIGHT = 165;
+export const SPRITE_BG_MAX_SPREAD = 28;
+/** Give up on a single image after this long (the drawn art is used instead). */
+export const SPRITE_LOAD_TIMEOUT_MS = 20_000;
+/** Vertical strips the sprite is sliced into for the swimming body wave. */
+export const SPRITE_WAVE_STRIPS = 18;
+/** Body-wave amplitude at the tail tip, as a fraction of sprite height. */
+export const SPRITE_WAVE_AMP = 0.05;
+/** Body-wave phase lag from head to tail tip (radians). */
+export const SPRITE_WAVE_LAG = 2.4;
+/** Squash & stretch amplitude (fraction of size), pulsing at twice the swim-stroke rate. */
+export const SPRITE_SQUASH = 0.035;
+/** Puffer sprite growth when fully inflated (x, y). */
+export const SPRITE_PUFF_X = 0.22;
+export const SPRITE_PUFF_Y = 0.38;
+/** Shiny sprites: golden outline glow radius in CSS pixels. */
+export const SPRITE_SHINY_GLOW_PX = 3;
+/** A theme background picture covers the water down to this far below SAND_Y (the drawn sand overlaps it). */
+export const BACKGROUND_SAND_OVERLAP = 30;
+/** Night theme: glow radius around sprites in CSS pixels. */
+export const SPRITE_NIGHT_GLOW_PX = 8;
 /** On tall (portrait) screens, zoom in up to this multiple of "fit width" and let the player pan sideways. */
 export const PORTRAIT_ZOOM = 2.1;
 /** On tall screens, the share of extra height shown above the world (more water) vs. below (more sand). */

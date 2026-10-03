@@ -1,5 +1,6 @@
 // Canvas render loop. Reads game state every frame; fish positions live only here.
 import {
+  BACKGROUND_SAND_OVERLAP,
   DECOR_BASE_OFFSET,
   EGG_EDGE_MARGIN,
   PAIR_LINGER_MS,
@@ -19,7 +20,7 @@ import {
   TANK_WIDTH,
 } from '../game/constants';
 import { getSpecies, getVariant } from '../game/species';
-import type { Fish, GameState, Tank } from '../game/types';
+import type { Fish, GameState, Tank, ThemeId } from '../game/types';
 import { createActor, isSad, pitchOf, setSwimExtent, updateActor, type FishActor, type FoodTarget } from './behavior';
 import { drawFish, fishHalfHeight, FISH_ART, fishScale, mouthOffset } from './drawFish';
 import { dropShadow } from './paint';
@@ -41,6 +42,7 @@ import {
 import { chestOpenAmount, DECOR_BOUNDS, drawDecor } from './drawDecor';
 import { drawThemeScenery } from './drawScenery';
 import { drawEgg } from './drawEgg';
+import { themeBackground } from './sprites';
 import type { SimEvent } from '../game/sim';
 import { drawDrop, drawPellet, Particles } from './particles';
 
@@ -68,6 +70,14 @@ function pelletY(p: Tank['pellets'][number], game: GameState): number {
   if (p.landedAt !== null) return p.y;
   const since = Math.max(0, Date.now() - game.lastTickAt) / SECOND_MS;
   return Math.min(SAND_Y, p.y + p.vy * since);
+}
+
+/** Draws an image scaled to cover the box (cropping the overflow), anchored to the box's bottom center. */
+function drawCover(ctx: Ctx, img: HTMLImageElement, x: number, y: number, w: number, h: number): void {
+  const k = Math.max(w / img.naturalWidth, h / img.naturalHeight);
+  const dw = img.naturalWidth * k;
+  const dh = img.naturalHeight * k;
+  ctx.drawImage(img, x + (w - dw) / 2, y + h - dh, dw, dh);
 }
 
 function puffAmount(actor: FishActor, now: number): number {
@@ -507,9 +517,10 @@ export class Renderer {
   }
 
   /** Draws a static layer from its cache, (re)baking it when theme, size or DPR changed. */
-  private drawBaked(which: 'back' | 'front', theme: string, pal: ThemePalette, px: number): void {
+  private drawBaked(which: 'back' | 'front', theme: ThemeId, pal: ThemePalette, px: number): void {
     const ext = this.extent;
-    const key = `${which}:${theme}:${ext.x0.toFixed(1)},${ext.x1.toFixed(1)},${ext.y0.toFixed(1)},${ext.y1.toFixed(1)}:${this.scale.toFixed(4)}:${this.dpr}`;
+    const picture = which === 'back' ? themeBackground(theme) : null;
+    const key = `${which}:${theme}:${picture ? 'img' : 'drawn'}:${ext.x0.toFixed(1)},${ext.x1.toFixed(1)},${ext.y0.toFixed(1)},${ext.y1.toFixed(1)}:${this.scale.toFixed(4)}:${this.dpr}`;
     let layer = which === 'back' ? this.backLayer : this.frontLayer;
     if (!layer || layer.key !== key) {
       const canvas = document.createElement('canvas');
@@ -519,7 +530,8 @@ export class Renderer {
       const bctx = canvas.getContext('2d');
       if (bctx) {
         bctx.setTransform(k, 0, 0, k, -ext.x0 * k, -ext.y0 * k);
-        if (which === 'back') bakeBackLayer(bctx, pal, ext, px);
+        if (picture) drawCover(bctx, picture, ext.x0, ext.y0, ext.x1 - ext.x0, SAND_Y + BACKGROUND_SAND_OVERLAP - ext.y0);
+        else if (which === 'back') bakeBackLayer(bctx, pal, ext, px);
         else bakeFrontLayer(bctx, pal, px, ext);
       }
       layer = { key, canvas };

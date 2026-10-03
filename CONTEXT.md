@@ -30,7 +30,12 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
     - `drawFrontPlants` draws after the fish, at the bottom corners.
   - **The aquarium as an object (CSS):** `.aquarium` > `.aquarium-frame` > `.tank`, plus `.aquarium-stand`; the reflection streak is `.tank::after`.
     The blurred room is `.app::before`. `--hud-h`/`--stand-h`/`--toolbar-h` reserve space, and Break Mode hides the furniture.
-- **The sprite folder doesn't exist:** `/public/assets/kenney-fish` was referenced but isn't in the repo (and there's no `public/` folder), so fish must stay code-drawn until it's added.
+- **PNG fish sprites (2026-10-03):** `render/sprites.ts` preloads `public/assets/fish/*.PNG` (explicit `FISH_FILES` map, case-sensitive; short names
+  angel/axo/clown; tetra baby is `tetrababy1.PNG` because `tetrababy.PNG` is a copy of the adult) behind `ui/LoadingScreen.tsx`. At load it strips
+  baked-in checkerboard backgrounds (edge flood-fill), trims and downscales to `SPRITE_MAX_PX`. `drawFish` uses the sprite when present
+  (strip-sliced sine body wave, squash & stretch, tilt, flip, puff, gold glow for shiny, night glow), else the code art. Sprites ignore color variants.
+  Sprite size per species: `FISH_ART[...].spriteLen`, nose anchored at `mouthX`. Theme backgrounds: `public/assets/backgrounds/background<theme>.png`
+  replace the baked back layer if present (drawn sand stays on top).
 
 ## Previous art direction (BotW; partly superseded: the drawFish structure and paint helpers remain)
 - **The user changed the direction to Breath-of-the-Wild-inspired painterly cel shading.** Fish, tank, decor, scenery and sprites are done. Still in the old pastel style: the UI chrome (HUD, toolbar, cards, shop), eggs, and the page background around the tank.
