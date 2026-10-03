@@ -470,9 +470,11 @@ export async function sendMagicLink(email: string): Promise<{ ok: true } | { ok:
   return error ? { ok: false, message: error.message } : { ok: true };
 }
 
-export async function signInWithGoogle(): Promise<void> {
-  if (!supabase) return;
-  await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } });
+/** Redirects the page to Google; on return, the session is picked up from the URL on load. */
+export async function signInWithGoogle(): Promise<{ ok: true } | { ok: false; message: string }> {
+  if (!supabase) return { ok: false, message: 'Cloud saves are not set up.' };
+  const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } });
+  return error ? { ok: false, message: error.message } : { ok: true };
 }
 
 export async function logOut(): Promise<void> {

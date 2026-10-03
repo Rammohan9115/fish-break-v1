@@ -401,7 +401,7 @@ export const CLOUD_SAVE_DEBOUNCE_MS = 30 * SECOND_MS;
 /** Logging out waits at most this long for the final cloud save. */
 export const CLOUD_FINAL_SAVE_TIMEOUT_MS = 5 * SECOND_MS;
 /** Feature flag: show "Continue with Google" on the login modal (needs the Google provider configured in Supabase). */
-export const AUTH_GOOGLE_ENABLED = false;
+export const AUTH_GOOGLE_ENABLED = true;
 export const ONBOARDING_KEY = 'fishbowl-onboarding';
 export const CORRUPT_SAVE_PREFIX = 'fishbowl-save-corrupt-';
 export const SAVE_INTERVAL_MS = 10 * SECOND_MS;

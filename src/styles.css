@@ -2115,6 +2115,37 @@ body {
 
 .login-google {
   width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 17px;
+  padding: 12px 18px;
+}
+
+.login-google-logo {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+
+.login-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  font-size: 13px;
+  font-weight: 700;
+  color: #6b62a8;
+}
+
+.login-or::before,
+.login-or::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  border-radius: 1px;
+  background: #d8d1fa;
 }
 
 .login-error {

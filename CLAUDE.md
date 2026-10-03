@@ -280,7 +280,7 @@ Bright, glossy, chunky cartoon, like classic Facebook-era aquarium games. This s
   `VITE_SUPABASE_ANON_KEY` (the anon key is public by design; Row Level Security protects data). Keys live in `.env.local`
   (gitignored) and in Vercel env vars. Never commit keys.
 - **Login:** a "Save progress ☁️" button in the Settings panel (HUD ⚙️) opens a cartoon login modal with an email magic link.
-  A Google button exists behind a feature flag (off). Settings shows the logged-in email and Log out. The magic-link redirect
+  A "Continue with Google" button (Supabase OAuth) sits above the email form, behind the `AUTH_GOOGLE_ENABLED` flag (on). Settings shows the logged-in email and Log out. The magic-link redirect
   is handled on load.
 - **Table `saves`:** `user_id` uuid PK → `auth.users` (on delete cascade), `data` jsonb, `version` int, `updated_at` timestamptz
   (set by the server on every write). RLS: users can only select/insert/update their own row. SQL lives in `supabase/migrations/`.

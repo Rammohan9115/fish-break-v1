@@ -97,7 +97,7 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
   - Meta in localStorage `fishbowl-cloud-meta` = {userId, lastSyncedAt}. Login: no row → upload; same user and cloud updated_at ≠ lastSyncedAt → load cloud; first login on device with local progress (`hasProgress`) → CloudConflictModal.
   - Saves: 30s debounce on store changes plus on tab hidden; `updateIf(.eq('updated_at', lastKnown))`, so an empty result means another device wrote → load theirs. Unparseable cloud data → status 'error', never overwritten.
   - Logout: final save (5s cap), signOut, clear `fishbowl-save` and meta, fresh guest game.
-- UI: ⚙️ HUD button → `Settings.tsx` (Save progress ☁️ login form, email + Log out, Reset game with confirm); `SyncIndicator.tsx` badge; Google button behind `AUTH_GOOGLE_ENABLED` (false).
+- UI: ⚙️ HUD button → `Settings.tsx` (Save progress ☁️ login form, email + Log out, Reset game with confirm); `SyncIndicator.tsx` badge; Google button behind `AUTH_GOOGLE_ENABLED` (true; needs the Google provider enabled in Supabase).
 - Magic links use the implicit flow (`detectSessionInUrl`), so a link opened in another browser still works; `#error_description` → toast.
 
 ## Departures from the spec (data model)
