@@ -11,7 +11,7 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
   empty states, a **Settings menu with Reset game (confirm) and a reduced-motion toggle** (`settings.reducedMotion`
   exists, but nothing in the UI changes it), and `scripts/balance.ts` pacing sim. Targets: Lv5 by end of day 1, Lv8 by day 3.
 - **Toolbar "My Fish 🐟"** still shows "coming soon". The spec lists it, but no phase prompt covers it.
-- **Checks:** `npm test` passes 237 tests in 9 files, and `npm run build` passes. Local Node is 20.4, so Vite is pinned to 5 and Vitest to 2.
+- **Checks:** `npm test` passes 267 tests (`cloudSave.test.ts` fails to load under Node 20 when `.env.local` has Supabase keys: no native WebSocket), and `npm run build` passes. Local Node is 20.4, so Vite is pinned to 5 and Vitest to 2.
 - **Repo:** https://github.com/Rammohan9115/fish-break-v1 (branch `main`).
 - **Live:** https://fishbowl-break.vercel.app. Deploy with `npx vercel --prod --yes`; the CLI is already logged in and linked (`.vercel/`, which is gitignored).
   GitHub auto-deploy isn't connected (`npx vercel git connect`). The `.vercel` line in `.gitignore` may still be uncommitted.
@@ -34,7 +34,17 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
   angel/axo/clown; tetra baby is `tetrababy1.PNG` because `tetrababy.PNG` is a copy of the adult) behind `ui/LoadingScreen.tsx`. At load it strips
   baked-in checkerboard backgrounds (edge flood-fill), trims and downscales to `SPRITE_MAX_PX`. `drawFish` uses the sprite when present
   (strip-sliced sine body wave, squash & stretch, tilt, flip, puff, gold glow for shiny, night glow), else the code art. Sprites ignore color variants.
-  Sprite size per species: `FISH_ART[...].spriteLen`, nose anchored at `mouthX`. Theme backgrounds: `public/assets/backgrounds/background<theme>.png`
+  Sprite size per species: `FISH_ART[...].spriteLen`, nose anchored at `mouthX`.
+- **Sprite procedural animation (2026-10-03):** math lives in `render/fishMotion.ts` (pure, tested). Per-species `motion`
+  {waveAmp, waveSpeed, gait 'swim'|'bob'|'walk'} and `eye` {adult, baby: {x, y, size}} (normalized to the *trimmed* sprite) are in `species.ts`.
+  - Body wave: 20 strips, rigid front 30%, amplitude and speed scale with `speedFrac`; babies wave faster and bob; reduced motion keeps 30% (`REDUCED_WAVE`).
+  - Strips are copied from a cached pre-scaled sprite (`scaledSprite`, widths bucketed by `SPRITE_SIZE_BUCKET_PX`). **Never key that cache on
+    squash/stretch scale:** it changes every frame, thrashes the cache and dropped 24 fish to ~27fps.
+  - Turning: `actor.turnStart/turnFrom`, eased 1→0→-1 over `TURN_MS`, speed dips mid-turn. `actor.tilt` is smoothed, ±20°.
+  - `actor.stretch` (acceleration), `eatAt` (gulp squash), `pokeAt` (click bounce, all species via `renderer.poke`).
+  - Living eyes are drawn over the sprite's own eye (`drawSpriteEye`); blink fills with skin color sampled around the eye; pupils follow
+    the nearest pellet, else the mouse (`renderer.setPointer`, from TankView), else straight ahead.
+  - Dev panel → "Sprite eye" (`ui/EyeEditor.tsx`): click the sprite to place the eye; it applies live and copies to the clipboard. Theme backgrounds: `public/assets/backgrounds/background<theme>.png`
   replace the baked back layer if present (drawn sand stays on top).
 
 ## Previous art direction (BotW; partly superseded: the drawFish structure and paint helpers remain)

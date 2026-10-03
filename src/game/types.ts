@@ -41,6 +41,26 @@ export interface FishVariant {
 
 export type SpeciesTrait = 'darts' | 'flowyTail' | 'chubby' | 'glowStripe' | 'schools' | 'bigFins' | 'tall' | 'inflates' | 'walksOnSand' | 'smiles';
 
+/** How a sprite fish moves its body (renderer only). */
+export type Gait = 'swim' | 'bob' | 'walk';
+
+/** Per-species procedural animation for the PNG sprites. Multipliers are relative to the global tuning in constants.ts. */
+export interface SpriteMotion {
+  /** Body-wave amplitude multiplier (tail sway). */
+  waveAmp: number;
+  /** Body-wave speed multiplier (strokes per second). */
+  waveSpeed: number;
+  /** 'swim' = body wave only; 'bob' = gentle whole-body bob (puffer); 'walk' = stepping bob and rock (axolotl). */
+  gait: Gait;
+}
+
+/** An eye drawn over a sprite: center as a fraction of the trimmed sprite (x from the tail, y from the top), diameter as a fraction of its height. */
+export interface SpriteEye {
+  x: number;
+  y: number;
+  size: number;
+}
+
 export interface SpeciesDef {
   id: SpeciesId;
   name: string;
@@ -59,6 +79,9 @@ export interface SpeciesDef {
   themeOnly: ThemeId | null;
   traits: SpeciesTrait[];
   variants: FishVariant[];
+  motion: SpriteMotion;
+  /** Eye placement on the adult sprite (also used for juveniles) and on the baby sprite. */
+  eye: { adult: SpriteEye; baby: SpriteEye };
 }
 
 export interface DecorDef {

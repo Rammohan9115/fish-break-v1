@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { SPECIES, SPECIES_LIST } from '../game/species';
 import type { SpeciesId, ThemeId } from '../game/types';
 import { useGameStore } from '../store/gameStore';
+import { EyeEditor } from './EyeEditor';
 
 type SpawnStage = 'baby' | 'juvenile' | 'adult';
 const STAGES: SpawnStage[] = ['baby', 'juvenile', 'adult'];
@@ -125,7 +126,9 @@ export default function DevPanel() {
           </button>
         ))}
       </div>
-      <div className="dev-label">Tip: click a Puffy to make it inflate.</div>
+      <div className="dev-label">Sprite eye ({stage === 'baby' ? 'baby' : 'adult/juvenile'}): click the eye</div>
+      <EyeEditor speciesId={speciesId} art={stage === 'baby' ? 'baby' : 'adult'} />
+      <div className="dev-label">Tip: click a fish to make it bounce (Puffy inflates).</div>
     </aside>
   );
 }

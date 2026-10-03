@@ -254,3 +254,15 @@ export function preloadArt(onProgress?: (done: number, total: number) => void): 
   ).then(() => listeners.clear());
   return preload;
 }
+
+/** Colors (r, g, b, a) of the sprite at normalized points (u from the left, v from the top). Slow; cache the result. */
+export function samplePixels(s: Sprite, points: [number, number][]): [number, number, number, number][] {
+  const ctx = s.canvas.getContext('2d');
+  if (!ctx) return [];
+  return points.map(([u, v]) => {
+    const x = Math.min(s.w - 1, Math.max(0, Math.round(u * s.w)));
+    const y = Math.min(s.h - 1, Math.max(0, Math.round(v * s.h)));
+    const d = ctx.getImageData(x, y, 1, 1).data;
+    return [d[0]!, d[1]!, d[2]!, d[3]!];
+  });
+}

@@ -163,6 +163,7 @@ export function TankView() {
     if (!renderer) return;
     const gesture = gestureRef.current;
     const point = renderer.toTank(e.clientX, e.clientY);
+    if (e.pointerType === 'mouse') renderer.setPointer(point);
 
     if (gesture?.kind === 'sponge') {
       if (useGameStore.getState().mode !== 'clean') return;
@@ -202,6 +203,7 @@ export function TankView() {
         onPointerMove={onPointerMove}
         onPointerUp={endGesture}
         onPointerCancel={endGesture}
+        onPointerLeave={() => rendererRef.current?.setPointer(null)}
       />
       <DailyGift />
     </div>

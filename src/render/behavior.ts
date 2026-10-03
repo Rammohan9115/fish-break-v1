@@ -18,7 +18,6 @@ import {
   EAT_RADIUS_PX,
   EDGE_AVOID_WEIGHT,
   EDGE_AVOID_ZONE,
-  FLIP_RATE,
   FOOD_SPEED_MULTIPLIER,
   FULL_HUNGER,
   HUNGRY_INDICATOR_HUNGER,
@@ -36,8 +35,12 @@ import {
   SCHOOL_SEPARATION_DIST,
   SWIM_SAND_CLEARANCE,
   SWIM_SIDE_MARGIN,
+  STRETCH_SMOOTHING,
   SWIM_TOP,
   TANK_WIDTH,
+  TILT_SMOOTHING,
+  TURN_MIN_VX,
+  TURN_MS,
   TURN_RATE,
   WANDER_MAX_MS,
   WANDER_MIN_MS,
@@ -45,6 +48,7 @@ import {
 import { getSpecies } from '../game/species';
 import type { Fish, Rng, SpeciesId } from '../game/types';
 import { mouthOffset } from './drawFish';
+import { speedFraction, turnFacing, turnSpeedFactor, waveFrequency } from './fishMotion';
 
 export type IndicatorKind = 'sad' | 'hungry';
 
@@ -56,12 +60,26 @@ export interface FishActor {
   /** Direction of travel, radians. */
   heading: number;
   speed: number;
-  /** Eased -1..1 for the flip animation. */
+  /** -1..1; passes through 0 (eased) while turning around. */
   facing: number;
+  /** When the current turn-around started (renderer ms), or null when not turning. */
+  turnStart: number | null;
+  /** Which way the fish faced when the turn started (±1). */
+  turnFrom: number;
+  /** Smoothed nose-up/down tilt toward the velocity (radians). */
+  tilt: number;
+  /** Smoothed acceleration stretch, 0..1. */
+  stretch: number;
+  /** Last bite and last click (renderer ms), for squash and bounce. */
+  eatAt: number;
+  pokeAt: number;
+  /** Smoothed point the eyes look at (tank units). */
+  gazeX: number;
+  gazeY: number;
   targetX: number;
   targetY: number;
   nextWanderAt: number;
-  /** Wobble phase (radians). */
+  /** Body-wave phase (radians); advances faster when swimming fast. */
   phase: number;
   blinkAt: number;
   blinkUntil: number;
@@ -142,6 +160,14 @@ export function createActor(fish: Fish, rng: Rng, now: number, at?: { x: number;
     heading: facing > 0 ? 0 : Math.PI,
     speed: 0,
     facing,
+    turnStart: null,
+    turnFrom: facing,
+    tilt: 0,
+    stretch: 0,
+    eatAt: -Infinity,
+    pokeAt: -Infinity,
+    gazeX: 0,
+    gazeY: 0,
     targetX: 0,
     targetY: 0,
     nextWanderAt: 0,
@@ -155,6 +181,8 @@ export function createActor(fish: Fish, rng: Rng, now: number, at?: { x: number;
     inflateUntil: 0,
   };
   pickWanderTarget(actor, rng, now);
+  actor.gazeX = actor.x + facing * 100;
+  actor.gazeY = actor.y;
   return actor;
 }
 
@@ -304,20 +332,41 @@ export function updateActor(actor: FishActor, input: BehaviorInput): string | nu
   const arriveFactor = food ? 1 : Math.max(MIN_CRUISE_FRACTION, Math.min(1, dist / ARRIVE_SLOWDOWN_DIST));
   const targetSpeed = maxSpeed * arriveFactor;
   const accel = maxSpeed * ACCEL_FRACTION * dt;
+  const prevSpeed = actor.speed;
   actor.speed = clamp(targetSpeed, actor.speed - accel, actor.speed + accel);
 
-  actor.x = clamp(actor.x + Math.cos(actor.heading) * actor.speed * dt, bounds.minX, bounds.maxX);
-  actor.y = clamp(actor.y + Math.sin(actor.heading) * actor.speed * dt, bounds.minY, bounds.maxY);
+  // Stretch along the swim direction while speeding up.
+  const accelFrac = dt > 0 && accel > 0 ? clamp((actor.speed - prevSpeed) / accel, 0, 1) : 0;
+  actor.stretch += (accelFrac - actor.stretch) * Math.min(1, dt * STRETCH_SMOOTHING);
 
-  // Face the direction of travel, flipping smoothly.
+  // Face the direction of travel: a quick eased turn-around (scaleX 1 → 0 → -1), slowing down through it.
   const vx = Math.cos(actor.heading) * actor.speed;
-  if (Math.abs(vx) > 1) {
-    const want = vx > 0 ? 1 : -1;
-    actor.facing = clamp(actor.facing + clamp(want - actor.facing, -FLIP_RATE * dt, FLIP_RATE * dt), -1, 1);
+  const side = actor.facing >= 0 ? 1 : -1;
+  if (actor.turnStart === null && Math.abs(vx) > TURN_MIN_VX && Math.sign(vx) !== side) {
+    actor.turnStart = now;
+    actor.turnFrom = side;
+  }
+  let moveSpeed = actor.speed;
+  if (actor.turnStart !== null) {
+    const progress = (now - actor.turnStart) / TURN_MS;
+    if (progress >= 1) {
+      actor.turnFrom = -actor.turnFrom;
+      actor.facing = actor.turnFrom;
+      actor.turnStart = null;
+    } else {
+      actor.facing = turnFacing(actor.turnFrom, progress);
+      moveSpeed *= turnSpeedFactor(progress);
+    }
   }
 
-  // Wobble faster when swimming faster.
-  actor.phase += dt * (3 + actor.speed / 12);
+  actor.x = clamp(actor.x + Math.cos(actor.heading) * moveSpeed * dt, bounds.minX, bounds.maxX);
+  actor.y = clamp(actor.y + Math.sin(actor.heading) * moveSpeed * dt, bounds.minY, bounds.maxY);
+
+  // Tilt toward the velocity, smoothed.
+  actor.tilt += (pitchOf(actor) - actor.tilt) * Math.min(1, dt * TILT_SMOOTHING);
+
+  // The body wave runs faster when swimming faster (per-species rhythm, quicker for babies).
+  actor.phase += dt * waveFrequency(species.motion, speedFraction(actor.speed, species.speed), fish.stage === 'baby');
 
   // Sad / hungry indicators
   if (actor.indicator && now >= actor.indicator.until) actor.indicator = null;
@@ -335,7 +384,10 @@ export function updateActor(actor: FishActor, input: BehaviorInput): string | nu
   if (food) {
     const mouth = mouthPoint(actor, fish);
     const reached = Math.hypot(food.x - mouth.x, food.y - mouth.y) <= EAT_RADIUS_PX || Math.hypot(food.x - actor.x, food.y - actor.y) <= EAT_RADIUS_PX;
-    if (reached) return food.id;
+    if (reached) {
+      actor.eatAt = now;
+      return food.id;
+    }
   }
   return null;
 }

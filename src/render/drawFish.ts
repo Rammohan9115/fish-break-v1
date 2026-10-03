@@ -9,16 +9,17 @@ import {
   SPRITE_NIGHT_GLOW_PX,
   SPRITE_PUFF_X,
   SPRITE_PUFF_Y,
+  EYE_HIGHLIGHT,
+  EYE_PUPIL,
   SPRITE_SHINY_GLOW_PX,
-  SPRITE_SQUASH,
-  SPRITE_WAVE_AMP,
-  SPRITE_WAVE_LAG,
+  SPRITE_SIZE_BUCKET_PX,
   SPRITE_WAVE_STRIPS,
   STAGE_SCALE,
 } from '../game/constants';
-import { SHINY_OUTLINE, SHINY_SPARKLE } from '../game/species';
-import type { FishVariant, SpeciesId, Stage } from '../game/types';
-import { fishSprite, type Sprite } from './sprites';
+import { getSpecies, SHINY_OUTLINE, SHINY_SPARKLE } from '../game/species';
+import type { FishVariant, SpeciesId, SpriteEye, Stage } from '../game/types';
+import { bodyBob, pupilOffset, squashStretch, stripOffset, waveAmplitude } from './fishMotion';
+import { fishSprite, samplePixels, type Sprite } from './sprites';
 import { COOL_SHADOW, glossHighlight, GLOSS_SATURATION, hashSeq, mix, RIM_LIGHT, rgba, saturate, WARM_LIGHT } from './paint';
 
 /** Eye size multipliers (big, expressive cartoon eyes). */
@@ -37,8 +38,16 @@ export interface FishDrawParams {
   facing: number;
   /** Nose-up/down angle in radians (positive = nose down). */
   pitch: number;
-  /** Wobble phase in radians; advances faster when swimming fast. */
+  /** Body-wave phase in radians; advances faster when swimming fast. */
   phase: number;
+  /** Speed relative to the species' cruise speed (0 idle, 1 cruising, more when darting). */
+  speedFrac: number;
+  /** Acceleration stretch 0..1, eating squash 0..1, and click bounce (signed scale offset). */
+  stretch: number;
+  eat: number;
+  bounce: number;
+  /** Point the eyes look at, in tank units. */
+  gaze: { x: number; y: number };
   blinking: boolean;
   sad: boolean;
   /** Puffer inflation 0..1. */
@@ -49,7 +58,7 @@ export interface FishDrawParams {
   px: number;
   /** Device pixels per CSS pixel (shadowBlur ignores transforms). */
   dpr: number;
-  /** 1 normally, smaller with reduced motion. */
+  /** 1 normally, smaller with reduced motion (scales the body wave, wobble and bob). */
   wobbleAmp: number;
   /** Seconds, for twinkles. */
   time: number;
@@ -1183,6 +1192,73 @@ export function drawFish(ctx: Ctx, x: number, y: number, p: FishDrawParams): voi
 // Sprite fish
 // ---------------------------------------------------------------------------
 
+export type SpriteArt = 'adult' | 'baby';
+
+/** Babies have their own sprite; juveniles reuse the adult art. */
+export function spriteArtFor(stage: Stage): SpriteArt {
+  return stage === 'baby' ? 'baby' : 'adult';
+}
+
+/** Eye placements set live from the dev panel (they win over species.ts until reload). */
+const eyeOverrides = new Map<string, SpriteEye>();
+
+export function spriteEye(speciesId: SpeciesId, stage: Stage): SpriteEye {
+  const art = spriteArtFor(stage);
+  return eyeOverrides.get(`${speciesId}:${art}`) ?? getSpecies(speciesId).eye[art];
+}
+
+export function setSpriteEye(speciesId: SpeciesId, art: SpriteArt, eye: SpriteEye): void {
+  eyeOverrides.set(`${speciesId}:${art}`, eye);
+}
+
+/** Every eye currently in use (overrides applied), as `species.ts` source lines, for the dev panel's copy button. */
+export function spriteEyeSource(): string {
+  const fmt = (e: SpriteEye) => `{ x: ${e.x}, y: ${e.y}, size: ${e.size} }`;
+  return (Object.keys(FISH_ART) as SpeciesId[])
+    .map((id) => `${id}: eye: { adult: ${fmt(spriteEye(id, 'adult'))}, baby: ${fmt(spriteEye(id, 'baby'))} },`)
+    .join('\n');
+}
+
+/** A sprite pre-scaled to an on-screen width, with its strip boundaries (whole pixels, so strips copy 1:1 without seams). */
+interface ScaledSprite {
+  canvas: HTMLCanvasElement;
+  w: number;
+  h: number;
+  /** n + 1 x boundaries for the n wave strips. */
+  edges: number[];
+}
+
+/** A few sizes per sprite (zoom and stage change rarely); oldest is dropped first. */
+const SCALED_PER_SPRITE = 6;
+const scaledCache = new WeakMap<Sprite, Map<number, ScaledSprite>>();
+
+function scaledSprite(s: Sprite, width: number): ScaledSprite | null {
+  const w = Math.max(SPRITE_SIZE_BUCKET_PX, Math.ceil(width / SPRITE_SIZE_BUCKET_PX) * SPRITE_SIZE_BUCKET_PX);
+  let sizes = scaledCache.get(s);
+  if (!sizes) {
+    sizes = new Map();
+    scaledCache.set(s, sizes);
+  }
+  const hit = sizes.get(w);
+  if (hit) return hit;
+  const h = Math.max(1, Math.round((w * s.h) / s.w));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const c = canvas.getContext('2d');
+  if (!c) return null;
+  c.imageSmoothingQuality = 'high';
+  c.drawImage(s.canvas, 0, 0, w, h);
+  const n = SPRITE_WAVE_STRIPS;
+  const entry: ScaledSprite = { canvas, w, h, edges: Array.from({ length: n + 1 }, (_, i) => Math.round((i * w) / n)) };
+  if (sizes.size >= SCALED_PER_SPRITE) {
+    const oldest = sizes.keys().next().value;
+    if (oldest !== undefined) sizes.delete(oldest);
+  }
+  sizes.set(w, entry);
+  return entry;
+}
+
 /** Reused offscreen canvas where the sprite is bent into its swimming wave (grows, never shrinks). */
 let waveCanvas: HTMLCanvasElement | null = null;
 
@@ -1196,54 +1272,62 @@ function waveScratch(w: number, h: number): CanvasRenderingContext2D | null {
 }
 
 /**
- * Bends the sprite into a travelling sine wave (head steady, tail swinging most) by slicing it
- * into vertical strips, rendered at on-screen resolution. Returns the scratch size and padding.
+ * Bends a pre-scaled sprite into a travelling sine wave (rigid head, tail swinging most) by copying
+ * its strips into the scratch canvas with vertical offsets. `amp` is in pixels. Returns the padding.
  */
-function bendSprite(s: Sprite, w: number, h: number, amp: number, phase: number): { pad: number } | null {
-  const pad = Math.ceil(amp) + 2;
-  const c = waveScratch(w, h + pad * 2);
+function bendSprite(sc: ScaledSprite, amp: number, phase: number): number | null {
+  const pad = Math.ceil(Math.abs(amp)) + 2;
+  const c = waveScratch(sc.w, sc.h + pad * 2);
   if (!c) return null;
-  c.imageSmoothingQuality = 'high';
-  const n = SPRITE_WAVE_STRIPS;
+  const n = sc.edges.length - 1;
   for (let i = 0; i < n; i++) {
-    const sx0 = Math.floor((i * s.w) / n);
-    const sx1 = Math.min(s.w, Math.floor(((i + 1) * s.w) / n) + 1);
-    // Art faces +x, so the tail is at u = 0 and the head at u = 1.
-    const tail = 1 - (sx0 + sx1) / 2 / s.w;
-    const dy = amp * tail ** 1.5 * Math.sin(phase - tail * SPRITE_WAVE_LAG);
-    c.drawImage(s.canvas, sx0, 0, sx1 - sx0, s.h, (sx0 / s.w) * w, pad + dy, ((sx1 - sx0) / s.w) * w, h);
+    const x0 = sc.edges[i]!;
+    const x1 = sc.edges[i + 1]!;
+    if (x1 <= x0) continue;
+    c.drawImage(sc.canvas, x0, 0, x1 - x0, sc.h, x0, pad + stripOffset(i, n, phase, amp), x1 - x0, sc.h);
   }
-  return { pad };
+  return pad;
 }
 
 function drawSpriteFish(ctx: Ctx, x: number, y: number, p: FishDrawParams, s: Sprite): void {
   const scale = fishScale(p.stage);
   const art = FISH_ART[p.speciesId];
+  const motion = getSpecies(p.speciesId).motion;
+  const baby = p.stage === 'baby';
   const len = art.spriteLen * scale;
   const ht = (len * s.h) / s.w;
   const left = art.mouthX * scale - len;
   const dir = p.facing >= 0 ? 1 : -1;
-  const tilt = (p.pitch + (p.sad ? SAD_DROOP : 0)) * dir;
+  const bob = bodyBob(motion.gait, baby, p.time, p.phase, p.speedFrac);
+  const tilt = (p.pitch + (p.sad ? SAD_DROOP : 0) + bob.rock * p.wobbleAmp) * dir;
   const flipX = dir * Math.max(MIN_FLIP_SCALE, Math.abs(p.facing));
-  // Squash & stretch on each swim stroke, plus the puffer's inflation.
-  const squash = Math.sin(p.phase * 2) * SPRITE_SQUASH * p.wobbleAmp;
-  const sx = (1 + squash) * (1 + SPRITE_PUFF_X * p.inflate);
-  const sy = (1 - squash) * (1 + SPRITE_PUFF_Y * p.inflate);
+  // Squash & stretch (acceleration, gulps, click bounce) plus the puffer's inflation.
+  const ss = squashStretch(p.stretch, p.eat, p.bounce);
+  const sx = ss.sx * (1 + SPRITE_PUFF_X * p.inflate);
+  const sy = ss.sy * (1 + SPRITE_PUFF_Y * p.inflate);
 
-  // Bend at the resolution the sprite will appear on screen (device pixels per tank unit).
-  const k = (p.dpr / p.px) * Math.max(sx, sy);
-  const bw = Math.max(1, Math.ceil(len * k));
-  const bh = Math.max(1, Math.ceil(ht * k));
-  const amp = SPRITE_WAVE_AMP * bh * p.wobbleAmp * (p.inflate > 0 ? 1 - p.inflate : 1);
-  const bent = bendSprite(s, bw, bh, amp, p.phase);
+  // Bend at the resolution the sprite appears on screen (device pixels per tank unit). Squash/stretch is
+  // left out so the cached size stays stable from frame to frame; it only rescales the final blit slightly.
+  const sc = scaledSprite(s, (len * p.dpr) / p.px);
+  const ampFrac = waveAmplitude(motion, p.speedFrac, baby, p.wobbleAmp) * (1 - p.inflate);
 
   ctx.save();
-  ctx.translate(x, y);
+  ctx.translate(x, y + bob.dy * ht * p.wobbleAmp);
   ctx.rotate(tilt);
   ctx.scale(flipX * sx, sy);
-  if (bent && waveCanvas) {
-    const pad = bent.pad / k;
-    const blit = () => ctx.drawImage(waveCanvas!, 0, 0, bw, bh + bent.pad * 2, left, -ht / 2 - pad, len, ht + pad * 2);
+  if (sc) {
+    let img: CanvasImageSource = sc.canvas;
+    let pad = 0;
+    const amp = ampFrac * sc.h;
+    if (amp > 0.05) {
+      const bent = bendSprite(sc, amp, p.phase);
+      if (bent !== null && waveCanvas) {
+        img = waveCanvas;
+        pad = bent;
+      }
+    }
+    const padT = (pad / sc.h) * ht;
+    const blit = () => ctx.drawImage(img, 0, 0, sc.w, sc.h + pad * 2, left, -ht / 2 - padT, len, ht + padT * 2);
     if (p.glow) {
       ctx.shadowColor = p.glow;
       ctx.shadowBlur = SPRITE_NIGHT_GLOW_PX * p.dpr;
@@ -1262,7 +1346,121 @@ function drawSpriteFish(ctx: Ctx, x: number, y: number, p: FishDrawParams, s: Sp
   } else {
     ctx.drawImage(s.canvas, left, -ht / 2, len, ht);
   }
+  drawSpriteEye(ctx, p, s, { left, len, ht, x, y, tilt, flipX });
   if (p.shiny) drawSpriteGlints(ctx, left, len, ht, scale, p);
+  ctx.restore();
+}
+
+/** Lid color for a blink: the sprite's skin just around the eye (brighter half of a ring of samples), cached. */
+const lidCache = new WeakMap<Sprite, Map<string, string>>();
+
+function lidColor(s: Sprite, eye: SpriteEye): string {
+  const key = `${eye.x},${eye.y},${eye.size}`;
+  let byEye = lidCache.get(s);
+  if (!byEye) {
+    byEye = new Map();
+    lidCache.set(s, byEye);
+  }
+  const hit = byEye.get(key);
+  if (hit) return hit;
+  const r = (eye.size / 2) * 1.35;
+  const ring: [number, number][] = [];
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    ring.push([eye.x + (Math.cos(a) * r * s.h) / s.w, eye.y + Math.sin(a) * r]);
+  }
+  const lum = (c: number[]) => c[0]! * 0.3 + c[1]! * 0.59 + c[2]! * 0.11;
+  const skin = samplePixels(s, ring)
+    .filter((c) => c[3] > 200)
+    .sort((a, b) => lum(b) - lum(a));
+  const top = skin.slice(0, Math.max(1, Math.ceil(skin.length / 2)));
+  const avg = (ch: number) => Math.round(top.reduce((sum, c) => sum + c[ch]!, 0) / top.length);
+  const color = top.length ? `rgb(${avg(0)},${avg(1)},${avg(2)})` : '#f2c48a';
+  byEye.set(key, color);
+  return color;
+}
+
+const EYE_LINE = 'rgba(34, 22, 40, 0.9)';
+const EYE_IRIS_LIGHT = '#8a5426';
+const EYE_IRIS_DARK = '#3a1d0c';
+
+/**
+ * A living cartoon eye drawn over the sprite's own: it blinks and its pupil follows `p.gaze`.
+ * Called inside the fish transform (local space, art facing +x).
+ */
+function drawSpriteEye(
+  ctx: Ctx,
+  p: FishDrawParams,
+  s: Sprite,
+  f: { left: number; len: number; ht: number; x: number; y: number; tilt: number; flipX: number },
+): void {
+  const eye = spriteEye(p.speciesId, p.stage);
+  const ex = f.left + eye.x * f.len;
+  const ey = (eye.y - 0.5) * f.ht;
+  const r = (eye.size * f.ht) / 2;
+  const side = f.flipX >= 0 ? 1 : -1;
+
+  ctx.save();
+  ctx.translate(ex, ey);
+  if (p.blinking) {
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 1.05, 0, Math.PI * 2);
+    ctx.fillStyle = lidColor(s, eye);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, -r * 0.35, r * 0.85, Math.PI * 0.2, Math.PI * 0.8);
+    ctx.strokeStyle = EYE_LINE;
+    ctx.lineWidth = Math.max(r * 0.2, p.px);
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  // Gaze: target direction in the fish's local frame (undo the tilt, then the flip).
+  const gx = p.gaze.x - (f.x + ex * f.flipX);
+  const gy = p.gaze.y - (f.y + ey);
+  const cos = Math.cos(-f.tilt);
+  const sin = Math.sin(-f.tilt);
+  const look = pupilOffset((gx * cos - gy * sin) * side, gx * sin + gy * cos, r * 8);
+
+  const sclera = ctx.createRadialGradient(-r * 0.25, -r * 0.3, r * 0.1, 0, 0, r);
+  sclera.addColorStop(0, '#ffffff');
+  sclera.addColorStop(1, '#dfe6f2');
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fillStyle = sclera;
+  ctx.fill();
+  ctx.lineWidth = Math.max(r * 0.12, p.px);
+  ctx.strokeStyle = EYE_LINE;
+  ctx.stroke();
+
+  ctx.save();
+  ctx.clip();
+  const ir = r * EYE_PUPIL;
+  const px = look.x * r;
+  const py = look.y * r;
+  const iris = ctx.createRadialGradient(px, py - ir * 0.3, ir * 0.1, px, py, ir);
+  iris.addColorStop(0, EYE_IRIS_LIGHT);
+  iris.addColorStop(1, EYE_IRIS_DARK);
+  ctx.beginPath();
+  ctx.arc(px, py, ir, 0, Math.PI * 2);
+  ctx.fillStyle = iris;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(px, py, ir * 0.6, 0, Math.PI * 2);
+  ctx.fillStyle = PUPIL;
+  ctx.fill();
+  ctx.restore();
+
+  // Highlights stay put (lit from the upper left on screen) while the pupil moves.
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(-r * 0.3 * side, -r * 0.32, r * EYE_HIGHLIGHT, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(r * 0.24 * side, r * 0.26, r * EYE_HIGHLIGHT * 0.45, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 }
 

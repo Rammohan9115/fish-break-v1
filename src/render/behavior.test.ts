@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EAT_RADIUS_PX, SAND_Y, SWIM_SIDE_MARGIN, TANK_WIDTH } from '../game/constants';
+import { EAT_RADIUS_PX, MAX_PITCH, SAND_Y, SWIM_SIDE_MARGIN, TANK_WIDTH, TURN_MS } from '../game/constants';
 import { SPECIES } from '../game/species';
 import { makeFish, seededRng } from '../game/testUtils';
 import type { Fish } from '../game/types';
@@ -55,6 +55,64 @@ describe('fish behavior', () => {
     actor.heading = Math.PI;
     run(actor, fish, 3, { food: [{ id: 'far-right', x: 900, y: 300 }] });
     expect(actor.facing).toBe(1);
+  });
+
+  it('turns around in TURN_MS, through zero width, slowing down', () => {
+    const fish = makeFish({ stage: 'adult', hunger: 50 });
+    const actor = createActor(fish, seededRng(5), 0, { x: 500, y: 300 });
+    actor.facing = 1;
+    actor.turnFrom = 1;
+    actor.heading = Math.PI;
+    actor.speed = SPECIES[fish.speciesId].speed;
+    const rng = seededRng(2);
+    const food = [{ id: 'left', x: 100, y: 300 }];
+    let now = 0;
+    let minWidth = 1;
+    let minStep = Infinity;
+    const step = () => {
+      now += DT * 1000;
+      const x0 = actor.x;
+      updateActor(actor, { fish, now, dt: DT, rng, food, schoolmates: [] });
+      minWidth = Math.min(minWidth, Math.abs(actor.facing));
+      minStep = Math.min(minStep, Math.abs(actor.x - x0));
+    };
+    step();
+    expect(actor.turnStart).not.toBeNull();
+    const fullStep = actor.speed * DT;
+    while (now < TURN_MS + 2 * DT * 1000) step();
+    expect(actor.facing).toBe(-1);
+    expect(actor.turnStart).toBeNull();
+    expect(minWidth).toBeLessThan(0.1);
+    expect(minStep).toBeLessThan(fullStep * 0.6);
+  });
+
+  it('tilts toward its velocity, smoothly and within ±20°', () => {
+    const fish = makeFish({ stage: 'adult', hunger: 50 });
+    const actor = createActor(fish, seededRng(8), 0, { x: 500, y: 150 });
+    actor.heading = 0;
+    const rng = seededRng(3);
+    const food = [{ id: 'below', x: 560, y: 520 }];
+    updateActor(actor, { fish, now: 16, dt: DT, rng, food, schoolmates: [] });
+    expect(Math.abs(actor.tilt)).toBeLessThan(0.1);
+    let maxTilt = 0;
+    for (let i = 2; i < 60; i++) {
+      updateActor(actor, { fish, now: i * 16, dt: DT, rng, food, schoolmates: [] });
+      maxTilt = Math.max(maxTilt, actor.tilt);
+      expect(Math.abs(actor.tilt)).toBeLessThanOrEqual(MAX_PITCH + 1e-9);
+    }
+    expect(maxTilt).toBeGreaterThan(0.2);
+  });
+
+  it('stretches while speeding up and records bites', () => {
+    const fish = makeFish({ stage: 'adult', hunger: 50 });
+    const actor = createActor(fish, seededRng(9), 0, { x: 300, y: 300 });
+    actor.heading = 0;
+    actor.speed = 0;
+    run(actor, fish, 0.3, { food: [{ id: 'far', x: 900, y: 300 }] });
+    expect(actor.stretch).toBeGreaterThan(0.3);
+    const eater = createActor(fish, seededRng(10), 0, { x: 300, y: 300 });
+    expect(run(eater, fish, 15, { food: [{ id: 'p1', x: 600, y: 350 }] })).toEqual(['p1']);
+    expect(eater.eatAt).toBeGreaterThan(0);
   });
 
   it('never exceeds its max speed', () => {

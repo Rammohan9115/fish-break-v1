@@ -29,6 +29,8 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     speed: 90,
     themeOnly: null,
     traits: ['darts'],
+    motion: { waveAmp: 0.65, waveSpeed: 1.6, gait: 'swim' },
+    eye: { adult: { x: 0.88, y: 0.52, size: 0.21 }, baby: { x: 0.85, y: 0.55, size: 0.24 } },
     variants: [
       v('zebra', 'Zebra', '#4fa8ff', '#d8f0ff', '#7cc4ff', '#1a3fb8', '#1d4f9e'),
       v('peach', 'Peach', '#ff9a5c', '#ffe0c4', '#ffb87a', '#d4401a', '#a8481c'),
@@ -48,6 +50,8 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     speed: 60,
     themeOnly: null,
     traits: ['flowyTail'],
+    motion: { waveAmp: 1.1, waveSpeed: 1.1, gait: 'swim' },
+    eye: { adult: { x: 0.89, y: 0.5, size: 0.13 }, baby: { x: 0.855, y: 0.575, size: 0.17 } },
     variants: [
       v('sunset', 'Sunset', '#ffb02e', '#fff0c4', '#ff5a3d', '#2a6fff', '#b0640a'),
       v('lilac', 'Lilac', '#b07aff', '#efe2ff', '#8a4dff', '#ffd42e', '#6a36b8'),
@@ -68,6 +72,8 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     speed: 40,
     themeOnly: null,
     traits: ['chubby'],
+    motion: { waveAmp: 1, waveSpeed: 0.85, gait: 'swim' },
+    eye: { adult: { x: 0.805, y: 0.47, size: 0.19 }, baby: { x: 0.79, y: 0.54, size: 0.2 } },
     variants: [
       v('classic', 'Classic', '#ff8a1a', '#ffe0a0', '#ffb84a', '#e8500a', '#b0500a'),
       v('calico', 'Calico', '#ffd9c4', '#ffffff', '#ffb89a', '#3a4ab8', '#c0704a'),
@@ -87,6 +93,8 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     speed: 65,
     themeOnly: null,
     traits: ['glowStripe', 'schools'],
+    motion: { waveAmp: 0.6, waveSpeed: 1.5, gait: 'swim' },
+    eye: { adult: { x: 0.89, y: 0.56, size: 0.18 }, baby: { x: 0.87, y: 0.6, size: 0.25 } },
     variants: [
       v('neon', 'Neon', '#3a8aff', '#e8f4ff', '#ff3a4a', '#2ef0ff', '#1d4fb0'),
       v('cardinal', 'Cardinal', '#ff3a4a', '#ffe0e4', '#ff6a7a', '#2ee0ff', '#a81e2a'),
@@ -106,6 +114,8 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     speed: 45,
     themeOnly: null,
     traits: ['bigFins'],
+    motion: { waveAmp: 1.6, waveSpeed: 0.6, gait: 'swim' },
+    eye: { adult: { x: 0.89, y: 0.54, size: 0.12 }, baby: { x: 0.86, y: 0.52, size: 0.15 } },
     variants: [
       v('royal', 'Royal', '#3a5aff', '#a8c0ff', '#2a4aff', '#8ae0ff', '#1a2aa8'),
       v('ruby', 'Ruby', '#ff2a5a', '#ffa0b8', '#e8104a', '#ffb0c8', '#a0103a'),
@@ -126,6 +136,8 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     speed: 45,
     themeOnly: null,
     traits: ['tall'],
+    motion: { waveAmp: 1.25, waveSpeed: 0.6, gait: 'swim' },
+    eye: { adult: { x: 0.87, y: 0.47, size: 0.11 }, baby: { x: 0.855, y: 0.53, size: 0.14 } },
     variants: [
       v('silver', 'Silver', '#a8c8f0', '#f4faff', '#c8dcff', '#2a3a6a', '#4a6aa0'),
       v('marble', 'Marble', '#ffe6a8', '#fffbe8', '#fff0c8', '#2a2a4a', '#b09a50'),
@@ -145,6 +157,8 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     speed: 55,
     themeOnly: 'coral',
     traits: [],
+    motion: { waveAmp: 0.9, waveSpeed: 1.2, gait: 'swim' },
+    eye: { adult: { x: 0.855, y: 0.51, size: 0.19 }, baby: { x: 0.86, y: 0.54, size: 0.21 } },
     variants: [
       v('ocellaris', 'Ocellaris', '#ff7a1a', '#ffb05a', '#ff8a2a', '#ffffff', '#a8400a'),
       v('maroon', 'Maroon', '#d8243a', '#ff6a7a', '#e8344a', '#ffe08a', '#8a1020'),
@@ -164,6 +178,8 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     speed: 35,
     themeOnly: null,
     traits: ['inflates'],
+    motion: { waveAmp: 0.12, waveSpeed: 0.8, gait: 'bob' },
+    eye: { adult: { x: 0.79, y: 0.375, size: 0.23 }, baby: { x: 0.76, y: 0.44, size: 0.27 } },
     variants: [
       v('sandy', 'Sandy', '#ffd25a', '#fffbe8', '#ffe08a', '#8a6a1a', '#b08a1a'),
       v('spotted', 'Spotted', '#8ad84a', '#f4ffe8', '#b8f07a', '#2a6a1a', '#4a8a1a'),
@@ -183,6 +199,8 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     speed: 25,
     themeOnly: null,
     traits: ['walksOnSand', 'smiles'],
+    motion: { waveAmp: 0.5, waveSpeed: 0.8, gait: 'walk' },
+    eye: { adult: { x: 0.76, y: 0.5, size: 0.21 }, baby: { x: 0.78, y: 0.5, size: 0.24 } },
     variants: [
       v('leucistic', 'Leucistic', '#ffaac4', '#ffe4ee', '#ffc4d8', '#ff2a6a', '#c0607a'),
       v('golden', 'Golden', '#ffd84a', '#fff4c4', '#ffe68a', '#ff6a3a', '#b0901a'),
@@ -203,6 +221,8 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     speed: 40,
     themeOnly: 'pond',
     traits: [],
+    motion: { waveAmp: 1.1, waveSpeed: 0.7, gait: 'swim' },
+    eye: { adult: { x: 0.84, y: 0.59, size: 0.14 }, baby: { x: 0.805, y: 0.585, size: 0.17 } },
     variants: [
       v('kohaku', 'Kohaku', '#ffffff', '#ffffff', '#f0f4ff', '#ff3a2a', '#8a8aa8'),
       v('sanke', 'Sanke', '#ffffff', '#ffffff', '#f0f4ff', '#1a1a3a', '#8a8aa8'),

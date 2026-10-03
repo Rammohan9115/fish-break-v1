@@ -315,11 +315,18 @@ export const SCHOOL_RADIUS = 180;
 export const SCHOOL_COHESION = 0.7;
 export const SCHOOL_SEPARATION_DIST = 28;
 export const SCHOOL_SEPARATION = 1.2;
-/** How fast a fish flips to face its direction (facing units per second, range -1..1). */
-export const FLIP_RATE = 6;
-export const MAX_PITCH = 0.4;
-/** Narrowest a fish gets mid-flip (fraction of full width). */
-export const MIN_FLIP_SCALE = 0.25;
+/** A turn-around animates scaleX 1 → 0 → -1 (eased) over this long. */
+export const TURN_MS = 200;
+/** Swim speed at the middle of a turn, as a fraction of normal (eases back out). */
+export const TURN_SPEED_FACTOR = 0.35;
+/** Horizontal speed (px/s) needed before a fish turns to face the other way (stops jitter when swimming vertically). */
+export const TURN_MIN_VX = 4;
+/** Max tilt toward the velocity (20°). */
+export const MAX_PITCH = (20 * Math.PI) / 180;
+/** How quickly the drawn tilt follows the velocity (per second, exponential smoothing). */
+export const TILT_SMOOTHING = 6;
+/** Narrowest a fish is drawn mid-turn (fraction of full width), so it never fully vanishes for a frame. */
+export const MIN_FLIP_SCALE = 0.04;
 export const SAD_DROOP = 0.18;
 /** Sad (rain cloud) / hungry (shrimp bubble) indicators. */
 export const INDICATOR_DURATION_MS = 2500;
@@ -357,13 +364,56 @@ export const SPRITE_BG_MAX_SPREAD = 28;
 /** Give up on a single image after this long (the drawn art is used instead). */
 export const SPRITE_LOAD_TIMEOUT_MS = 20_000;
 /** Vertical strips the sprite is sliced into for the swimming body wave. */
-export const SPRITE_WAVE_STRIPS = 18;
-/** Body-wave amplitude at the tail tip, as a fraction of sprite height. */
-export const SPRITE_WAVE_AMP = 0.05;
-/** Body-wave phase lag from head to tail tip (radians). */
-export const SPRITE_WAVE_LAG = 2.4;
-/** Squash & stretch amplitude (fraction of size), pulsing at twice the swim-stroke rate. */
-export const SPRITE_SQUASH = 0.035;
+export const SPRITE_WAVE_STRIPS = 20;
+/** Body-wave amplitude at the tail tip at full cruise speed, as a fraction of sprite height (× species waveAmp). */
+export const SPRITE_WAVE_AMP = 0.06;
+/** Phase step between neighbouring strips (radians), so the wave travels from head to tail. */
+export const SPRITE_WAVE_STRIP_PHASE = 0.5;
+/** The front of the body (nose side) that stays rigid; the wave grows from here to the tail tip. */
+export const SPRITE_WAVE_HEAD = 0.3;
+/** Wave envelope exponent: higher = the sway concentrates more toward the tail. */
+export const SPRITE_WAVE_FALLOFF = 1.4;
+/** Body-wave speed in radians per second when idle and at full cruise speed (× species waveSpeed). */
+export const WAVE_IDLE_FREQ = 3;
+export const WAVE_SWIM_FREQ = 11;
+/** Idle wave amplitude as a fraction of the full-speed amplitude. */
+export const WAVE_IDLE_AMP = 0.4;
+/** Speed (as a fraction of cruise speed) beyond which the wave stops growing (darts, food rushes). */
+export const WAVE_MAX_SPEED_FRAC = 1.6;
+/** Reduced motion keeps this much of the wave amplitude. */
+export const REDUCED_WAVE = 0.3;
+/** Babies: faster, wigglier wave and a constant gentle bob (fraction of sprite height, radians per second). */
+export const BABY_WAVE_SPEED = 1.5;
+export const BABY_WAVE_AMP = 1.35;
+export const BABY_BOB_AMP = 0.05;
+export const BABY_BOB_FREQ = 4.5;
+/** Puffer bob (fraction of sprite height, radians per second). */
+export const PUFFER_BOB_AMP = 0.06;
+export const PUFFER_BOB_FREQ = 2.4;
+/** Axolotl walk cycle: step bob height (fraction of sprite height) and rocking angle, both scaled by speed. */
+export const WALK_BOB_AMP = 0.06;
+export const WALK_ROCK = 0.06;
+/** Stretch along the swim direction at full acceleration (the other axis narrows by half as much). */
+export const ACCEL_STRETCH = 0.08;
+/** How quickly the stretch follows acceleration (per second). */
+export const STRETCH_SMOOTHING = 8;
+/** Gulp when eating: squash along the swim direction, and its length. */
+export const EAT_SQUASH = 0.12;
+export const EAT_SQUASH_MS = 260;
+/** Bounce when clicked: peak scale change, length, and wobble rate (radians per second). */
+export const POKE_BOUNCE = 0.1;
+export const POKE_BOUNCE_MS = 650;
+export const POKE_BOUNCE_FREQ = 26;
+/** Sprite eyes: pupil and highlight sizes (fraction of eye radius) and how far the pupil can travel. */
+export const EYE_PUPIL = 0.56;
+export const EYE_HIGHLIGHT = 0.26;
+export const EYE_LOOK_RANGE = 0.32;
+/** The eye looks at the cursor when it's within this distance (tank units); pellets always win. */
+export const EYE_CURSOR_RANGE = 380;
+/** How quickly the gaze follows its target (per second). */
+export const GAZE_SMOOTHING = 7;
+/** Prepared sprite copies are cached at widths rounded up to this many device pixels. */
+export const SPRITE_SIZE_BUCKET_PX = 8;
 /** Puffer sprite growth when fully inflated (x, y). */
 export const SPRITE_PUFF_X = 0.22;
 export const SPRITE_PUFF_Y = 0.38;

@@ -6,12 +6,15 @@ import {
   PAIR_LINGER_MS,
   DROP_HIT_RADIUS,
   EXTRA_HEIGHT_ABOVE,
+  EYE_CURSOR_RANGE,
+  GAZE_SMOOTHING,
   FOOD_SAND_OFFSET,
   MAX_FRAME_DT_SEC,
   PUFF_ATTACK_MS,
   PUFF_DURATION_MS,
   PUFF_RELEASE_MS,
   PORTRAIT_ZOOM,
+  REDUCED_WAVE,
   REDUCED_WOBBLE,
   SAND_Y,
   SECOND_MS,
@@ -21,8 +24,9 @@ import {
 } from '../game/constants';
 import { getSpecies, getVariant } from '../game/species';
 import type { Fish, GameState, Tank, ThemeId } from '../game/types';
-import { createActor, isSad, pitchOf, setSwimExtent, updateActor, type FishActor, type FoodTarget } from './behavior';
+import { createActor, isSad, setSwimExtent, updateActor, type FishActor, type FoodTarget } from './behavior';
 import { drawFish, fishHalfHeight, FISH_ART, fishScale, mouthOffset } from './drawFish';
+import { eatSquash, pokeBounce, speedFraction } from './fishMotion';
 import { dropShadow } from './paint';
 import {
   bakeBackLayer,
@@ -114,6 +118,8 @@ export class Renderer {
   private viewW = TANK_WIDTH;
   private panMin = 0;
   private panMax = 0;
+  /** The cursor in tank units while it's over the tank (fish eyes follow it), else null. */
+  private pointer: { x: number; y: number } | null = null;
   /** Everything that can ever be on screen at this size (baked layers cover it all, so panning never re-bakes). */
   private extent: Extent = { ...WORLD_EXTENT };
 
@@ -301,10 +307,40 @@ export class Renderer {
     return x;
   }
 
-  /** Visual-only reaction to a click (puffers inflate). */
+  /** Visual-only reaction to a click: every fish bounces, puffers also inflate. */
   poke(fishId: string): void {
     const actor = this.actors.get(fishId);
-    if (actor && getSpecies(actor.speciesId).traits.includes('inflates')) actor.inflateUntil = performance.now() + PUFF_DURATION_MS;
+    if (!actor) return;
+    const now = performance.now();
+    actor.pokeAt = now;
+    if (getSpecies(actor.speciesId).traits.includes('inflates')) actor.inflateUntil = now + PUFF_DURATION_MS;
+  }
+
+  /** Where the cursor is (tank units), or null when it leaves; fish eyes follow it. */
+  setPointer(point: { x: number; y: number } | null): void {
+    this.pointer = point;
+  }
+
+  /** Eases a fish's gaze toward the nearest pellet, else a nearby cursor, else straight ahead. */
+  private updateGaze(actor: FishActor, food: FoodTarget[], dt: number): void {
+    let tx = actor.x + (actor.facing >= 0 ? 1 : -1) * 100;
+    let ty = actor.y + Math.sin(actor.heading) * 60;
+    let best = Infinity;
+    for (const p of food) {
+      const d = Math.hypot(p.x - actor.x, p.y - actor.y);
+      if (d < best) {
+        best = d;
+        tx = p.x;
+        ty = p.y;
+      }
+    }
+    if (best === Infinity && this.pointer && Math.hypot(this.pointer.x - actor.x, this.pointer.y - actor.y) < EYE_CURSOR_RANGE) {
+      tx = this.pointer.x;
+      ty = this.pointer.y;
+    }
+    const k = Math.min(1, dt * GAZE_SMOOTHING);
+    actor.gazeX += (tx - actor.gazeX) * k;
+    actor.gazeY += (ty - actor.gazeY) * k;
   }
 
   private reducedMotion(game: GameState): boolean {
@@ -351,6 +387,7 @@ export class Renderer {
         ? fish.filter((o) => o.speciesId === f.speciesId).map((o) => this.actors.get(o.id)!)
         : [];
       const eaten = updateActor(actor, { fish: f, now, dt, rng: Math.random, food, schoolmates: mates });
+      this.updateGaze(actor, food, dt);
       if (eaten) {
         food = food.filter((p) => p.id !== eaten);
         this.deps.onEat(f.id, eaten);
@@ -438,15 +475,20 @@ export class Renderer {
         shiny: f.shiny,
         stage: f.stage,
         facing: actor.facing,
-        pitch: getSpecies(f.speciesId).traits.includes('walksOnSand') ? 0 : pitchOf(actor),
+        pitch: getSpecies(f.speciesId).traits.includes('walksOnSand') ? 0 : actor.tilt,
         phase: actor.phase,
+        speedFrac: speedFraction(actor.speed, getSpecies(f.speciesId).speed),
+        stretch: actor.stretch,
+        eat: eatSquash(now - actor.eatAt),
+        bounce: pokeBounce(now - actor.pokeAt),
+        gaze: { x: actor.gazeX, y: actor.gazeY },
         blinking: now < actor.blinkUntil,
         sad: isSad(f),
         inflate: puffAmount(actor, now),
         glow: pal.glowFish ? getVariant(f.speciesId, f.variant).accent : null,
         px,
         dpr,
-        wobbleAmp: reduced ? REDUCED_WOBBLE : 1,
+        wobbleAmp: reduced ? REDUCED_WAVE : 1,
         time: timeSec,
       });
     }
