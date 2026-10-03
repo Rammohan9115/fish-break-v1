@@ -1,9 +1,10 @@
 // Particles (bubbles, sparkles) plus small sprites: food pellets and shell/pearl drops.
-import { BUBBLER_X, BUBBLES_PER_SEC, BUBBLES_PER_SEC_REDUCED, POP_TEXT_DURATION_MS, SAND_Y, SECOND_MS } from '../game/constants';
+import { BUBBLER_X, BUBBLES_PER_SEC, BUBBLES_PER_SEC_REDUCED, POP_TEXT_DURATION_MS, SAND_Y, SECOND_MS, TANK_WIDTH } from '../game/constants';
 import { SHINY_OUTLINE, SHINY_SPARKLE } from '../game/species';
 import type { ShellDrop } from '../game/types';
 import { bubblerTop } from './drawTank';
 import { drawStar } from './drawFish';
+import { blobPath, celShade, COOL_SHADOW, hashSeq, rgba } from './paint';
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -23,6 +24,19 @@ interface Sparkle {
   life: number;
   size: number;
 }
+
+/** Drifting light motes (dust in the sun rays). */
+interface Mote {
+  x: number;
+  y: number;
+  r: number;
+  vx: number;
+  vy: number;
+  phase: number;
+}
+
+const MOTES = 36;
+const MOTES_REDUCED = 10;
 
 interface Heart {
   x: number;
@@ -49,8 +63,29 @@ export class Particles {
   private bubbleAcc = 0;
   private pops: PopText[] = [];
   private hearts: Heart[] = [];
+  private motes: Mote[] = [];
 
   update(dt: number, reducedMotion: boolean): void {
+    const moteCount = reducedMotion ? MOTES_REDUCED : MOTES;
+    while (this.motes.length < moteCount) {
+      this.motes.push({
+        x: Math.random() * TANK_WIDTH,
+        y: 20 + Math.random() * (SAND_Y - 40),
+        r: 0.6 + Math.random() * 1.4,
+        vx: (Math.random() - 0.5) * 4,
+        vy: -1 - Math.random() * 3,
+        phase: Math.random() * 6,
+      });
+    }
+    this.motes.length = moteCount;
+    for (const m of this.motes) {
+      m.x += (m.vx + Math.sin(m.phase) * 2) * dt;
+      m.y += m.vy * dt;
+      m.phase += dt * 0.7;
+      if (m.y < 10) m.y = SAND_Y - 20;
+      if (m.x < -5) m.x = TANK_WIDTH + 5;
+      if (m.x > TANK_WIDTH + 5) m.x = -5;
+    }
     const rate = reducedMotion ? BUBBLES_PER_SEC_REDUCED : BUBBLES_PER_SEC;
     this.bubbleAcc += dt * rate;
     while (this.bubbleAcc >= 1) {
@@ -69,6 +104,20 @@ export class Particles {
     this.pops = this.pops.filter((p) => p.age < POP_LIFE_SEC);
     for (const h of this.hearts) h.age += dt;
     this.hearts = this.hearts.filter((h) => h.age < HEART_LIFE_SEC);
+  }
+
+  /** Soft glowing dust motes drifting through the light. */
+  drawMotes(ctx: Ctx, color: string, timeSec: number): void {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const m of this.motes) {
+      const a = 0.25 + 0.25 * Math.sin(timeSec * 1.3 + m.phase * 3);
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2);
+      ctx.fillStyle = rgba(color, a);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   /** A floating heart (e.g. between a pair that just laid an egg). */
@@ -171,17 +220,9 @@ export class Particles {
 }
 
 export function drawPellet(ctx: Ctx, x: number, y: number, premium: boolean, px: number, timeSec: number): void {
-  ctx.beginPath();
-  ctx.arc(x, y, premium ? 4.2 : 3.4, 0, Math.PI * 2);
-  ctx.fillStyle = premium ? '#ffd257' : '#c98a5a';
-  ctx.fill();
-  ctx.strokeStyle = premium ? '#d99a1e' : '#8f5a34';
-  ctx.lineWidth = 1.5 * px;
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(x - 1.1, y - 1.1, 1, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-  ctx.fill();
+  const r = premium ? 4.2 : 3.4;
+  const shape = blobPath(x, y, r, r * 0.85, hashSeq(Math.floor(x * 7)), 6, 0.3);
+  celShade(ctx, shape, [x - r, y - r * 0.85, r * 2, r * 1.7], { base: premium ? '#ffc21a' : '#b8702e' }, 1.2 * px);
   if (premium) {
     const tw = (Math.sin(timeSec * 6 + x) + 1) / 2;
     drawStar(ctx, x + 5, y - 5, 2.5 * tw, SHINY_SPARKLE, null, 0);
@@ -192,48 +233,62 @@ export function drawPellet(ctx: Ctx, x: number, y: number, premium: boolean, px:
 export function drawDrop(ctx: Ctx, drop: ShellDrop, px: number, timeSec: number): void {
   const x = drop.x;
   const y = SAND_Y + 6;
-  const bob = Math.sin(timeSec * 2 + x) * 0.8;
+  const bob = Math.sin(timeSec * 2 + x) * 0.6;
   ctx.save();
   ctx.translate(x, y + bob);
+  // Contact shadow.
+  ctx.beginPath();
+  ctx.ellipse(1, 5, 9, 2, 0, 0, Math.PI * 2);
+  ctx.fillStyle = rgba(COOL_SHADOW, 0.25);
+  ctx.fill();
   if (drop.pearl) {
-    const g = ctx.createRadialGradient(-2, -2, 1, 0, 0, 7);
+    const g = ctx.createRadialGradient(-2, -2.5, 0.5, 0, 0, 7);
     g.addColorStop(0, '#ffffff');
-    g.addColorStop(0.6, '#f3ecff');
-    g.addColorStop(1, '#cdbfe8');
+    g.addColorStop(0.45, '#f1ecf4');
+    g.addColorStop(0.85, '#cfc4dc');
+    g.addColorStop(1, '#a89bbd');
     ctx.beginPath();
-    ctx.arc(0, 0, 6.5, 0, Math.PI * 2);
+    ctx.arc(0, 0, 6.2, 0, Math.PI * 2);
     ctx.fillStyle = g;
     ctx.fill();
-    ctx.strokeStyle = '#a796cc';
-    ctx.lineWidth = 1.5 * px;
+    // Iridescent sheen.
+    ctx.beginPath();
+    ctx.ellipse(1.5, 2, 3.5, 1.6, -0.4, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(190, 230, 235, 0.35)';
+    ctx.fill();
+    ctx.strokeStyle = rgba('#7d7090', 0.55);
+    ctx.lineWidth = 1.1 * px;
+    ctx.beginPath();
+    ctx.arc(0, 0, 6.2, 0, Math.PI * 2);
     ctx.stroke();
     const tw = (Math.sin(timeSec * 4 + x) + 1) / 2;
     drawStar(ctx, 5, -6, 3 * tw, '#ffffff', null, 0);
   } else {
-    // scallop shell: fan with ribs
+    // Cockle shell: ribbed fan with a hinge, cel-shaded.
+    const shell = new Path2D();
+    shell.moveTo(0, 5);
+    shell.lineTo(-8.5, -1.5);
+    shell.bezierCurveTo(-8, -9, 8, -9, 8.5, -1.5);
+    shell.closePath();
+    celShade(ctx, shell, [-8.5, -8, 17, 13], { base: '#ffb3a0', outline: '#c0503c' }, 1.2 * px);
+    ctx.save();
+    ctx.clip(shell);
+    ctx.strokeStyle = rgba('#9a7258', 0.45);
+    ctx.lineWidth = 0.9 * px;
     ctx.beginPath();
-    ctx.moveTo(0, 5);
-    ctx.lineTo(-9, -2);
-    ctx.quadraticCurveTo(0, -12, 9, -2);
-    ctx.closePath();
-    ctx.fillStyle = '#ffc9b8';
-    ctx.fill();
-    ctx.strokeStyle = '#d98f7a';
-    ctx.lineWidth = 1.6 * px;
-    ctx.lineJoin = 'round';
-    ctx.stroke();
-    ctx.lineWidth = 1 * px;
-    for (const dx of [-5, -2, 2, 5]) {
-      ctx.beginPath();
-      ctx.moveTo(0, 4);
-      ctx.lineTo(dx * 1.3, -5);
-      ctx.stroke();
+    for (const dx of [-6.5, -4, -1.5, 1, 3.5, 6]) {
+      ctx.moveTo(0, 4.5);
+      ctx.lineTo(dx * 1.3, -8);
     }
-    ctx.beginPath();
-    ctx.ellipse(0, 5, 3, 1.6, 0, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffb3a0';
-    ctx.fill();
     ctx.stroke();
+    ctx.fillStyle = rgba('#e7a08a', 0.25);
+    ctx.beginPath();
+    ctx.ellipse(0, 1, 4, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    const hinge = new Path2D();
+    hinge.ellipse(0, 5, 3, 1.5, 0, 0, Math.PI * 2);
+    celShade(ctx, hinge, [-3, 3.5, 6, 3], { base: '#ff9a84' }, 0.8 * px);
   }
   ctx.restore();
 }

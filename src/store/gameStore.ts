@@ -52,7 +52,7 @@ export interface Toast {
 export type ToolMode = 'look' | 'feed' | 'premium' | 'clean';
 
 /** Overlay panel currently open. */
-export type Panel = 'shop' | 'tanks' | 'break' | null;
+export type Panel = 'shop' | 'tanks' | 'break' | 'settings' | null;
 
 /** An active Break Mode session (UI-only; not saved). */
 export interface BreakSession {

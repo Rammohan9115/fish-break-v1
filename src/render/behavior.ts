@@ -108,12 +108,20 @@ function wrapAngle(a: number): number {
   return r;
 }
 
+/** Horizontal/top swim limits. The renderer widens these to whatever part of the tank is visible. */
+let swimExtent = { minX: SWIM_SIDE_MARGIN, maxX: TANK_WIDTH - SWIM_SIDE_MARGIN, minY: SWIM_TOP };
+
+/** Lets fish use the visible area (e.g. scenery extended on wide or tall screens). Pass tank-space edges. */
+export function setSwimExtent(x0: number, x1: number, y0: number): void {
+  swimExtent = { minX: x0 + SWIM_SIDE_MARGIN, maxX: x1 - SWIM_SIDE_MARGIN, minY: Math.min(SWIM_TOP, y0 + SWIM_TOP) };
+}
+
 export function swimBounds(speciesId: SpeciesId): Bounds {
-  const base = { minX: SWIM_SIDE_MARGIN, maxX: TANK_WIDTH - SWIM_SIDE_MARGIN };
+  const base = { minX: swimExtent.minX, maxX: swimExtent.maxX };
   if (getSpecies(speciesId).traits.includes('walksOnSand')) {
     return { ...base, minY: SAND_Y - AXOLOTL_SAND_CLEARANCE - AXOLOTL_BAND, maxY: SAND_Y - AXOLOTL_SAND_CLEARANCE };
   }
-  return { ...base, minY: SWIM_TOP, maxY: SAND_Y - SWIM_SAND_CLEARANCE };
+  return { ...base, minY: swimExtent.minY, maxY: SAND_Y - SWIM_SAND_CLEARANCE };
 }
 
 function pickWanderTarget(actor: FishActor, rng: Rng, now: number): void {

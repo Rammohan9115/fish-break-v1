@@ -1,7 +1,7 @@
 // Hosts the tank canvas and the renderer. React never draws fish; it only mounts the canvas
 // and routes input: collect a drop > sponge (Clean) / drop food (Feed/Premium) > fish > decor (drag to move).
 import { useEffect, useRef } from 'react';
-import { DRAG_THRESHOLD_PX, SAND_Y, TANK_HEIGHT, TANK_WIDTH, XP } from '../game/constants';
+import { DRAG_THRESHOLD_PX, PAN_TIP_KEY, SAND_Y, XP } from '../game/constants';
 import { algaeTouchedBySponge } from '../game/sim';
 import { sound } from '../audio/sound';
 import { Renderer } from '../render/renderer';
@@ -14,6 +14,7 @@ type Point = { x: number; y: number };
 type Gesture =
   | { kind: 'sponge'; last: Point }
   | { kind: 'decor'; id: string; grabOffset: number; startClientX: number; dragging: boolean }
+  | { kind: 'pan'; lastClientX: number }
   | null;
 
 /** Wipes every algae spot the sponge touched between two tank-space points. */
@@ -30,8 +31,8 @@ function sponge(renderer: Renderer, from: Point, to: Point): void {
 }
 
 function handleTankPress(renderer: Renderer, clientX: number, clientY: number): Gesture {
+  // Any point on the canvas is in view (the view may extend beyond the 1000×625 world on wide/tall screens).
   const { x, y } = renderer.toTank(clientX, clientY);
-  if (x < 0 || x > TANK_WIDTH || y < 0 || y > TANK_HEIGHT) return null;
   const store = useGameStore.getState();
 
   // During a break the tank is just for looking (fish still react to a poke).
@@ -71,6 +72,8 @@ function handleTankPress(renderer: Renderer, clientX: number, clientY: number): 
       store.addToast('That was your last premium food 🌟');
       store.setMode('feed');
     }
+    // On tall screens a drag after the tap pans the view.
+    if (renderer.canPan) return { kind: 'pan', lastClientX: clientX };
     return null;
   }
 
@@ -91,7 +94,8 @@ function handleTankPress(renderer: Renderer, clientX: number, clientY: number): 
 
   store.selectFish(null);
   store.selectDecor(null);
-  return null;
+  // Empty water: on tall screens, dragging pans the view.
+  return renderer.canPan ? { kind: 'pan', lastClientX: clientX } : null;
 }
 
 export function TankView() {
@@ -113,6 +117,8 @@ export function TankView() {
       getSelectedDecorId: () => useGameStore.getState().selectedDecorId,
     });
     rendererRef.current = renderer;
+    // Dev-only handle for debugging/tests (stripped from production builds).
+    if (import.meta.env.DEV) (window as unknown as { __renderer?: Renderer }).__renderer = renderer;
     const observer = new ResizeObserver(([entry]) => {
       if (entry) renderer.resize(entry.contentRect.width, entry.contentRect.height);
     });
@@ -120,6 +126,17 @@ export function TankView() {
     const rect = container.getBoundingClientRect();
     renderer.resize(rect.width, rect.height);
     renderer.start();
+    // Tall screens show part of the tank: tell the player once that they can drag to look around.
+    if (renderer.canPan) {
+      try {
+        if (!localStorage.getItem(PAN_TIP_KEY)) {
+          localStorage.setItem(PAN_TIP_KEY, '1');
+          window.setTimeout(() => useGameStore.getState().addToast('👆 Drag the water to look around the tank'), 1200);
+        }
+      } catch {
+        // Storage unavailable: skip the tip.
+      }
+    }
     const unsubscribe = subscribeSimEvents((events) => {
       renderer.handleEvents(events);
       if (events.some((e) => e.type === 'hatched' || e.type === 'eggLaid')) sound.play('bubble');
@@ -151,6 +168,11 @@ export function TankView() {
       if (useGameStore.getState().mode !== 'clean') return;
       sponge(renderer, gesture.last, point);
       gesture.last = point;
+      return;
+    }
+    if (gesture?.kind === 'pan') {
+      renderer.panBy(e.clientX - gesture.lastClientX);
+      gesture.lastClientX = e.clientX;
       return;
     }
     if (gesture?.kind === 'decor') {

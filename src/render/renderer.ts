@@ -4,11 +4,13 @@ import {
   EGG_EDGE_MARGIN,
   PAIR_LINGER_MS,
   DROP_HIT_RADIUS,
+  EXTRA_HEIGHT_ABOVE,
   FOOD_SAND_OFFSET,
   MAX_FRAME_DT_SEC,
   PUFF_ATTACK_MS,
   PUFF_DURATION_MS,
   PUFF_RELEASE_MS,
+  PORTRAIT_ZOOM,
   REDUCED_WOBBLE,
   SAND_Y,
   SECOND_MS,
@@ -17,10 +19,25 @@ import {
   TANK_WIDTH,
 } from '../game/constants';
 import { getSpecies, getVariant } from '../game/species';
-import type { Fish, GameState, Rng, Tank } from '../game/types';
-import { createActor, isSad, pitchOf, updateActor, type FishActor, type FoodTarget } from './behavior';
-import { drawFish, fishHalfHeight, FISH_ART, fishScale } from './drawFish';
-import { drawAlgae, drawBubbler, drawGlass, drawLightRays, drawSand, drawWater, makePebbles, THEME_PALETTES, type Pebble } from './drawTank';
+import type { Fish, GameState, Tank } from '../game/types';
+import { createActor, isSad, pitchOf, setSwimExtent, updateActor, type FishActor, type FoodTarget } from './behavior';
+import { drawFish, fishHalfHeight, FISH_ART, fishScale, mouthOffset } from './drawFish';
+import { dropShadow } from './paint';
+import {
+  bakeBackLayer,
+  bakeFrontLayer,
+  drawAlgae,
+  drawBubbler,
+  drawCaustics,
+  drawFrontPlants,
+  drawGlass,
+  drawLightRays,
+  drawSurface,
+  THEME_PALETTES,
+  type Extent,
+  type ThemePalette,
+  WORLD_EXTENT,
+} from './drawTank';
 import { chestOpenAmount, DECOR_BOUNDS, drawDecor } from './drawDecor';
 import { drawThemeScenery } from './drawScenery';
 import { drawEgg } from './drawEgg';
@@ -40,15 +57,10 @@ export interface RendererDeps {
 
 const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
-function seeded(seed: number): Rng {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+/** An offscreen canvas holding a static layer rendered at the current scale and DPR. */
+interface BakedLayer {
+  key: string;
+  canvas: HTMLCanvasElement;
 }
 
 /** Where a pellet is right now, extrapolated between 1s sim ticks. */
@@ -71,7 +83,9 @@ export class Renderer {
   private readonly ctx: Ctx;
   private readonly actors = new Map<string, FishActor>();
   private readonly particles = new Particles();
-  private readonly pebbles: Pebble[] = makePebbles(seeded(7));
+  /** Static background (water, distant ridges) and foreground (sand, stones), re-baked on theme/size change. */
+  private backLayer: BakedLayer | null = null;
+  private frontLayer: BakedLayer | null = null;
   private readonly sparkleAcc = new Map<string, number>();
   /** Chests currently open (so each opening puffs bubbles once). */
   private readonly openChests = new Set<string>();
@@ -84,8 +98,14 @@ export class Renderer {
   private last = 0;
   private dpr = 1;
   private scale = 1;
-  private offsetX = 0;
-  private offsetY = 0;
+  /** Camera: tank-space x of the view's left edge, and y of its top edge. */
+  private camX = 0;
+  private camY = 0;
+  private viewW = TANK_WIDTH;
+  private panMin = 0;
+  private panMax = 0;
+  /** Everything that can ever be on screen at this size (baked layers cover it all, so panning never re-bakes). */
+  private extent: Extent = { ...WORLD_EXTENT };
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -97,14 +117,54 @@ export class Renderer {
     this.motionQuery = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
   }
 
-  /** Call when the container's CSS size changes. Handles devicePixelRatio. */
+  /**
+   * Call when the container's CSS size changes. The view always fills the canvas (no letterbox):
+   * wide screens fit the world's height and extend scenery sideways; tall screens zoom in (pan
+   * sideways) and extend the water upward. Handles devicePixelRatio.
+   */
   resize(cssWidth: number, cssHeight: number): void {
     this.dpr = window.devicePixelRatio || 1;
     this.canvas.width = Math.max(1, Math.round(cssWidth * this.dpr));
     this.canvas.height = Math.max(1, Math.round(cssHeight * this.dpr));
-    this.scale = Math.min(cssWidth / TANK_WIDTH, cssHeight / TANK_HEIGHT);
-    this.offsetX = (cssWidth - TANK_WIDTH * this.scale) / 2;
-    this.offsetY = (cssHeight - TANK_HEIGHT * this.scale) / 2;
+    const fitH = cssHeight / TANK_HEIGHT;
+    const fitW = cssWidth / TANK_WIDTH;
+    const wide = cssWidth / cssHeight >= TANK_WIDTH / TANK_HEIGHT;
+    this.scale = wide ? fitH : Math.min(fitH, fitW * PORTRAIT_ZOOM);
+    const vw = cssWidth / this.scale;
+    const vh = cssHeight / this.scale;
+    this.viewW = vw;
+    this.camY = -(vh - TANK_HEIGHT) * EXTRA_HEIGHT_ABOVE;
+    if (vw >= TANK_WIDTH) {
+      this.panMin = this.panMax = (TANK_WIDTH - vw) / 2;
+    } else {
+      this.panMin = 0;
+      this.panMax = TANK_WIDTH - vw;
+    }
+    // Start centered (re-centers on rotation/resize).
+    this.camX = vw < TANK_WIDTH ? (TANK_WIDTH - vw) / 2 : this.panMin;
+    this.extent = {
+      x0: Math.min(0, this.panMin),
+      x1: Math.max(TANK_WIDTH, this.panMax + vw),
+      y0: this.camY,
+      y1: this.camY + vh,
+    };
+    setSwimExtent(this.extent.x0, this.extent.x1, this.extent.y0);
+  }
+
+  /** True when the view is narrower than the tank (portrait), so dragging pans. */
+  get canPan(): boolean {
+    return this.panMax > this.panMin;
+  }
+
+  /** Pans the camera by a CSS-pixel drag delta. */
+  panBy(dxCss: number): void {
+    if (!this.canPan) return;
+    this.camX = Math.min(this.panMax, Math.max(this.panMin, this.camX - dxCss / this.scale));
+  }
+
+  /** The tank-space rectangle currently on screen. */
+  private get view(): Extent {
+    return { x0: this.camX, x1: this.camX + this.viewW, y0: this.extent.y0, y1: this.extent.y1 };
   }
 
   start(): void {
@@ -122,8 +182,8 @@ export class Renderer {
   toTank(clientX: number, clientY: number): { x: number; y: number } {
     const rect = this.canvas.getBoundingClientRect();
     return {
-      x: (clientX - rect.left - this.offsetX) / this.scale,
-      y: (clientY - rect.top - this.offsetY) / this.scale,
+      x: (clientX - rect.left) / this.scale + this.camX,
+      y: (clientY - rect.top) / this.scale + this.camY,
     };
   }
 
@@ -318,15 +378,19 @@ export class Renderer {
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    ctx.setTransform(dpr * this.scale, 0, 0, dpr * this.scale, dpr * this.offsetX, dpr * this.offsetY);
+    ctx.setTransform(dpr * this.scale, 0, 0, dpr * this.scale, -this.camX * this.scale * dpr, -this.camY * this.scale * dpr);
+    const view = this.view;
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, 0, TANK_WIDTH, TANK_HEIGHT);
+    ctx.rect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0);
     ctx.clip();
 
-    drawWater(ctx, pal);
-    if (!reduced) drawLightRays(ctx, pal, timeSec);
-    drawSand(ctx, pal, this.pebbles, px);
+    const sceneTime = reduced ? 0 : timeSec;
+    this.drawBaked('back', tank.theme, pal, px);
+    if (!reduced) drawLightRays(ctx, pal, timeSec, view);
+    this.drawBaked('front', tank.theme, pal, px);
+    drawCaustics(ctx, pal, sceneTime, px, view);
+    drawSurface(ctx, pal, sceneTime, px, view);
     drawBubbler(ctx, px);
     drawThemeScenery(ctx, tank.theme, timeSec, px, reduced);
     const selectedDecor = this.deps.getSelectedDecorId();
@@ -342,6 +406,16 @@ export class Renderer {
     for (const p of tank.pellets) drawPellet(ctx, p.x, Math.min(pelletY(p, game), SAND_Y - 1), p.premium, px, timeSec);
     this.particles.drawBubbles(ctx, px);
 
+    // Soft shadows on the sand under each fish: darker and tighter the closer the fish swims to the floor.
+    for (const f of game.fish) {
+      if (f.tankId !== tank.id) continue;
+      const actor = this.actors.get(f.id);
+      if (!actor) continue;
+      const height = Math.max(0, SAND_Y - actor.y);
+      const closeness = 1 - Math.min(1, height / 420);
+      const size = mouthOffset(f.speciesId, f.stage) * (1.1 + (1 - closeness) * 0.6);
+      dropShadow(ctx, actor.x, SAND_Y + 8, size, size * 0.22, 0.12 + 0.28 * closeness);
+    }
     const selectedId = this.deps.getSelectedFishId();
     for (const f of game.fish) {
       if (f.tankId !== tank.id) continue;
@@ -370,11 +444,22 @@ export class Renderer {
       const actor = this.actors.get(f.id);
       if (actor?.indicator && f.tankId === tank.id) this.drawIndicator(actor, f, now, px);
     }
+    drawFrontPlants(ctx, pal, sceneTime, px, view);
+    // Scene-wide ambient light (e.g. moonlit blue at night) so decor and fish share the theme's lighting.
+    if (pal.ambient) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.globalAlpha = pal.ambient.alpha;
+      ctx.fillStyle = pal.ambient.color;
+      ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0);
+      ctx.restore();
+    }
+    this.particles.drawMotes(ctx, pal.mote, timeSec);
     this.particles.drawHearts(ctx, px);
     this.particles.drawSparkles(ctx, px);
     this.particles.drawPops(ctx, px);
     drawAlgae(ctx, pal, tank.algaeSpots);
-    drawGlass(ctx);
+    drawGlass(ctx, view);
     ctx.restore();
   }
 
@@ -419,6 +504,29 @@ export class Renderer {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
     ctx.stroke();
     ctx.restore();
+  }
+
+  /** Draws a static layer from its cache, (re)baking it when theme, size or DPR changed. */
+  private drawBaked(which: 'back' | 'front', theme: string, pal: ThemePalette, px: number): void {
+    const ext = this.extent;
+    const key = `${which}:${theme}:${ext.x0.toFixed(1)},${ext.x1.toFixed(1)},${ext.y0.toFixed(1)},${ext.y1.toFixed(1)}:${this.scale.toFixed(4)}:${this.dpr}`;
+    let layer = which === 'back' ? this.backLayer : this.frontLayer;
+    if (!layer || layer.key !== key) {
+      const canvas = document.createElement('canvas');
+      const k = this.scale * this.dpr;
+      canvas.width = Math.max(1, Math.round((ext.x1 - ext.x0) * k));
+      canvas.height = Math.max(1, Math.round((ext.y1 - ext.y0) * k));
+      const bctx = canvas.getContext('2d');
+      if (bctx) {
+        bctx.setTransform(k, 0, 0, k, -ext.x0 * k, -ext.y0 * k);
+        if (which === 'back') bakeBackLayer(bctx, pal, ext, px);
+        else bakeFrontLayer(bctx, pal, px, ext);
+      }
+      layer = { key, canvas };
+      if (which === 'back') this.backLayer = layer;
+      else this.frontLayer = layer;
+    }
+    this.ctx.drawImage(layer.canvas, ext.x0, ext.y0, ext.x1 - ext.x0, ext.y1 - ext.y0);
   }
 
   private drawIndicator(actor: FishActor, fish: Fish, now: number, px: number): void {

@@ -1,5 +1,7 @@
 # Fishbowl Break — Project Spec
 
+> **Before working:** read `CONTEXT.md` for build status, architecture map, spec deviations (save v3 fields), and gotchas.
+
 A cozy, cartoonish virtual fish tank in the browser. Players feed fish, watch them grow, breed them, earn shells, and unlock new species, decor, and tanks. It is built for working people taking 5-minute breaks: calm, cute, zero guilt.
 
 ## Design pillars (never violate these)
@@ -13,7 +15,8 @@ A cozy, cartoonish virtual fish tank in the browser. Players feed fish, watch th
 - Vite + React 18 + TypeScript (strict)
 - Rendering: HTML Canvas 2D with a custom render loop (`requestAnimationFrame`). No game engine.
 - React is used ONLY for UI overlays (HUD, shop, modals, toolbar), never for drawing fish.
-- State: Zustand, persisted to localStorage via a custom save module
+- State: Zustand, persisted to localStorage via a custom save module (plus optional Supabase cloud saves, see below)
+- Accounts & cloud saves: Supabase (`@supabase/supabase-js` used directly from the client; no custom backend)
 - Tests: Vitest for all simulation logic
 - Styling: plain CSS modules or a single `styles.css`; no UI library
 - All art is drawn in code (Canvas paths). No external image assets.
@@ -228,6 +231,19 @@ Once per local calendar day, on first open: 20 shells + 3 premium food, with a 1
 - At the end: "Nice break. Back to it ✨" with a button to exit. Grants +10 XP once per hour.
 - Esc exits anytime.
 
+## Art Style
+Bright, glossy, chunky cartoon, like classic Facebook-era aquarium games. This supersedes the "pastel colors" wording elsewhere in this file.
+- Saturated candy colors, not pastels. Thick 3-4px dark outlines (a darker shade of the fill, never black).
+- Every shape gets lighting: a radial/linear gradient fill (lighter top, darker bottom),
+  a white glossy highlight ellipse at top-left, and a soft drop shadow on the sand.
+- The tank is a physical object: show it as an aquarium with a rounded glass frame, a wooden stand,
+  and a cozy blurred room wallpaper behind it. Add a glass reflection streak across the front.
+- Water: vertical gradient (bright turquoise top → deep blue bottom), animated caustic light
+  patterns rippling on the sand, swaying light rays, and floating dust specks for depth.
+- Sand: warm gradient with colorful pebbles and a few shells; decor casts shadows.
+- 3 depth layers: back plants (slightly blurred/darker), mid fish layer, front plants (overlap fish).
+- Use the sprites in /public/assets/kenney-fish where available (exception to "all art is drawn in code"); draw everything else in code.
+
 ## Art direction
 - Cartoon style: round bodies, oversized eyes with a white highlight, blink every 3–6s, 2px darker outline, soft pastel fills.
 - Fish face their direction of travel (flip horizontally), with a gentle sine-wave body/tail wobble.
@@ -258,5 +274,26 @@ Once per local calendar day, on first open: 20 shells + 3 premium food, with a 1
 - Keep components small. No `any`.
 - After each phase: `npm run build` and `npm test` must pass.
 
+## Auth & Cloud Save
+- **Guest play is the default.** Nobody is ever forced to log in; without Supabase env vars the game runs local-only.
+- **Client-only Supabase.** The app is a static Vite build on Vercel. `src/lib/supabase.ts` reads `VITE_SUPABASE_URL` and
+  `VITE_SUPABASE_ANON_KEY` (the anon key is public by design; Row Level Security protects data). Keys live in `.env.local`
+  (gitignored) and in Vercel env vars. Never commit keys.
+- **Login:** a "Save progress ☁️" button in the Settings panel (HUD ⚙️) opens a cartoon login modal with an email magic link.
+  A Google button exists behind a feature flag (off). Settings shows the logged-in email and Log out. The magic-link redirect
+  is handled on load.
+- **Table `saves`:** `user_id` uuid PK → `auth.users` (on delete cascade), `data` jsonb, `version` int, `updated_at` timestamptz
+  (set by the server on every write). RLS: users can only select/insert/update their own row. SQL lives in `supabase/migrations/`.
+- **Sync (`src/store/cloudSave.ts`):**
+  - When logged in, load the cloud save on startup, then run the usual offline catch-up.
+  - Save to the cloud debounced (every 30s while the state changes) and when the tab is hidden. localStorage stays as the cache and fallback.
+  - First login with existing local progress: if the cloud is empty, upload local. If both exist, show a modal comparing them
+    (level, shells, fish count, last played) and let the player pick one.
+  - Cross-device conflicts: writes are conditional on the last known `updated_at`. If the cloud is newer than our last sync,
+    reload the cloud data instead of overwriting it.
+  - Log out: save once more, clear the local cache, start a fresh guest game.
+  - A small HUD indicator shows ☁️✓ synced / ⟳ saving / ⚠ offline. Network calls never block gameplay.
+  - Cloud data is validated with the same save version and migrations as local saves before it's loaded.
+
 ## Out of scope (for now)
-Accounts, backend, multiplayer/visiting friends, payments, leaderboards.
+Custom backend servers, multiplayer/visiting friends, payments, leaderboards.

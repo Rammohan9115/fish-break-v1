@@ -2,3 +2,8 @@ node_modules
 dist
 *.tsbuildinfo
 .DS_Store
+.vercel
+# Local env files (Supabase keys etc.) — never commit
+.env
+.env.local
+.env.*.local

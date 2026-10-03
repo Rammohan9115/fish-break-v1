@@ -1,4 +1,4 @@
-// TEMPORARY dev-only panel for previewing fish art. Loaded lazily and only when import.meta.env.DEV.
+// Dev/art-preview panel. Loaded lazily; shown in production while DEV_TOOLS_IN_PRODUCTION is true.
 import { useState } from 'react';
 import { SPECIES, SPECIES_LIST } from '../game/species';
 import type { SpeciesId, ThemeId } from '../game/types';
@@ -11,7 +11,7 @@ const THEMES: ThemeId[] = ['classic', 'night', 'coral', 'pond'];
 export default function DevPanel() {
   const dev = useGameStore((s) => s.dev);
   const dropPellet = useGameStore((s) => s.dropPellet);
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const [speciesId, setSpeciesId] = useState<SpeciesId>('danio');
   const [stage, setStage] = useState<SpawnStage>('adult');
   const [variant, setVariant] = useState<string>('');

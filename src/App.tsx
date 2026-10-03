@@ -1,20 +1,27 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { sound } from './audio/sound';
+import { DEV_TOOLS_IN_PRODUCTION } from './game/constants';
+import { startCloudSync } from './store/cloudSave';
 import { startGame, useGameStore, type GameStore } from './store/gameStore';
 import { BreakMode } from './ui/BreakMode';
+import { CloudConflictModal } from './ui/CloudConflictModal';
 import { DecorCard } from './ui/DecorCard';
 import { FishCard } from './ui/FishCard';
 import { Hud } from './ui/Hud';
+import { IosInstallHint } from './ui/IosInstallHint';
 import { LevelUpModal } from './ui/LevelUpModal';
 import { Onboarding } from './ui/Onboarding';
+import { Settings } from './ui/Settings';
 import { Shop } from './ui/Shop';
 import { TankSwitcher } from './ui/TankSwitcher';
 import { TankView } from './ui/TankView';
 import { Toasts } from './ui/Toasts';
 import { Toolbar } from './ui/Toolbar';
+import { enterFullscreen, isTouchLandscape } from './ui/fullscreen';
 
-// Temporary art-preview panel; stripped from production builds.
-const DevPanel = import.meta.env.DEV ? lazy(() => import('./ui/DevPanel')) : null;
+// Dev/art-preview panel: always in dev; in production only while DEV_TOOLS_IN_PRODUCTION is true
+// (when false, the lazy chunk is never loaded).
+const DevPanel = import.meta.env.DEV || DEV_TOOLS_IN_PRODUCTION ? lazy(() => import('./ui/DevPanel')) : null;
 
 /** Keeps the sound engine in sync with the saved mute setting and Break Mode ambience. */
 function useSoundSync() {
@@ -27,21 +34,39 @@ function useSoundSync() {
     const unsubscribe = useGameStore.subscribe((s, prev) => {
       if (s.game.settings.muted !== prev.game.settings.muted || (s.breakSession === null) !== (prev.breakSession === null)) apply(s);
     });
-    // Browsers only let audio start after a user gesture.
+    // Browsers only let audio start inside a user gesture. Chrome accepts pointerdown, but
+    // Safari/iOS only trust click/touchend/keydown, so listen to all of them (capture phase).
     const unlock = () => sound.unlock();
-    window.addEventListener('pointerdown', unlock);
-    window.addEventListener('keydown', unlock);
+    const events = ['pointerdown', 'pointerup', 'click', 'touchend', 'keydown'] as const;
+    for (const type of events) window.addEventListener(type, unlock, { capture: true, passive: true });
     return () => {
       unsubscribe();
-      window.removeEventListener('pointerdown', unlock);
-      window.removeEventListener('keydown', unlock);
+      for (const type of events) window.removeEventListener(type, unlock, { capture: true });
+    };
+  }, []);
+}
+
+/** Phones held sideways go fullscreen on the next tap (browsers only allow it inside a user gesture). */
+function useLandscapeFullscreen() {
+  useEffect(() => {
+    const onGesture = () => {
+      if (isTouchLandscape() && !document.fullscreenElement) enterFullscreen();
+    };
+    window.addEventListener('pointerup', onGesture);
+    window.addEventListener('touchend', onGesture);
+    return () => {
+      window.removeEventListener('pointerup', onGesture);
+      window.removeEventListener('touchend', onGesture);
     };
   }, []);
 }
 
 export function App() {
   useEffect(() => startGame(), []);
+  // After the local load: restores a Supabase session (incl. a magic-link redirect) and keeps the cloud in sync.
+  useEffect(() => startCloudSync(), []);
   useSoundSync();
+  useLandscapeFullscreen();
   const onBreak = useGameStore((s) => s.breakSession !== null);
 
   // Esc ends a break, or closes cards/panels and leaves Feed/Premium/Clean mode.
@@ -70,6 +95,7 @@ export function App() {
       {!onBreak && (
         <>
           <Hud />
+          <IosInstallHint />
           <FishCard />
           <DecorCard />
           <Onboarding />
@@ -78,6 +104,7 @@ export function App() {
           <Shop />
           <TankSwitcher />
           <LevelUpModal />
+          <Settings />
           {DevPanel && (
             <Suspense fallback={null}>
               <DevPanel />
@@ -86,6 +113,7 @@ export function App() {
         </>
       )}
       <BreakMode />
+      <CloudConflictModal />
     </div>
   );
 }

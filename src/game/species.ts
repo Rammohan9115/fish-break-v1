@@ -12,8 +12,8 @@ const v = (key: string, name: string, body: string, belly: string, fin: string, 
 });
 
 /** Overlay colors used for any shiny fish, regardless of variant. */
-export const SHINY_OUTLINE = '#e0a800';
-export const SHINY_SPARKLE = '#fff6c2';
+export const SHINY_OUTLINE = '#d9a521';
+export const SHINY_SPARKLE = '#fff4c4';
 
 export const SPECIES: Record<SpeciesId, SpeciesDef> = {
   danio: {
@@ -30,9 +30,9 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     themeOnly: null,
     traits: ['darts'],
     variants: [
-      v('zebra', 'Zebra', '#bfe3ff', '#eef8ff', '#8cc8f5', '#5a8fc4', '#4f7ea8'),
-      v('peach', 'Peach', '#ffd3b8', '#fff1e6', '#ffb08a', '#e0805a', '#c26f4e'),
-      v('mint', 'Mint', '#c4f0d8', '#effcf5', '#94dcb6', '#4fae82', '#4a9672'),
+      v('zebra', 'Zebra', '#4fa8ff', '#d8f0ff', '#7cc4ff', '#1a3fb8', '#1d4f9e'),
+      v('peach', 'Peach', '#ff9a5c', '#ffe0c4', '#ffb87a', '#d4401a', '#a8481c'),
+      v('mint', 'Mint', '#3fdc9a', '#d4ffe8', '#7aefc0', '#0f8a5a', '#167a52'),
     ],
   },
   guppy: {
@@ -49,10 +49,10 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     themeOnly: null,
     traits: ['flowyTail'],
     variants: [
-      v('sunset', 'Sunset', '#ffd59e', '#fff3de', '#ff9eb5', '#ff6f91', '#c9785a'),
-      v('lilac', 'Lilac', '#dccbff', '#f5f0ff', '#b49cff', '#8a6be0', '#7a64b8'),
-      v('sky', 'Sky', '#bde8f7', '#effaff', '#8fd3f0', '#4fa9d1', '#4b8ea8'),
-      v('cherry', 'Cherry', '#ffc2cc', '#fff0f2', '#ff8fa3', '#e0566f', '#c0606f'),
+      v('sunset', 'Sunset', '#ffb02e', '#fff0c4', '#ff5a3d', '#2a6fff', '#b0640a'),
+      v('lilac', 'Lilac', '#b07aff', '#efe2ff', '#8a4dff', '#ffd42e', '#6a36b8'),
+      v('sky', 'Sky', '#38c8ff', '#dcf6ff', '#1f8cff', '#ffffff', '#1678b0'),
+      v('cherry', 'Cherry', '#ff4f7a', '#ffdde6', '#e8204a', '#2a1f4a', '#a81e44'),
     ],
   },
   goldfish: {
@@ -69,9 +69,9 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     themeOnly: null,
     traits: ['chubby'],
     variants: [
-      v('classic', 'Classic', '#ffbe76', '#fff0d9', '#ffa04d', '#f07f2a', '#c97a3a'),
-      v('calico', 'Calico', '#fff1e0', '#ffffff', '#ffb38a', '#6b6b8f', '#b08f78'),
-      v('lemon', 'Lemon', '#fff09e', '#fffbe0', '#ffe066', '#e0b000', '#bba23f'),
+      v('classic', 'Classic', '#ff8a1a', '#ffe0a0', '#ffb84a', '#e8500a', '#b0500a'),
+      v('calico', 'Calico', '#ffd9c4', '#ffffff', '#ffb89a', '#3a4ab8', '#c0704a'),
+      v('lemon', 'Lemon', '#ffd21a', '#fff6b0', '#ffe066', '#e89a0a', '#b08a0a'),
     ],
   },
   tetra: {
@@ -88,9 +88,9 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     themeOnly: null,
     traits: ['glowStripe', 'schools'],
     variants: [
-      v('neon', 'Neon', '#c7d7ff', '#fff0f3', '#a8bfff', '#3ee6ff', '#6577b8'),
-      v('cardinal', 'Cardinal', '#ffc7d1', '#fff2f4', '#ff9fb0', '#43d9f0', '#bf6e7e'),
-      v('glowlight', 'Glowlight', '#ffe6c4', '#fffaf0', '#ffd09a', '#ff8a3d', '#c09460'),
+      v('neon', 'Neon', '#3a8aff', '#e8f4ff', '#ff3a4a', '#2ef0ff', '#1d4fb0'),
+      v('cardinal', 'Cardinal', '#ff3a4a', '#ffe0e4', '#ff6a7a', '#2ee0ff', '#a81e2a'),
+      v('glowlight', 'Glowlight', '#ffcf8a', '#fff4e0', '#fff0d0', '#ff6a1a', '#c0803a'),
     ],
   },
   betta: {
@@ -107,10 +107,10 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     themeOnly: null,
     traits: ['bigFins'],
     variants: [
-      v('royal', 'Royal', '#a9b8ff', '#e8ecff', '#7f8fff', '#5b5fe0', '#5a66b0'),
-      v('ruby', 'Ruby', '#ffa8b8', '#ffe8ec', '#ff7a94', '#d9405e', '#b85a6a'),
-      v('opal', 'Opal', '#f0e6ff', '#ffffff', '#d8c6ff', '#a98be6', '#9d8bbf'),
-      v('teal', 'Teal', '#9fe6dc', '#e6fbf8', '#6fd3c4', '#2fa898', '#4a9a8e'),
+      v('royal', 'Royal', '#3a5aff', '#a8c0ff', '#2a4aff', '#8ae0ff', '#1a2aa8'),
+      v('ruby', 'Ruby', '#ff2a5a', '#ffa0b8', '#e8104a', '#ffb0c8', '#a0103a'),
+      v('opal', 'Opal', '#d8b0ff', '#fff0ff', '#c08aff', '#8ae8ff', '#8a5ac0'),
+      v('teal', 'Teal', '#10d0c0', '#a8fff0', '#0ab0a8', '#c4fff0', '#0a7a72'),
     ],
   },
   angelfish: {
@@ -127,9 +127,9 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     themeOnly: null,
     traits: ['tall'],
     variants: [
-      v('silver', 'Silver', '#e8eef5', '#ffffff', '#cdd8e6', '#6d7a8f', '#8e9bb0'),
-      v('marble', 'Marble', '#fff4e0', '#ffffff', '#f5d7a8', '#4a4a5e', '#b3a07e'),
-      v('blush', 'Blush', '#ffd9e3', '#fff5f8', '#ffb8cb', '#e07a98', '#c48a9b'),
+      v('silver', 'Silver', '#a8c8f0', '#f4faff', '#c8dcff', '#2a3a6a', '#4a6aa0'),
+      v('marble', 'Marble', '#ffe6a8', '#fffbe8', '#fff0c8', '#2a2a4a', '#b09a50'),
+      v('blush', 'Gold', '#ffc24a', '#fff0c4', '#ffd88a', '#e86a1a', '#b07a1a'),
     ],
   },
   clownfish: {
@@ -146,9 +146,9 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     themeOnly: 'coral',
     traits: [],
     variants: [
-      v('ocellaris', 'Ocellaris', '#ffad73', '#ffe6d1', '#ff9050', '#ffffff', '#c06a3a'),
-      v('maroon', 'Maroon', '#e8868f', '#ffe0e3', '#d96a75', '#fff2c2', '#a85560'),
-      v('snowflake', 'Snowflake', '#ffc8a0', '#ffffff', '#ffb080', '#ffffff', '#c58560'),
+      v('ocellaris', 'Ocellaris', '#ff7a1a', '#ffb05a', '#ff8a2a', '#ffffff', '#a8400a'),
+      v('maroon', 'Maroon', '#d8243a', '#ff6a7a', '#e8344a', '#ffe08a', '#8a1020'),
+      v('snowflake', 'Snowflake', '#ff9a2a', '#ffc46a', '#ffaa3a', '#ffffff', '#a85a0a'),
     ],
   },
   puffer: {
@@ -165,9 +165,9 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     themeOnly: null,
     traits: ['inflates'],
     variants: [
-      v('sandy', 'Sandy', '#f5e2a8', '#fffaeb', '#e8cc80', '#a88a4a', '#b39a5e'),
-      v('spotted', 'Spotted', '#d6ecc4', '#f6fcf0', '#b8dca0', '#5f8a4a', '#7f9e6a'),
-      v('berry', 'Berry', '#f2c4e8', '#fff0fb', '#e6a0d6', '#a8508f', '#a87598'),
+      v('sandy', 'Sandy', '#ffd25a', '#fffbe8', '#ffe08a', '#8a6a1a', '#b08a1a'),
+      v('spotted', 'Spotted', '#8ad84a', '#f4ffe8', '#b8f07a', '#2a6a1a', '#4a8a1a'),
+      v('berry', 'Berry', '#e870d0', '#ffeefb', '#f4a0e4', '#7a1a6a', '#a03a90'),
     ],
   },
   axolotl: {
@@ -184,10 +184,10 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     themeOnly: null,
     traits: ['walksOnSand', 'smiles'],
     variants: [
-      v('leucistic', 'Leucistic', '#ffd6e0', '#fff4f7', '#ffb3c6', '#ff7aa0', '#c98a9c'),
-      v('golden', 'Golden', '#ffe8a3', '#fffaea', '#ffd970', '#ff9eb0', '#c2a65a'),
-      v('wild', 'Wild', '#b8c9a8', '#eef3e8', '#9fb38c', '#d98aa8', '#7c8c6c'),
-      v('lavender', 'Lavender', '#e0d4f5', '#f9f5ff', '#c8b4ec', '#f08ab8', '#9a8ab8'),
+      v('leucistic', 'Leucistic', '#ffaac4', '#ffe4ee', '#ffc4d8', '#ff2a6a', '#c0607a'),
+      v('golden', 'Golden', '#ffd84a', '#fff4c4', '#ffe68a', '#ff6a3a', '#b0901a'),
+      v('wild', 'Wild', '#6ab84a', '#c4f08a', '#8ad06a', '#e83a6a', '#3a7a2a'),
+      v('lavender', 'Lavender', '#c4a0ff', '#f0e4ff', '#d8c0ff', '#ff4aa0', '#7a5ac0'),
     ],
   },
   koi: {
@@ -204,9 +204,9 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     themeOnly: 'pond',
     traits: [],
     variants: [
-      v('kohaku', 'Kohaku', '#fff8f2', '#ffffff', '#ffe6d9', '#ff7a6b', '#c0a090'),
-      v('sanke', 'Sanke', '#fff8f2', '#ffffff', '#ffe0cc', '#3f3f55', '#b09a8c'),
-      v('ogon', 'Ogon', '#ffe7a0', '#fff8e0', '#ffd666', '#e0a020', '#c2a050'),
+      v('kohaku', 'Kohaku', '#ffffff', '#ffffff', '#f0f4ff', '#ff3a2a', '#8a8aa8'),
+      v('sanke', 'Sanke', '#ffffff', '#ffffff', '#f0f4ff', '#1a1a3a', '#8a8aa8'),
+      v('ogon', 'Ogon', '#ffc21a', '#fff0a0', '#ffd84a', '#e8900a', '#b0800a'),
     ],
   },
 };

@@ -24,6 +24,8 @@ export class SoundEngine {
   private readonly lastPlayed = new Map<SoundName, number>();
   private ambienceWanted = false;
   private ambience: { stop: () => void } | null = null;
+  /** iOS needs a sound started inside a gesture once before Web Audio is truly unlocked. */
+  private primed = false;
   private readonly createContext: () => AudioContext | null;
   private readonly now: () => number;
   private readonly random: () => number;
@@ -64,11 +66,33 @@ export class SoundEngine {
     if (this.ambienceWanted) this.startAmbienceNodes();
   }
 
-  /** Resume after a user gesture (browsers start contexts suspended). */
+  /**
+   * Call from user-gesture handlers. Browsers start contexts 'suspended'; Safari can also be
+   * 'interrupted' (app switch, call). Anything other than 'running' gets resumed.
+   */
   unlock(): void {
     if (this.muted) return;
     const ctx = this.ensureContext();
-    if (ctx && ctx.state === 'suspended') void ctx.resume().catch(() => undefined);
+    if (!ctx) return;
+    allowPlaybackWhenSilentSwitchIsOn();
+    if (ctx.state !== 'running') void ctx.resume().catch(() => undefined);
+    if (!this.primed) {
+      // Classic iOS unlock: start a 1-sample silent buffer inside the gesture.
+      this.primed = true;
+      try {
+        const source = ctx.createBufferSource();
+        source.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+        source.connect(ctx.destination);
+        source.start();
+      } catch {
+        this.primed = false;
+      }
+    }
+  }
+
+  /** The AudioContext state ('none' before creation), for diagnostics. */
+  get state(): string {
+    return this.ctx?.state ?? 'none';
   }
 
   /** Plays a one-shot effect. Returns false if muted, rate-limited, or audio is unavailable. */
@@ -79,6 +103,8 @@ export class SoundEngine {
     if (last !== undefined && t - last < SOUND_MIN_GAP_MS[name]) return false;
     const ctx = this.ensureContext();
     if (!ctx || !this.master) return false;
+    // Most plays come from click/tap handlers, so this doubles as a late unlock.
+    if (ctx.state !== 'running') void ctx.resume().catch(() => undefined);
     this.lastPlayed.set(name, t);
     SYNTHS[name](ctx, this.master, this.random);
     return true;
@@ -141,6 +167,18 @@ export class SoundEngine {
   private stopAmbienceNodes(): void {
     this.ambience?.stop();
     this.ambience = null;
+  }
+}
+
+/** iOS/iPadOS 16.4+: play Web Audio even when the ring/silent switch is set to silent. */
+function allowPlaybackWhenSilentSwitchIsOn(): void {
+  const nav = typeof navigator !== 'undefined' ? (navigator as Navigator & { audioSession?: { type: string } }) : undefined;
+  if (nav?.audioSession && nav.audioSession.type !== 'playback') {
+    try {
+      nav.audioSession.type = 'playback';
+    } catch {
+      // Not supported here; fine.
+    }
   }
 }
 

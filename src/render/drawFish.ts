@@ -1,8 +1,17 @@
-// Cartoon fish drawn with Canvas paths. Every species faces +x in its own design space;
-// drawFish() handles position, flip, tilt and stage scale.
+// Painterly, cel-shaded fish (Breath-of-the-Wild-inspired): naturalistic silhouettes, cool two-step
+// shadows, warm highlight bands, soft rim light, translucent rayed fins, painted scale texture.
+// Every species faces +x in its own design space; drawFish() handles position, flip, tilt and scale.
 import { FISH_ART_SCALE, MIN_FLIP_SCALE, OUTLINE_PX, SAD_DROOP, STAGE_SCALE } from '../game/constants';
 import { SHINY_OUTLINE, SHINY_SPARKLE } from '../game/species';
 import type { FishVariant, SpeciesId, Stage } from '../game/types';
+import { COOL_SHADOW, glossHighlight, GLOSS_SATURATION, hashSeq, mix, RIM_LIGHT, rgba, saturate, WARM_LIGHT } from './paint';
+
+/** Eye size multipliers (big, expressive cartoon eyes). */
+const EYE_SCALE = 2.05;
+const EYE_SCALE_BEAD = 1.6;
+
+/** Vertical stretch for chunkier, rounder cartoon fish. */
+const FISH_CHUNK = 1.14;
 
 export interface FishDrawParams {
   speciesId: SpeciesId;
@@ -33,16 +42,16 @@ export interface FishDrawParams {
 
 /** Per-species metadata in design units (before stage scale and FISH_ART_SCALE). */
 export const FISH_ART: Record<SpeciesId, { mouthX: number; halfHeight: number }> = {
-  danio: { mouthX: 19, halfHeight: 10 },
-  guppy: { mouthX: 17, halfHeight: 12 },
-  goldfish: { mouthX: 21, halfHeight: 18 },
-  tetra: { mouthX: 17, halfHeight: 9 },
-  betta: { mouthX: 21, halfHeight: 22 },
-  angelfish: { mouthX: 19, halfHeight: 34 },
+  danio: { mouthX: 22, halfHeight: 10 },
+  guppy: { mouthX: 16, halfHeight: 13 },
+  goldfish: { mouthX: 20, halfHeight: 20 },
+  tetra: { mouthX: 18, halfHeight: 9 },
+  betta: { mouthX: 20, halfHeight: 22 },
+  angelfish: { mouthX: 18, halfHeight: 36 },
   clownfish: { mouthX: 22, halfHeight: 13 },
   puffer: { mouthX: 19, halfHeight: 19 },
   axolotl: { mouthX: 31, halfHeight: 16 },
-  koi: { mouthX: 33, halfHeight: 13 },
+  koi: { mouthX: 34, halfHeight: 14 },
 };
 
 export function fishScale(stage: Stage): number {
@@ -58,191 +67,400 @@ export function fishHalfHeight(speciesId: SpeciesId, stage: Stage): number {
   return FISH_ART[speciesId].halfHeight * fishScale(stage);
 }
 
+const PUPIL = '#0f1117';
+const IRIS = '#c99b3f';
+
+interface Shades {
+  dorsal: string;
+  flank: string;
+  belly: string;
+  shadow: string;
+  highlight: string;
+  fin: string;
+  finEdge: string;
+  accent: string;
+  outline: string;
+  iris: string;
+}
+
+const shadeCache = new Map<FishVariant, Shades>();
+
+function shadesFor(v: FishVariant): Shades {
+  const cached = shadeCache.get(v);
+  if (cached) return cached;
+  const sat = (c: string) => saturate(c, GLOSS_SATURATION * 1.15);
+  const body = sat(v.body);
+  const fin = sat(v.fin);
+  const shades: Shades = {
+    dorsal: mix(body, '#1a1030', 0.18),
+    flank: body,
+    belly: mix(sat(v.belly), '#ffffff', 0.15),
+    shadow: mix(body, '#1a1030', 0.35),
+    highlight: mix(body, '#ffffff', 0.45),
+    fin,
+    finEdge: mix(fin, '#1a1030', 0.5),
+    accent: sat(v.accent),
+    outline: mix(body, '#1a1030', 0.55),
+    iris: mix(IRIS, body, 0.25),
+  };
+  shadeCache.set(v, shades);
+  return shades;
+}
+
 // ---------------------------------------------------------------------------
-// Shared painting helpers
+// Painting context and shared building blocks
 // ---------------------------------------------------------------------------
 
 type Ctx = CanvasRenderingContext2D;
 
 interface Paint {
   ctx: Ctx;
-  pal: FishVariant;
+  sh: Shades;
   outline: string;
   lw: number;
   glow: string | null;
   glowBlur: number;
-  /** Eye size boost for babies (cuter). */
   eyeBoost: number;
+  /** Tail swing angle (radians). */
   wob: number;
   p: FishDrawParams;
 }
 
-const PUPIL = '#2b2b3d';
-const BLUSH = 'rgba(255, 130, 160, 0.35)';
-const TAU = Math.PI * 2;
+interface Bounds {
+  x0: number;
+  x1: number;
+  top: number;
+  bottom: number;
+}
 
-function fillStroke(c: Paint, fill: string | CanvasGradient, lwScale = 1): void {
+interface Profile {
+  nose: [number, number];
+  /** Dorsal (top) peak height and its x. */
+  top: number;
+  topX: number;
+  /** Ventral (bottom) depth and its x. */
+  bottom: number;
+  bottomX: number;
+  /** Caudal peduncle (tail root) x and half-height. */
+  pedX: number;
+  ped: number;
+}
+
+interface BodyPaths {
+  /** Closed shape for filling and clipping. */
+  fill: Path2D;
+  /** Open outline that skips the tail root, so no seam shows where the tail attaches. */
+  edge: Path2D;
+}
+
+/** A naturalistic fish body: blunt nose, dorsal hump, belly curve, tapering to the tail root. */
+function bodyPath(pr: Profile): BodyPaths {
+  const [nx, ny] = pr.nose;
+  const len = nx - pr.pedX;
+  type Seg = [number, number, number, number, number, number];
+  const top: [Seg, Seg] = [
+    [nx, ny - pr.top * 0.55, pr.topX + len * 0.18, -pr.top, pr.topX, -pr.top],
+    [pr.topX - len * 0.26, -pr.top, pr.pedX + len * 0.12, -pr.ped, pr.pedX, -pr.ped],
+  ];
+  const bottom: [Seg, Seg] = [
+    [pr.pedX + len * 0.12, pr.ped, pr.bottomX - len * 0.26, pr.bottom, pr.bottomX, pr.bottom],
+    [pr.bottomX + len * 0.2, pr.bottom, nx, ny + pr.bottom * 0.5, nx, ny],
+  ];
+  const fill = new Path2D();
+  fill.moveTo(nx, ny);
+  for (const seg of top) fill.bezierCurveTo(...seg);
+  // Slightly rounded tail root instead of a straight cut.
+  fill.quadraticCurveTo(pr.pedX - pr.ped * 0.45, 0, pr.pedX, pr.ped);
+  for (const seg of bottom) fill.bezierCurveTo(...seg);
+  fill.closePath();
+  // Edge: tail root (top) → nose → tail root (bottom), the top curves reversed.
+  const edge = new Path2D();
+  edge.moveTo(pr.pedX, -pr.ped);
+  edge.bezierCurveTo(top[1][2], top[1][3], top[1][0], top[1][1], top[0][4], top[0][5]);
+  edge.bezierCurveTo(top[0][2], top[0][3], top[0][0], top[0][1], nx, ny);
+  edge.bezierCurveTo(bottom[1][2], bottom[1][3], bottom[1][0], bottom[1][1], bottom[0][4], bottom[0][5]);
+  edge.bezierCurveTo(bottom[0][2], bottom[0][3], bottom[0][0], bottom[0][1], pr.pedX, pr.ped);
+  return { fill, edge };
+}
+
+function boundsOf(pr: Profile): Bounds {
+  return { x0: pr.pedX, x1: pr.nose[0], top: -pr.top, bottom: pr.bottom };
+}
+
+/** Overlapping scale arcs, opening toward the tail. One path, two strokes (shade + sheen). */
+function scales(c: Paint, b: Bounds, size: number, strength = 1): void {
   const { ctx } = c;
-  ctx.fillStyle = fill;
-  ctx.fill();
+  const shade = new Path2D();
+  const sheen = new Path2D();
+  let row = 0;
+  for (let y = b.top + size * 0.6; y < b.bottom; y += size * 0.78, row++) {
+    const offset = row % 2 === 0 ? 0 : size * 0.55;
+    for (let x = b.x0 + size * 1.4 + offset; x < b.x1 - size * 3.2; x += size * 1.1) {
+      shade.moveTo(x + Math.cos(Math.PI * 0.62) * size, y + Math.sin(Math.PI * 0.62) * size);
+      shade.arc(x, y, size, Math.PI * 0.62, Math.PI * 1.38);
+      sheen.moveTo(x + 0.45 + Math.cos(Math.PI * 0.8) * size * 0.8, y + Math.sin(Math.PI * 0.8) * size * 0.8);
+      sheen.arc(x + 0.45, y, size * 0.8, Math.PI * 0.8, Math.PI * 1.2);
+    }
+  }
+  ctx.lineWidth = c.lw * 0.45;
+  ctx.strokeStyle = rgba(c.sh.outline, 0.16 * strength);
+  ctx.stroke(shade);
+  ctx.strokeStyle = rgba(RIM_LIGHT, 0.14 * strength);
+  ctx.stroke(sheen);
+}
+
+/**
+ * Glossy cartoon body (CLAUDE.md "Art Style"): gradient light top → body → belly → darker bottom,
+ * patterns, a faint scale sheen, a white gloss highlight at the top-left (toward the head), and a
+ * thick outline in a darker shade of the body color.
+ */
+function shadeBody(
+  c: Paint,
+  body: Path2D | BodyPaths,
+  b: Bounds,
+  opts: { pattern?: () => void; scaleSize?: number; scaleStrength?: number; seed?: number } = {},
+): void {
+  const { ctx, sh } = c;
+  const fill = body instanceof Path2D ? body : body.fill;
+  const edge = body instanceof Path2D ? body : body.edge;
+  const w = b.x1 - b.x0;
+  const h = b.bottom - b.top;
+
+  const base = ctx.createLinearGradient(0, b.top, 0, b.bottom);
+  base.addColorStop(0, sh.highlight);
+  base.addColorStop(0.35, sh.flank);
+  base.addColorStop(0.72, mix(sh.flank, sh.belly, 0.55));
+  base.addColorStop(1, mix(sh.belly, sh.shadow, 0.45));
+  ctx.fillStyle = base;
+  ctx.fill(fill);
+
+  ctx.save();
+  ctx.clip(fill);
+  opts.pattern?.();
+  if (opts.scaleSize) scales(c, b, opts.scaleSize, (opts.scaleStrength ?? 1) * 0.45);
+  // Soft darker underside for roundness.
+  const under = ctx.createLinearGradient(0, b.top + h * 0.55, 0, b.bottom);
+  under.addColorStop(0, rgba(sh.shadow, 0));
+  under.addColorStop(1, rgba(sh.shadow, 0.45));
+  ctx.fillStyle = under;
+  ctx.fillRect(b.x0 - 2, b.top + h * 0.55, w + 4, h);
+  ctx.restore();
+
+  // Gloss: big soft ellipse + crisp sparkle near the top, toward the head (screen top-left when facing left).
+  glossHighlight(ctx, fill, [b.x0 + w * 0.32, b.top, w * 0.62, h * 0.9], 1);
+
+  outlineStroke(c, edge);
+}
+
+function outlineStroke(c: Paint, path: Path2D, scale = 1): void {
+  const { ctx } = c;
   if (c.glow) {
     ctx.shadowColor = c.glow;
     ctx.shadowBlur = c.glowBlur;
   }
   ctx.strokeStyle = c.outline;
-  ctx.lineWidth = c.lw * lwScale;
+  ctx.lineWidth = c.lw * scale;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-  ctx.stroke();
+  ctx.stroke(path);
   ctx.shadowBlur = 0;
 }
 
-function vGrad(c: Paint, top: number, bottom: number, from: string, mid: string, to: string): CanvasGradient {
-  const g = c.ctx.createLinearGradient(0, top, 0, bottom);
-  g.addColorStop(0, from);
-  g.addColorStop(0.55, mid);
-  g.addColorStop(1, to);
-  return g;
+/** Translucent fin: gradient fill from root to edge, faint rays, darker edge. */
+function paintFin(
+  c: Paint,
+  path: Path2D,
+  from: [number, number],
+  to: [number, number],
+  opts: { color?: string; opacity?: number; rays?: [number, number][]; edge?: string } = {},
+): void {
+  const { ctx } = c;
+  const color = opts.color ?? c.sh.fin;
+  const op = opts.opacity ?? 1;
+  const g = ctx.createLinearGradient(from[0], from[1], to[0], to[1]);
+  g.addColorStop(0, rgba(mix(color, '#1a1030', 0.12), 0.97 * op));
+  g.addColorStop(0.6, rgba(color, 0.92 * op));
+  g.addColorStop(1, rgba(mix(color, '#ffffff', 0.3), 0.85 * op));
+  ctx.fillStyle = g;
+  ctx.fill(path);
+  if (opts.rays) {
+    ctx.save();
+    ctx.clip(path);
+    ctx.beginPath();
+    for (const [x, y] of opts.rays) {
+      ctx.moveTo(from[0], from[1]);
+      ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = rgba(c.sh.finEdge, 0.28 * op);
+    ctx.lineWidth = c.lw * 0.4;
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.strokeStyle = rgba(opts.edge ?? c.sh.finEdge, 0.95);
+  ctx.lineWidth = c.lw * 0.75;
+  ctx.lineJoin = 'round';
+  ctx.stroke(path);
 }
 
-function hGrad(c: Paint, x0: number, x1: number, from: string, to: string): CanvasGradient {
-  const g = c.ctx.createLinearGradient(x0, 0, x1, 0);
-  g.addColorStop(0, from);
-  g.addColorStop(1, to);
-  return g;
+/** Ray endpoints spread along a segment. */
+function raysAlong(a: [number, number], b: [number, number], n: number): [number, number][] {
+  const out: [number, number][] = [];
+  for (let i = 0; i <= n; i++) out.push([a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n]);
+  return out;
 }
 
-function bodyGrad(c: Paint, halfH: number): CanvasGradient {
-  return vGrad(c, -halfH, halfH, c.pal.body, c.pal.body, c.pal.belly);
-}
-
-function ellipsePath(ctx: Ctx, x: number, y: number, rx: number, ry: number, rot = 0): void {
-  ctx.beginPath();
-  ctx.ellipse(x, y, rx, ry, rot, 0, TAU);
-}
-
-/** Runs `draw` clipped to the current path, then restores. */
-function clipped(ctx: Ctx, draw: () => void): void {
+/** Runs `draw` translated to (x, y) and rotated by the tail wobble. */
+function swinging(c: Paint, x: number, y: number, factor: number, draw: () => void): void {
+  const { ctx } = c;
   ctx.save();
-  ctx.clip();
+  ctx.translate(x, y);
+  ctx.rotate(c.wob * factor);
   draw();
   ctx.restore();
 }
 
-function eye(c: Paint, x: number, y: number, radius: number, pupilScale = 0.62): void {
-  const { ctx } = c;
-  const r = radius * c.eyeBoost;
+/**
+ * Big, expressive glossy cartoon eye: large white eyeball with a thick outline, a colored iris ring,
+ * a big dark pupil looking forward, and two sparkly highlights. (Bead eyes, e.g. axolotl, skip the white.)
+ */
+function eye(c: Paint, x: number, y: number, radius: number, opts: { iris?: string; bead?: boolean } = {}): void {
+  const { ctx, sh } = c;
+  const r = radius * c.eyeBoost * (opts.bead ? EYE_SCALE_BEAD : EYE_SCALE);
   if (c.p.blinking) {
     ctx.beginPath();
-    ctx.arc(x, y - r * 0.35, r * 0.85, 0.2 * Math.PI, 0.8 * Math.PI);
-    ctx.strokeStyle = PUPIL;
-    ctx.lineWidth = c.lw * 1.2;
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = sh.flank;
+    ctx.fill();
+    ctx.strokeStyle = c.outline;
+    ctx.lineWidth = c.lw * 0.6;
+    ctx.stroke();
+    // Happy closed eye: an upward arc.
+    ctx.beginPath();
+    ctx.arc(x, y + r * 0.25, r * 0.7, 1.15 * Math.PI, 1.85 * Math.PI);
+    ctx.strokeStyle = c.outline;
+    ctx.lineWidth = c.lw * 0.85;
     ctx.lineCap = 'round';
     ctx.stroke();
     return;
   }
-  ellipsePath(ctx, x, y, r, r);
+  if (!opts.bead) {
+    const white = ctx.createRadialGradient(x - r * 0.3, y - r * 0.35, r * 0.1, x, y, r);
+    white.addColorStop(0, '#ffffff');
+    white.addColorStop(0.75, '#f4f7fc');
+    white.addColorStop(1, '#cfd8ea');
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = white;
+    ctx.fill();
+    ctx.strokeStyle = c.outline;
+    ctx.lineWidth = c.lw * 0.75;
+    ctx.stroke();
+  }
+  // Pupil sits forward (toward the nose) so the fish looks where it's going.
+  const ir = opts.bead ? r : r * 0.66;
+  const ix = opts.bead ? x : x + r * 0.2;
+  const iy = opts.bead ? y : y + r * 0.04;
+  if (!opts.bead) {
+    const irisColor = opts.iris ?? mix(sh.accent, '#1a1030', 0.25);
+    const iris = ctx.createRadialGradient(ix, iy, ir * 0.35, ix, iy, ir);
+    iris.addColorStop(0, mix(irisColor, '#ffffff', 0.25));
+    iris.addColorStop(1, mix(irisColor, '#1a1030', 0.35));
+    ctx.beginPath();
+    ctx.arc(ix, iy, ir, 0, Math.PI * 2);
+    ctx.fillStyle = iris;
+    ctx.fill();
+  }
+  const pr = opts.bead ? r : ir * 0.62;
+  const pupil = ctx.createRadialGradient(ix - pr * 0.3, iy - pr * 0.3, pr * 0.1, ix, iy, pr);
+  pupil.addColorStop(0, '#3a3560');
+  pupil.addColorStop(1, PUPIL);
+  ctx.beginPath();
+  ctx.arc(ix, iy, pr, 0, Math.PI * 2);
+  ctx.fillStyle = pupil;
+  ctx.fill();
+  // Sparkles: a big shine top-left and a small one bottom-right.
   ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.ellipse(ix - ir * 0.32, iy - ir * 0.36, ir * 0.34, ir * 0.27, -0.5, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = c.outline;
-  ctx.lineWidth = c.lw * 0.8;
-  ctx.stroke();
-  ellipsePath(ctx, x + r * 0.18, y + r * 0.08, r * pupilScale, r * pupilScale);
-  ctx.fillStyle = PUPIL;
-  ctx.fill();
-  ellipsePath(ctx, x + r * 0.02, y - r * 0.26, r * 0.26, r * 0.26);
-  ctx.fillStyle = '#ffffff';
-  ctx.fill();
-  ellipsePath(ctx, x + r * 0.42, y + r * 0.28, r * 0.11, r * 0.11);
+  ctx.beginPath();
+  ctx.arc(ix + ir * 0.34, iy + ir * 0.32, ir * 0.13, 0, Math.PI * 2);
   ctx.fill();
   if (c.p.sad) {
-    // Droopy eyelid
     ctx.save();
-    ellipsePath(ctx, x, y, r, r);
+    ctx.beginPath();
+    ctx.arc(x, y, r * 1.02, 0, Math.PI * 2);
     ctx.clip();
-    ctx.fillStyle = c.pal.body;
+    ctx.fillStyle = sh.flank;
     ctx.beginPath();
     ctx.moveTo(x - r * 1.2, y - r * 1.2);
     ctx.lineTo(x + r * 1.2, y - r * 1.2);
-    ctx.lineTo(x + r * 1.2, y - r * 0.15);
-    ctx.lineTo(x - r * 1.2, y - r * 0.45);
+    ctx.lineTo(x + r * 1.2, y - r * 0.05);
+    ctx.lineTo(x - r * 1.2, y - r * 0.4);
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = c.outline;
-    ctx.lineWidth = c.lw * 0.8;
-    ctx.beginPath();
-    ctx.moveTo(x - r * 1.2, y - r * 0.45);
-    ctx.lineTo(x + r * 1.2, y - r * 0.15);
-    ctx.stroke();
     ctx.restore();
+    ctx.beginPath();
+    ctx.moveTo(x - r, y - r * 0.4);
+    ctx.lineTo(x + r, y - r * 0.05);
+    ctx.strokeStyle = c.outline;
+    ctx.lineWidth = c.lw * 0.7;
+    ctx.stroke();
   }
 }
 
-function mouth(c: Paint, x: number, y: number, w: number): void {
-  const { ctx } = c;
+/** Gill cover (operculum) arc behind the eye. */
+function gill(c: Paint, x: number, top: number, bottom: number): void {
+  const { ctx, sh } = c;
+  const mid = (top + bottom) / 2;
   ctx.beginPath();
-  if (c.p.sad) ctx.arc(x - w * 0.3, y + w * 0.9, w, 1.25 * Math.PI, 1.75 * Math.PI);
-  else ctx.arc(x - w * 0.3, y - w * 0.5, w, 0.2 * Math.PI, 0.75 * Math.PI);
+  ctx.moveTo(x + 1.2, top);
+  ctx.quadraticCurveTo(x - 2.6, mid, x + 1.2, bottom);
+  ctx.strokeStyle = rgba(sh.outline, 0.38);
+  ctx.lineWidth = c.lw * 0.6;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x + 2, top + 0.6);
+  ctx.quadraticCurveTo(x - 1.6, mid, x + 2, bottom - 0.6);
+  ctx.strokeStyle = rgba(RIM_LIGHT, 0.22);
+  ctx.lineWidth = c.lw * 0.45;
+  ctx.stroke();
+}
+
+/** Small mouth notch at the nose. */
+function mouth(c: Paint, nx: number, ny: number, size: number): void {
+  const { ctx } = c;
+  const w = size * 2.1;
+  ctx.beginPath();
+  if (c.p.sad) {
+    // Small downturned mouth.
+    ctx.moveTo(nx - w, ny + size * 1.2);
+    ctx.quadraticCurveTo(nx - w * 0.5, ny + size * 0.25, nx - size * 0.1, ny + size * 0.9);
+  } else {
+    // Cheerful upturned smile curving back from the nose.
+    ctx.moveTo(nx - size * 0.1, ny + size * 0.2);
+    ctx.quadraticCurveTo(nx - w * 0.45, ny + size * 1.6, nx - w, ny + size * 0.35);
+  }
   ctx.strokeStyle = c.outline;
-  ctx.lineWidth = c.lw * 0.9;
+  ctx.lineWidth = c.lw * 0.7;
   ctx.lineCap = 'round';
   ctx.stroke();
 }
 
-function cheek(c: Paint, x: number, y: number, r: number): void {
-  ellipsePath(c.ctx, x, y, r * 1.2, r * 0.75);
-  c.ctx.fillStyle = BLUSH;
-  c.ctx.fill();
-}
-
-/** Simple forked tail at `x`, wobbling. */
-function forkTail(c: Paint, x: number, len: number, spread: number, fill: string | CanvasGradient): void {
+/** Pectoral fin that sculls with the swim phase, drawn over the body. */
+function pectoral(c: Paint, x: number, y: number, len: number, height: number): void {
+  const flap = Math.sin(c.p.phase * 1.4) * 0.35 * c.p.wobbleAmp;
   const { ctx } = c;
   ctx.save();
-  ctx.translate(x, 0);
-  ctx.rotate(c.wob);
-  ctx.beginPath();
-  ctx.moveTo(2, 0);
-  ctx.quadraticCurveTo(-len * 0.5, -spread * 0.35, -len, -spread);
-  ctx.quadraticCurveTo(-len * 0.6, 0, -len, spread);
-  ctx.quadraticCurveTo(-len * 0.5, spread * 0.35, 2, 0);
-  ctx.closePath();
-  fillStroke(c, fill);
+  ctx.translate(x, y);
+  ctx.rotate(0.35 + flap);
+  const path = new Path2D();
+  path.moveTo(0, 0);
+  path.quadraticCurveTo(-len * 0.5, -height, -len, -height * 0.2);
+  path.quadraticCurveTo(-len * 0.55, height * 0.6, 0, height * 0.35);
+  path.closePath();
+  paintFin(c, path, [0, 0], [-len, 0], { rays: raysAlong([-len, -height * 0.3], [-len * 0.6, height * 0.5], 4), opacity: 0.85 });
   ctx.restore();
-}
-
-/** Rounded fan tail. */
-function fanTail(c: Paint, x: number, len: number, spread: number, fill: string | CanvasGradient): void {
-  const { ctx } = c;
-  ctx.save();
-  ctx.translate(x, 0);
-  ctx.rotate(c.wob);
-  ctx.beginPath();
-  ctx.moveTo(2, -spread * 0.2);
-  ctx.quadraticCurveTo(-len * 0.35, -spread, -len, -spread);
-  ctx.quadraticCurveTo(-len * 1.18, 0, -len, spread);
-  ctx.quadraticCurveTo(-len * 0.35, spread, 2, spread * 0.2);
-  ctx.closePath();
-  fillStroke(c, fill);
-  ctx.restore();
-}
-
-/** Small paddle fin (pectoral) that flaps with the wobble. */
-function paddleFin(c: Paint, x: number, y: number, rx: number, ry: number): void {
-  ellipsePath(c.ctx, x, y, rx, ry, 0.5 + Math.sin(c.p.phase * 1.3) * 0.3);
-  fillStroke(c, c.pal.fin, 0.8);
-}
-
-/** Wavy flowing fin edge from (x0,y0) out to a trailing tip, back to (x1,y1). */
-function flowingFin(c: Paint, x0: number, y0: number, x1: number, y1: number, tipX: number, tipY: number, fill: string | CanvasGradient): void {
-  const { ctx } = c;
-  const ripple = Math.sin(c.p.phase) * 3 * c.p.wobbleAmp;
-  ctx.beginPath();
-  ctx.moveTo(x0, y0);
-  ctx.quadraticCurveTo((x0 + tipX) / 2, y0 + (tipY - y0) * 0.9 + ripple, tipX + ripple * 0.5, tipY + ripple);
-  ctx.quadraticCurveTo((x1 + tipX) / 2 - ripple, (y1 + tipY) / 2 - ripple * 0.5, x1, y1);
-  ctx.closePath();
-  fillStroke(c, fill);
 }
 
 // ---------------------------------------------------------------------------
@@ -250,466 +468,617 @@ function flowingFin(c: Paint, x0: number, y0: number, x1: number, y1: number, ti
 // ---------------------------------------------------------------------------
 
 function drawDanio(c: Paint): void {
-  const { ctx, pal } = c;
-  forkTail(c, -17, 14, 9, pal.fin);
-  // dorsal
-  ctx.beginPath();
-  ctx.moveTo(-1, -7.5);
-  ctx.quadraticCurveTo(-5, -14, -10, -6.5);
-  ctx.closePath();
-  fillStroke(c, pal.fin, 0.8);
-  // body
-  ellipsePath(ctx, 0, 0, 20, 8.5);
-  ctx.fillStyle = bodyGrad(c, 8.5);
-  ctx.fill();
-  clipped(ctx, () => {
-    ctx.fillStyle = pal.accent;
-    ctx.globalAlpha = 0.55;
-    for (const y of [-2.8, 0.6, 3.8]) ctx.fillRect(-22, y, 34, 1.5);
-    ctx.globalAlpha = 1;
+  const { ctx, sh } = c;
+  const pr: Profile = { nose: [22, 1], top: 7, topX: 3, bottom: 6.4, bottomX: 2, pedX: -17, ped: 2.3 };
+  const b = boundsOf(pr);
+  swinging(c, pr.pedX + 1, 0, 1, () => {
+    const tail = new Path2D();
+    tail.moveTo(1, -2.4);
+    tail.quadraticCurveTo(-6, -4.5, -13, -9.5);
+    tail.quadraticCurveTo(-9.5, -2, -9.8, 0);
+    tail.quadraticCurveTo(-9.5, 2, -13, 9.5);
+    tail.quadraticCurveTo(-6, 4.5, 1, 2.4);
+    tail.closePath();
+    paintFin(c, tail, [0, 0], [-13, 0], { rays: raysAlong([-13, -9], [-13, 9], 6) });
   });
-  ellipsePath(ctx, 0, 0, 20, 8.5);
-  fillStroke(c, 'rgba(0,0,0,0)');
-  paddleFin(c, 3, 4, 4, 2);
-  eye(c, 11, -2, 4.2);
-  mouth(c, 18, 2.2, 2);
-  cheek(c, 12.5, 3.5, 1.8);
+  const dorsal = new Path2D();
+  dorsal.moveTo(-2, -6.6);
+  dorsal.quadraticCurveTo(-6, -12, -11.5, -9.6);
+  dorsal.quadraticCurveTo(-10, -6, -9, -4.8);
+  dorsal.closePath();
+  paintFin(c, dorsal, [-3, -6], [-11, -10], { rays: raysAlong([-6, -11], [-11, -9.5], 3) });
+  const anal = new Path2D();
+  anal.moveTo(-1, 5.6);
+  anal.quadraticCurveTo(-6, 10.5, -12, 8.4);
+  anal.quadraticCurveTo(-10, 5, -9, 4.2);
+  anal.closePath();
+  paintFin(c, anal, [-2, 5], [-11, 9], { rays: raysAlong([-6, 10], [-11, 8.5], 3) });
+
+  const body = bodyPath(pr);
+  shadeBody(c, body, b, {
+    scaleSize: 1.9,
+    scaleStrength: 0.7,
+    pattern: () => {
+      // Zebra stripes: dark bands separated by pale golden lines, fading toward the head.
+      const fade = ctx.createLinearGradient(b.x0, 0, b.x1, 0);
+      fade.addColorStop(0, rgba(sh.accent, 0.95));
+      fade.addColorStop(0.7, rgba(sh.accent, 0.85));
+      fade.addColorStop(1, rgba(sh.accent, 0));
+      ctx.fillStyle = fade;
+      for (const [y, t] of [[-2.6, 1.3], [0.4, 1.5], [3.2, 1.1]] as const) {
+        ctx.beginPath();
+        ctx.moveTo(b.x0, y - t / 2 + 0.6);
+        ctx.quadraticCurveTo(0, y - t / 2 - 0.4, 16, y - t / 2);
+        ctx.lineTo(16, y + t / 2);
+        ctx.quadraticCurveTo(0, y + t / 2 - 0.4, b.x0, y + t / 2 + 0.6);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.fillStyle = rgba(WARM_LIGHT, 0.28);
+      ctx.fillRect(b.x0, -1.4, 30, 0.7);
+      ctx.fillRect(b.x0, 1.7, 30, 0.6);
+    },
+  });
+  gill(c, 12.5, -4.4, 4.2);
+  pectoral(c, 11, 3, 6, 2.2);
+  eye(c, 16, -1.2, 2.4);
+  mouth(c, 22, 1, 1.4);
 }
 
 function drawGuppy(c: Paint): void {
-  const { ctx, pal } = c;
-  // big flowing fan tail
-  ctx.save();
-  ctx.translate(-7, 0);
-  ctx.rotate(c.wob * 1.2);
-  const ripple = Math.sin(c.p.phase * 1.5) * 2.5 * c.p.wobbleAmp;
-  ctx.beginPath();
-  ctx.moveTo(2, -3);
-  ctx.bezierCurveTo(-8, -16, -22, -18 + ripple, -26, -12);
-  ctx.quadraticCurveTo(-30 + ripple, 0, -26, 12);
-  ctx.bezierCurveTo(-22, 18 - ripple, -8, 16, 2, 3);
-  ctx.closePath();
-  fillStroke(c, hGrad(c, 0, -28, pal.fin, pal.accent));
-  // tail dots
-  ctx.fillStyle = 'rgba(255,255,255,0.55)';
-  for (const [dx, dy] of [[-14, -6], [-19, 2], [-12, 5], [-22, -3]] as const) {
-    ellipsePath(ctx, dx, dy, 1.4, 1.4);
-    ctx.fill();
-  }
-  ctx.restore();
-  // dorsal
-  ctx.beginPath();
-  ctx.moveTo(2, -8);
-  ctx.quadraticCurveTo(-3, -15, -8, -6);
-  ctx.closePath();
-  fillStroke(c, pal.fin, 0.8);
-  ellipsePath(ctx, 4, 0, 13, 9);
-  fillStroke(c, bodyGrad(c, 9));
-  paddleFin(c, 5, 4, 3.5, 2);
-  eye(c, 10, -2, 4.6);
-  mouth(c, 16, 2.5, 1.8);
-  cheek(c, 11, 4, 1.8);
+  const { ctx, sh } = c;
+  const pr: Profile = { nose: [16, 1], top: 6.6, topX: 4, bottom: 7.2, bottomX: 4, pedX: -9, ped: 3 };
+  const b = boundsOf(pr);
+  swinging(c, pr.pedX + 1, 0, 1.15, () => {
+    const ripple = Math.sin(c.p.phase * 1.5) * 2 * c.p.wobbleAmp;
+    const tail = new Path2D();
+    tail.moveTo(1, -2.8);
+    tail.bezierCurveTo(-8, -10, -20, -16 + ripple, -27, -13);
+    tail.quadraticCurveTo(-31 + ripple, 0, -27, 13);
+    tail.bezierCurveTo(-20, 16 - ripple, -8, 10, 1, 2.8);
+    tail.closePath();
+    paintFin(c, tail, [0, 0], [-28, 0], { rays: raysAlong([-26, -13], [-26, 13], 9) });
+    // Mosaic pattern on the tail.
+    ctx.save();
+    ctx.clip(tail);
+    const rand = hashSeq(41);
+    for (let i = 0; i < 16; i++) {
+      ctx.beginPath();
+      ctx.ellipse(-8 - rand() * 18, (rand() - 0.5) * 22, 1 + rand() * 1.6, 0.8 + rand() * 1.2, rand(), 0, Math.PI * 2);
+      ctx.fillStyle = rgba(sh.accent, 0.35 + rand() * 0.25);
+      ctx.fill();
+    }
+    ctx.restore();
+  });
+  const dorsal = new Path2D();
+  dorsal.moveTo(3, -6.3);
+  dorsal.quadraticCurveTo(-3, -12, -11, -10);
+  dorsal.quadraticCurveTo(-6, -7, -4, -5);
+  dorsal.closePath();
+  paintFin(c, dorsal, [2, -6], [-10, -10], { rays: raysAlong([-3, -11], [-10, -9.5], 4) });
+  const body = bodyPath(pr);
+  shadeBody(c, body, b, {
+    scaleSize: 1.6,
+    scaleStrength: 0.6,
+    pattern: () => {
+      // Colorful rear flank flush from the tail color.
+      const g = ctx.createLinearGradient(b.x0, 0, 8, 0);
+      g.addColorStop(0, rgba(sh.fin, 0.75));
+      g.addColorStop(1, rgba(sh.fin, 0));
+      ctx.fillStyle = g;
+      ctx.fillRect(b.x0, b.top, 20, b.bottom - b.top);
+      ctx.beginPath();
+      ctx.ellipse(-1, 1, 2.2, 1.6, 0, 0, Math.PI * 2);
+      ctx.fillStyle = rgba(sh.accent, 0.7);
+      ctx.fill();
+    },
+  });
+  gill(c, 8.5, -4.2, 4.6);
+  pectoral(c, 7, 3, 5, 2);
+  eye(c, 11, -1, 2.3);
+  mouth(c, 16, 1, 1.2);
 }
 
 function drawGoldfish(c: Paint): void {
-  const { ctx, pal } = c;
-  // double tail: two lobes
-  ctx.save();
-  ctx.translate(-14, 0);
-  ctx.rotate(c.wob);
-  const r = Math.sin(c.p.phase * 1.2) * 2.5 * c.p.wobbleAmp;
-  for (const dir of [-1, 1]) {
-    ctx.beginPath();
-    ctx.moveTo(2, 0);
-    ctx.bezierCurveTo(-6, dir * 6, -16, dir * (18 + r), -24, dir * (14 + r));
-    ctx.quadraticCurveTo(-18, dir * 4, -10, 0);
-    ctx.closePath();
-    fillStroke(c, hGrad(c, 0, -24, pal.fin, pal.accent));
-  }
-  ctx.restore();
-  // dorsal
-  ctx.beginPath();
-  ctx.moveTo(8, -14);
-  ctx.quadraticCurveTo(-2, -26 + Math.sin(c.p.phase) * 1.5, -10, -12);
-  ctx.closePath();
-  fillStroke(c, pal.fin, 0.8);
-  // chubby body
-  ellipsePath(ctx, 2, 0, 19, 16);
-  ctx.fillStyle = bodyGrad(c, 16);
-  ctx.fill();
-  clipped(ctx, () => {
-    ctx.globalAlpha = 0.35;
-    ctx.fillStyle = pal.accent;
-    ellipsePath(ctx, -6, -6, 6, 4.5);
-    ctx.fill();
-    ellipsePath(ctx, 6, 8, 4, 3);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    // scale shimmer
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-    ctx.lineWidth = c.lw * 0.6;
-    for (let i = 0; i < 3; i++) {
-      ctx.beginPath();
-      ctx.arc(-4 + i * 6, -2, 4, -0.6 * Math.PI, 0.6 * Math.PI);
-      ctx.stroke();
+  const { ctx, sh } = c;
+  const pr: Profile = { nose: [20, 2], top: 14, topX: 1, bottom: 12.5, bottomX: 0, pedX: -13, ped: 4 };
+  const b = boundsOf(pr);
+  swinging(c, pr.pedX + 1, 0, 1, () => {
+    const r = Math.sin(c.p.phase * 1.2) * 2.5 * c.p.wobbleAmp;
+    for (const dir of [-1, 1]) {
+      const lobe = new Path2D();
+      lobe.moveTo(1, dir * 1);
+      lobe.bezierCurveTo(-6, dir * 7, -18, dir * (19 + r), -27, dir * (15 + r));
+      lobe.quadraticCurveTo(-21, dir * 6, -12, dir * 0.5);
+      lobe.closePath();
+      paintFin(c, lobe, [0, 0], [-27, dir * 15], { rays: raysAlong([-27, dir * (15 + r)], [-14, dir * 1], 6), opacity: 0.9 });
     }
   });
-  ellipsePath(ctx, 2, 0, 19, 16);
-  fillStroke(c, 'rgba(0,0,0,0)');
-  paddleFin(c, 6, 9, 4.5, 2.6);
-  eye(c, 12, -4, 5.6);
-  mouth(c, 20, 3, 2.4);
-  cheek(c, 13, 4.5, 2.4);
+  const dorsal = new Path2D();
+  dorsal.moveTo(9, -12.8);
+  dorsal.bezierCurveTo(4, -22 + Math.sin(c.p.phase) * 1.5, -6, -24, -11, -9.5);
+  dorsal.closePath();
+  paintFin(c, dorsal, [6, -12], [-6, -23], { rays: raysAlong([2, -22], [-10, -11], 5) });
+  const pelvic = new Path2D();
+  pelvic.moveTo(6, 11);
+  pelvic.quadraticCurveTo(2, 18, -3, 17);
+  pelvic.quadraticCurveTo(0, 13, 1, 11.5);
+  pelvic.closePath();
+  paintFin(c, pelvic, [5, 11], [-2, 17]);
+  const body = bodyPath(pr);
+  shadeBody(c, body, b, {
+    scaleSize: 3.1,
+    scaleStrength: 1.2,
+    pattern: () => {
+      const rand = hashSeq(7);
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.ellipse(-8 + rand() * 18, -8 + rand() * 12, 3 + rand() * 3, 2 + rand() * 2.5, rand(), 0, Math.PI * 2);
+        ctx.fillStyle = rgba(sh.accent, 0.22);
+        ctx.fill();
+      }
+    },
+  });
+  gill(c, 11.5, -8, 7.5);
+  pectoral(c, 9, 6, 7, 3);
+  eye(c, 14, -3.4, 2.9);
+  mouth(c, 20, 2, 1.6);
 }
 
 function drawTetra(c: Paint): void {
-  const { ctx, pal } = c;
-  forkTail(c, -15, 12, 8, pal.fin);
-  ctx.beginPath();
-  ctx.moveTo(-2, -7);
-  ctx.quadraticCurveTo(-5, -12, -9, -5.5);
-  ctx.closePath();
-  fillStroke(c, pal.fin, 0.8);
-  ellipsePath(ctx, 0, 0, 17, 7.5);
-  ctx.fillStyle = bodyGrad(c, 7.5);
-  ctx.fill();
-  clipped(ctx, () => {
-    // red-ish lower rear
-    ctx.fillStyle = pal.fin;
-    ctx.globalAlpha = 0.85;
-    ctx.fillRect(-18, 1, 20, 8);
-    ctx.globalAlpha = 1;
-    // glowing neon stripe
-    ctx.shadowColor = pal.accent;
-    ctx.shadowBlur = 6 * c.p.dpr;
-    ctx.fillStyle = pal.accent;
-    ctx.beginPath();
-    ctx.moveTo(10, -2.6);
-    ctx.quadraticCurveTo(-4, -3.4, -18, -1.2);
-    ctx.lineTo(-18, 1);
-    ctx.quadraticCurveTo(-4, -0.4, 10, -0.2);
-    ctx.closePath();
-    ctx.fill();
-    ctx.shadowBlur = 0;
+  const { ctx, sh } = c;
+  const pr: Profile = { nose: [18, 0.5], top: 6.6, topX: 3, bottom: 6.2, bottomX: 3, pedX: -13, ped: 2.3 };
+  const b = boundsOf(pr);
+  swinging(c, pr.pedX + 1, 0, 1, () => {
+    const tail = new Path2D();
+    tail.moveTo(1, -2.2);
+    tail.quadraticCurveTo(-5, -4, -11, -8);
+    tail.quadraticCurveTo(-8, -1.5, -8.2, 0);
+    tail.quadraticCurveTo(-8, 1.5, -11, 8);
+    tail.quadraticCurveTo(-5, 4, 1, 2.2);
+    tail.closePath();
+    paintFin(c, tail, [0, 0], [-11, 0], { color: mix(sh.fin, sh.flank, 0.4), rays: raysAlong([-11, -7.5], [-11, 7.5], 5), opacity: 0.8 });
   });
-  ellipsePath(ctx, 0, 0, 17, 7.5);
-  fillStroke(c, 'rgba(0,0,0,0)');
-  paddleFin(c, 3, 3.5, 3.2, 1.7);
-  eye(c, 10, -1.5, 4);
-  mouth(c, 15.5, 2.2, 1.6);
+  const dorsal = new Path2D();
+  dorsal.moveTo(1, -6.2);
+  dorsal.quadraticCurveTo(-2, -10.5, -6, -9);
+  dorsal.quadraticCurveTo(-5, -6, -4, -5);
+  dorsal.closePath();
+  paintFin(c, dorsal, [0, -6], [-5, -9.5], { opacity: 0.7 });
+  // adipose
+  const adipose = new Path2D();
+  adipose.ellipse(-10, -3.6, 1.6, 0.9, -0.3, 0, Math.PI * 2);
+  paintFin(c, adipose, [-10, -3], [-10, -4.5], { opacity: 0.6 });
+  const body = bodyPath(pr);
+  shadeBody(c, body, b, {
+    scaleSize: 1.5,
+    scaleStrength: 0.5,
+    pattern: () => {
+      // Red lower rear.
+      const red = ctx.createLinearGradient(4, 0, b.x0, 0);
+      red.addColorStop(0, rgba(sh.fin, 0));
+      red.addColorStop(0.35, rgba(sh.fin, 0.9));
+      ctx.fillStyle = red;
+      ctx.fillRect(b.x0, 0.6, 22, 8);
+      // Iridescent glowing stripe.
+      ctx.shadowColor = sh.accent;
+      ctx.shadowBlur = 5 * c.p.dpr;
+      const stripe = ctx.createLinearGradient(13, 0, b.x0, 0);
+      stripe.addColorStop(0, rgba(sh.accent, 0.3));
+      stripe.addColorStop(0.2, rgba(mix(sh.accent, '#ffffff', 0.2), 0.95));
+      stripe.addColorStop(1, rgba(sh.accent, 0.85));
+      ctx.fillStyle = stripe;
+      ctx.beginPath();
+      ctx.moveTo(13, -2.4);
+      ctx.quadraticCurveTo(-2, -3.2, b.x0 - 1, -1.1);
+      ctx.lineTo(b.x0 - 1, 0.5);
+      ctx.quadraticCurveTo(-2, -0.5, 13, -0.5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    },
+  });
+  gill(c, 11, -4.2, 4);
+  pectoral(c, 9, 2.6, 4.5, 1.8);
+  eye(c, 13, -1, 2.4);
+  mouth(c, 18, 0.5, 1.1);
 }
 
 function drawBetta(c: Paint): void {
-  const { ctx, pal } = c;
-  const finGrad = hGrad(c, 0, -46, pal.fin, pal.accent);
-  // huge veil tail with a rippling edge
-  ctx.save();
-  ctx.translate(-6, 0);
-  ctx.rotate(c.wob * 0.8);
-  ctx.beginPath();
-  ctx.moveTo(2, -6);
-  const steps = 7;
+  const { ctx, sh } = c;
+  const pr: Profile = { nose: [20, 0], top: 7, topX: 7, bottom: 6.6, bottomX: 7, pedX: -6, ped: 4 };
+  const b = boundsOf(pr);
   const ph = c.p.phase;
-  ctx.bezierCurveTo(-10, -24, -28, -28, -38, -22);
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    const y = -22 + t * 44;
-    const x = -38 - Math.sin(t * Math.PI) * 8 - Math.sin(ph * 1.4 + t * 6) * 2.5 * c.p.wobbleAmp;
-    ctx.lineTo(x, y);
-  }
-  ctx.bezierCurveTo(-28, 28, -10, 24, 2, 6);
-  ctx.closePath();
-  fillStroke(c, finGrad);
-  // fin rays
-  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-  ctx.lineWidth = c.lw * 0.5;
-  for (const a of [-0.5, -0.2, 0.1, 0.4]) {
+  swinging(c, pr.pedX + 1, 0, 0.8, () => {
+    // Huge veil tail: layered translucent sheets with a rippling edge.
+    for (const [scale, op] of [[1, 0.85], [0.78, 0.6]] as const) {
+      const tail = new Path2D();
+      tail.moveTo(1, -4.5);
+      tail.bezierCurveTo(-10 * scale, -24 * scale, -28 * scale, -28 * scale, -38 * scale, -22 * scale);
+      const steps = 8;
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const y = (-22 + t * 44) * scale;
+        const x = (-38 - Math.sin(t * Math.PI) * 9) * scale - Math.sin(ph * 1.4 + t * 6) * 2.4 * c.p.wobbleAmp;
+        tail.lineTo(x, y);
+      }
+      tail.bezierCurveTo(-28 * scale, 28 * scale, -10 * scale, 24 * scale, 1, 4.5);
+      tail.closePath();
+      paintFin(c, tail, [0, 0], [-44 * scale, 0], {
+        rays: Array.from({ length: 11 }, (_, i) => {
+          const a = -0.75 + (i / 10) * 1.5;
+          return [-46 * scale * Math.cos(a), 46 * scale * Math.sin(a)] as [number, number];
+        }),
+        opacity: op,
+      });
+    }
+    // Iridescent sheen across the veil.
     ctx.beginPath();
-    ctx.moveTo(-2, 0);
-    ctx.lineTo(-38 * Math.cos(a), 38 * Math.sin(a));
-    ctx.stroke();
-  }
-  ctx.restore();
-  // long dorsal and anal fins trailing back
-  flowingFin(c, 14, -6, -4, -7, -14, -26, finGrad);
-  flowingFin(c, 12, 6, -4, 7, -14, 24, finGrad);
-  ellipsePath(ctx, 6, 0, 15, 8.5);
-  fillStroke(c, bodyGrad(c, 8.5));
-  paddleFin(c, 8, 4, 3.6, 2);
-  eye(c, 14, -2, 4.4);
-  mouth(c, 20, 2, 1.8);
-  cheek(c, 15, 3.5, 1.8);
+    ctx.ellipse(-20, -6, 14, 5, -0.3, 0, Math.PI * 2);
+    ctx.fillStyle = rgba(sh.accent, 0.18);
+    ctx.fill();
+  });
+  const dorsal = new Path2D();
+  dorsal.moveTo(12, -6);
+  dorsal.quadraticCurveTo(0, -16 + Math.sin(ph) * 2 * c.p.wobbleAmp, -14, -24);
+  dorsal.quadraticCurveTo(-10, -12, -5, -5);
+  dorsal.closePath();
+  paintFin(c, dorsal, [8, -6], [-12, -22], { rays: raysAlong([-14, -24], [-5, -6], 6), opacity: 0.85 });
+  const anal = new Path2D();
+  anal.moveTo(12, 5.6);
+  anal.quadraticCurveTo(0, 16 - Math.sin(ph) * 2 * c.p.wobbleAmp, -14, 22);
+  anal.quadraticCurveTo(-10, 11, -5, 5);
+  anal.closePath();
+  paintFin(c, anal, [8, 6], [-12, 21], { rays: raysAlong([-14, 22], [-5, 6], 6), opacity: 0.85 });
+  const body = bodyPath(pr);
+  shadeBody(c, body, b, {
+    scaleSize: 1.7,
+    scaleStrength: 0.9,
+    pattern: () => {
+      ctx.fillStyle = rgba(sh.accent, 0.22);
+      ctx.beginPath();
+      ctx.ellipse(4, -2, 9, 2.4, -0.05, 0, Math.PI * 2);
+      ctx.fill();
+    },
+  });
+  gill(c, 13, -4.6, 4.4);
+  pectoral(c, 11, 3, 5, 2.2);
+  eye(c, 15.5, -1, 2.4, { iris: mix(sh.flank, '#e0c070', 0.5) });
+  mouth(c, 20, 0, 1.2);
 }
 
 function drawAngelfish(c: Paint): void {
-  const { ctx, pal } = c;
+  const { ctx, sh } = c;
+  const pr: Profile = { nose: [18, 2], top: 15, topX: 2, bottom: 15, bottomX: 2, pedX: -10, ped: 3 };
+  const b = boundsOf(pr);
   const sway = Math.sin(c.p.phase) * 2 * c.p.wobbleAmp;
-  // tall dorsal and anal fins sweeping back
-  ctx.beginPath();
-  ctx.moveTo(4, -15);
-  ctx.quadraticCurveTo(-6, -36, -18 + sway, -40);
-  ctx.quadraticCurveTo(-12, -20, -8, -6);
-  ctx.closePath();
-  fillStroke(c, pal.fin);
-  ctx.beginPath();
-  ctx.moveTo(4, 15);
-  ctx.quadraticCurveTo(-6, 36, -18 - sway, 40);
-  ctx.quadraticCurveTo(-12, 20, -8, 6);
-  ctx.closePath();
-  fillStroke(c, pal.fin);
-  // pelvic threads
-  ctx.strokeStyle = c.outline;
-  ctx.lineWidth = c.lw * 0.9;
-  ctx.beginPath();
-  ctx.moveTo(6, 12);
-  ctx.quadraticCurveTo(4, 24, 1 - sway, 32);
-  ctx.stroke();
-  fanTail(c, -9, 12, 8, pal.fin);
-  // diamond body
-  const body = () => {
-    ctx.beginPath();
-    ctx.moveTo(19, 1);
-    ctx.bezierCurveTo(14, -10, 6, -18, 0, -18);
-    ctx.bezierCurveTo(-7, -18, -11, -6, -11, 0);
-    ctx.bezierCurveTo(-11, 6, -7, 18, 0, 18);
-    ctx.bezierCurveTo(6, 18, 14, 10, 19, 1);
-    ctx.closePath();
-  };
-  body();
-  ctx.fillStyle = bodyGrad(c, 18);
-  ctx.fill();
-  clipped(ctx, () => {
-    ctx.fillStyle = pal.accent;
-    ctx.globalAlpha = 0.5;
-    for (const x of [8, -1, -9]) ctx.fillRect(x - 1.5, -20, 3, 40);
-    ctx.globalAlpha = 1;
+  // Tall trailing dorsal and anal fins.
+  const dorsal = new Path2D();
+  dorsal.moveTo(7, -13.5);
+  dorsal.bezierCurveTo(0, -30, -10, -38, -20 + sway, -40);
+  dorsal.quadraticCurveTo(-14, -22, -9, -4);
+  dorsal.closePath();
+  paintFin(c, dorsal, [3, -12], [-18, -38], { rays: raysAlong([-20, -40], [-9, -5], 7) });
+  const anal = new Path2D();
+  anal.moveTo(7, 13.5);
+  anal.bezierCurveTo(0, 30, -10, 38, -20 - sway, 40);
+  anal.quadraticCurveTo(-14, 22, -9, 4);
+  anal.closePath();
+  paintFin(c, anal, [3, 12], [-18, 38], { rays: raysAlong([-20, 40], [-9, 5], 7) });
+  swinging(c, pr.pedX + 1, 0, 0.8, () => {
+    const tail = new Path2D();
+    tail.moveTo(1, -2.5);
+    tail.quadraticCurveTo(-6, -9, -12, -11);
+    tail.quadraticCurveTo(-16, -6, -14, 0);
+    tail.quadraticCurveTo(-16, 6, -12, 11);
+    tail.quadraticCurveTo(-6, 9, 1, 2.5);
+    tail.closePath();
+    paintFin(c, tail, [0, 0], [-14, 0], { rays: raysAlong([-12, -11], [-12, 11], 6) });
   });
-  body();
-  fillStroke(c, 'rgba(0,0,0,0)');
-  paddleFin(c, 6, 3, 3.5, 2);
-  eye(c, 9, -3, 4.6);
-  mouth(c, 17, 2, 1.7);
-  cheek(c, 10, 3, 1.8);
+  // Pelvic filaments.
+  ctx.beginPath();
+  ctx.moveTo(8, 12);
+  ctx.quadraticCurveTo(6, 24, 2 - sway, 34);
+  ctx.moveTo(9, 12.5);
+  ctx.quadraticCurveTo(8, 22, 5 - sway, 30);
+  ctx.strokeStyle = rgba(sh.finEdge, 0.7);
+  ctx.lineWidth = c.lw * 0.8;
+  ctx.stroke();
+  const body = bodyPath(pr);
+  shadeBody(c, body, b, {
+    scaleSize: 1.8,
+    scaleStrength: 0.7,
+    pattern: () => {
+      ctx.fillStyle = rgba(sh.accent, 0.78);
+      for (const [x, w] of [[12, 2.2], [1, 3], [-8, 2.4]] as const) {
+        ctx.beginPath();
+        ctx.moveTo(x - w / 2 + 1, b.top - 1);
+        ctx.quadraticCurveTo(x - w / 2 - 1.2, 0, x - w / 2 + 1, b.bottom + 1);
+        ctx.lineTo(x + w / 2 + 1, b.bottom + 1);
+        ctx.quadraticCurveTo(x + w / 2 - 1.2, 0, x + w / 2 + 1, b.top - 1);
+        ctx.closePath();
+        ctx.fill();
+      }
+    },
+  });
+  gill(c, 11.5, -6, 7);
+  pectoral(c, 8, 3, 5, 2.2);
+  eye(c, 12.5, -2, 2.6);
+  mouth(c, 18, 2, 1.3);
 }
 
 function drawClownfish(c: Paint): void {
-  const { ctx, pal } = c;
-  fanTail(c, -18, 11, 10, pal.fin);
-  // rounded dorsal (two humps)
-  ctx.beginPath();
-  ctx.moveTo(10, -9);
-  ctx.quadraticCurveTo(6, -17, 0, -10);
-  ctx.quadraticCurveTo(-6, -17, -14, -7);
-  ctx.closePath();
-  fillStroke(c, pal.fin, 0.8);
-  ellipsePath(ctx, 1, 9, 6, 4, -0.3);
-  fillStroke(c, pal.fin, 0.8);
-  ellipsePath(ctx, 0, 0, 21, 11);
-  ctx.fillStyle = bodyGrad(c, 11);
-  ctx.fill();
-  clipped(ctx, () => {
-    for (const [x, w] of [[11, 3.4], [-2, 3.8], [-15, 2.8]] as const) {
-      ellipsePath(ctx, x, 0, w + 1.1, 14);
-      ctx.fillStyle = c.outline;
-      ctx.fill();
-      ellipsePath(ctx, x, 0, w, 14);
-      ctx.fillStyle = pal.accent;
-      ctx.fill();
-    }
+  const { ctx, sh } = c;
+  const pr: Profile = { nose: [22, 1.5], top: 9.5, topX: 3, bottom: 8.5, bottomX: 2, pedX: -15, ped: 4.2 };
+  const b = boundsOf(pr);
+  const darkEdge = sh.outline;
+  swinging(c, pr.pedX + 1, 0, 0.9, () => {
+    const tail = new Path2D();
+    tail.moveTo(1, -3.8);
+    tail.quadraticCurveTo(-7, -10, -11, -8);
+    tail.quadraticCurveTo(-13, 0, -11, 8);
+    tail.quadraticCurveTo(-7, 10, 1, 3.8);
+    tail.closePath();
+    paintFin(c, tail, [0, 0], [-12, 0], { rays: raysAlong([-11, -8], [-11, 8], 5), edge: darkEdge });
   });
-  ellipsePath(ctx, 0, 0, 21, 11);
-  fillStroke(c, 'rgba(0,0,0,0)');
-  paddleFin(c, 5, 5, 4, 2.2);
-  eye(c, 15, -2.5, 4.6);
-  mouth(c, 20.5, 3, 1.8);
+  const dorsal = new Path2D();
+  dorsal.moveTo(11, -8.6);
+  dorsal.quadraticCurveTo(7, -15, 1, -10);
+  dorsal.quadraticCurveTo(-5, -15.5, -12, -6.5);
+  dorsal.closePath();
+  paintFin(c, dorsal, [4, -9], [-4, -14], { edge: darkEdge, rays: raysAlong([7, -14], [-10, -9], 6) });
+  const anal = new Path2D();
+  anal.moveTo(0, 8.2);
+  anal.quadraticCurveTo(-5, 14, -11, 6.2);
+  anal.closePath();
+  paintFin(c, anal, [-2, 8], [-6, 13], { edge: darkEdge });
+  const body = bodyPath(pr);
+  shadeBody(c, body, b, {
+    scaleSize: 1.7,
+    scaleStrength: 0.5,
+    pattern: () => {
+      for (const [x, w] of [[12, 3], [-1, 3.6], [-13, 2.4]] as const) {
+        for (const [inset, color] of [[0, darkEdge], [0.9, sh.accent]] as const) {
+          ctx.beginPath();
+          ctx.moveTo(x - w / 2 - 1.1 + inset + 1.2, b.top - 1);
+          ctx.quadraticCurveTo(x - w / 2 - 1.1 + inset - 1.6, 0, x - w / 2 - 1.1 + inset + 1.2, b.bottom + 1);
+          ctx.lineTo(x + w / 2 + 1.1 - inset + 1.2, b.bottom + 1);
+          ctx.quadraticCurveTo(x + w / 2 + 1.1 - inset - 1.6, 0, x + w / 2 + 1.1 - inset + 1.2, b.top - 1);
+          ctx.closePath();
+          ctx.fillStyle = color;
+          ctx.fill();
+        }
+      }
+    },
+  });
+  gill(c, 10.5, -6.5, 6);
+  pectoral(c, 8, 3.5, 6, 2.6);
+  eye(c, 16.5, -1.6, 2.6);
+  mouth(c, 22, 1.5, 1.4);
 }
 
 function drawPuffer(c: Paint): void {
-  const { ctx, pal } = c;
+  const { ctx, sh } = c;
   const inflate = c.p.inflate;
-  const r = 17 + inflate * 7;
-  // tiny tail
-  ctx.save();
-  ctx.translate(-r + 1, 0);
-  ctx.rotate(c.wob * 1.4);
-  ctx.beginPath();
-  ctx.moveTo(1, 0);
-  ctx.quadraticCurveTo(-5, -7, -8, -5);
-  ctx.quadraticCurveTo(-6, 0, -8, 5);
-  ctx.quadraticCurveTo(-5, 7, 1, 0);
-  fillStroke(c, pal.fin, 0.8);
-  ctx.restore();
-  // spikes when inflated
-  if (inflate > 0.05) {
-    ctx.fillStyle = pal.belly;
-    ctx.strokeStyle = c.outline;
-    ctx.lineWidth = c.lw * 0.7;
-    for (let i = 0; i < 16; i++) {
-      const a = (i / 16) * TAU;
-      const len = 4.5 * inflate;
-      ctx.beginPath();
-      ctx.moveTo(Math.cos(a - 0.12) * r, Math.sin(a - 0.12) * r);
-      ctx.lineTo(Math.cos(a) * (r + len), Math.sin(a) * (r + len));
-      ctx.lineTo(Math.cos(a + 0.12) * r, Math.sin(a + 0.12) * r);
-      ctx.fill();
-      ctx.stroke();
-    }
-  }
-  ellipsePath(ctx, 0, 0, r, r * 0.95);
-  ctx.fillStyle = vGrad(c, -r, r, pal.body, pal.body, pal.belly);
-  ctx.fill();
-  clipped(ctx, () => {
-    ctx.fillStyle = pal.belly;
-    ellipsePath(ctx, 2, r * 0.75, r * 1.05, r * 0.6);
-    ctx.fill();
-    ctx.fillStyle = pal.accent;
-    ctx.globalAlpha = 0.45;
-    for (const [x, y] of [[-8, -9], [-1, -13], [-11, -2], [4, -8], [-5, -4]] as const) {
-      ellipsePath(ctx, x * (r / 17), y * (r / 17), 1.6, 1.6);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
+  const k = 1 + inflate * 0.38;
+  const pr: Profile = { nose: [18 * k, 3], top: 15 * k, topX: -1, bottom: 14.5 * k, bottomX: -1, pedX: -16 * k, ped: 4 };
+  const b = boundsOf(pr);
+  swinging(c, pr.pedX + 1, 0, 1.3, () => {
+    const tail = new Path2D();
+    tail.moveTo(1, -3);
+    tail.quadraticCurveTo(-5, -7, -8, -6);
+    tail.quadraticCurveTo(-9.5, 0, -8, 6);
+    tail.quadraticCurveTo(-5, 7, 1, 3);
+    tail.closePath();
+    paintFin(c, tail, [0, 0], [-8, 0], { rays: raysAlong([-8, -6], [-8, 6], 4) });
   });
-  ellipsePath(ctx, 0, 0, r, r * 0.95);
-  fillStroke(c, 'rgba(0,0,0,0)');
-  // fluttering side fin
-  ellipsePath(ctx, 2, 4, 3.5, 2 + Math.abs(Math.sin(c.p.phase * 3)) * 1.5, 0.6);
-  fillStroke(c, pal.fin, 0.7);
-  eye(c, r * 0.45, -r * 0.35, 6, 0.6);
-  // little "o" mouth when puffed, smile otherwise
-  if (inflate > 0.3) {
-    ellipsePath(ctx, r - 1.5, r * 0.15, 1.6, 2);
-    fillStroke(c, '#ff9eb0', 0.7);
-  } else {
-    mouth(c, r - 0.5, 3, 2.2);
+  if (inflate > 0.05) {
+    // Spines around the puffed body.
+    ctx.beginPath();
+    for (let i = 0; i < 22; i++) {
+      const a = (i / 22) * Math.PI * 2;
+      const rx = (b.x1 - b.x0) / 2;
+      const ry = (b.bottom - b.top) / 2;
+      const cx = (b.x0 + b.x1) / 2;
+      const len = 5 * inflate;
+      ctx.moveTo(cx + Math.cos(a - 0.08) * rx * 0.96, Math.sin(a - 0.08) * ry * 0.96);
+      ctx.lineTo(cx + Math.cos(a) * (rx + len), Math.sin(a) * (ry + len));
+      ctx.lineTo(cx + Math.cos(a + 0.08) * rx * 0.96, Math.sin(a + 0.08) * ry * 0.96);
+    }
+    ctx.fillStyle = mix(sh.belly, sh.flank, 0.4);
+    ctx.fill();
+    ctx.strokeStyle = rgba(sh.outline, 0.7);
+    ctx.lineWidth = c.lw * 0.55;
+    ctx.stroke();
   }
-  cheek(c, r * 0.5, r * 0.15, 2.4);
+  const body = bodyPath(pr);
+  shadeBody(c, body, b, {
+    scaleSize: 0,
+    pattern: () => {
+      // Pale belly, dark speckled back.
+      ctx.beginPath();
+      ctx.ellipse(1, b.bottom * 0.95, (b.x1 - b.x0) * 0.62, (b.bottom - b.top) * 0.36, 0, 0, Math.PI * 2);
+      ctx.fillStyle = rgba(sh.belly, 0.95);
+      ctx.fill();
+      const rand = hashSeq(23);
+      for (let i = 0; i < 26; i++) {
+        const x = b.x0 + (b.x1 - b.x0) * (0.12 + rand() * 0.76);
+        const y = b.top + (b.bottom - b.top) * (0.08 + rand() * 0.45);
+        ctx.beginPath();
+        ctx.arc(x, y, (0.6 + rand() * 1.1) * k, 0, Math.PI * 2);
+        ctx.fillStyle = rgba(sh.accent, 0.55);
+        ctx.fill();
+      }
+    },
+  });
+  pectoral(c, 6 * k, 1, 5, 3);
+  eye(c, 9 * k, -5.5 * k, 3.4);
+  // Beak-like mouth.
+  ctx.beginPath();
+  ctx.ellipse(pr.nose[0] - 0.4, pr.nose[1] + 0.2, 1.4, inflate > 0.3 ? 1.6 : 0.9, 0, 0, Math.PI * 2);
+  ctx.fillStyle = mix(sh.belly, sh.outline, 0.25);
+  ctx.fill();
+  ctx.strokeStyle = rgba(sh.outline, 0.7);
+  ctx.lineWidth = c.lw * 0.5;
+  ctx.stroke();
 }
 
 function drawAxolotl(c: Paint): void {
-  const { ctx, pal } = c;
+  const { ctx, sh } = c;
   const walk = c.p.phase;
-  // long flat tail fin
-  ctx.save();
-  ctx.translate(-14, 2);
-  ctx.rotate(c.wob * 0.6);
-  ctx.beginPath();
-  ctx.moveTo(2, -6);
-  ctx.bezierCurveTo(-10, -11, -24, -6, -34, 0 + Math.sin(walk) * 2 * c.p.wobbleAmp);
-  ctx.bezierCurveTo(-24, 6, -10, 9, 2, 6);
-  ctx.closePath();
-  fillStroke(c, hGrad(c, 0, -34, pal.body, pal.fin));
-  ctx.restore();
-  // back legs (far side first, slightly darker)
+  // Tail fin.
+  swinging(c, -14, 2, 0.6, () => {
+    const tail = new Path2D();
+    tail.moveTo(2, -6.5);
+    tail.bezierCurveTo(-10, -12, -24, -7, -35, Math.sin(walk) * 2 * c.p.wobbleAmp);
+    tail.bezierCurveTo(-24, 7, -10, 9, 2, 6);
+    tail.closePath();
+    const g = ctx.createLinearGradient(0, -8, 0, 8);
+    g.addColorStop(0, rgba(sh.fin, 0.75));
+    g.addColorStop(0.5, sh.flank);
+    g.addColorStop(1, rgba(sh.fin, 0.75));
+    ctx.fillStyle = g;
+    ctx.fill(tail);
+    ctx.save();
+    ctx.clip(tail);
+    ctx.fillStyle = rgba(sh.shadow, 0.25);
+    ctx.fillRect(-40, 2, 45, 10);
+    ctx.restore();
+    outlineStroke(c, tail, 0.8);
+  });
   const leg = (x: number, phaseOffset: number, far: boolean) => {
     const swing = Math.sin(walk + phaseOffset) * 0.5 * c.p.wobbleAmp;
     ctx.save();
     ctx.translate(x, 7);
     ctx.rotate(swing);
-    ellipsePath(ctx, 0, 4, 2.4, 5);
-    fillStroke(c, far ? pal.fin : pal.body, 0.8);
-    // toes
-    ctx.fillStyle = far ? pal.fin : pal.body;
-    ellipsePath(ctx, 1.5, 8.5, 2.6, 1.4);
-    ctx.fill();
-    ctx.stroke();
+    const limb = new Path2D();
+    limb.ellipse(0, 4, 2.3, 5, 0, 0, Math.PI * 2);
+    limb.ellipse(1.6, 8.6, 2.8, 1.4, 0, 0, Math.PI * 2);
+    ctx.fillStyle = far ? mix(sh.flank, COOL_SHADOW, 0.25) : sh.flank;
+    ctx.fill(limb);
+    outlineStroke(c, limb, 0.7);
     ctx.restore();
   };
   leg(-6, Math.PI, true);
   leg(14, 0, true);
-  // body
-  ellipsePath(ctx, 0, 3, 18, 8);
-  fillStroke(c, bodyGrad(c, 10));
+  const body = new Path2D();
+  body.ellipse(0, 3, 18, 8, 0, 0, Math.PI * 2);
+  shadeBody(c, body, { x0: -18, x1: 18, top: -5, bottom: 11 }, { scaleSize: 0, seed: 91 });
   leg(-9, 0, false);
   leg(11, Math.PI, false);
-  // gills: three feathery stalks fanning out behind the head (the head covers their bases)
-  const gill = (angle: number, len: number) => {
+  // Feathery gills: three stalks with filaments, behind the head.
+  const gillStalk = (angle: number, len: number) => {
     ctx.save();
     ctx.translate(14, -5);
     ctx.rotate(angle + Math.sin(walk * 0.8 + angle) * 0.08 * c.p.wobbleAmp);
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.lineTo(len, 0);
-    ctx.strokeStyle = pal.accent;
-    ctx.lineWidth = c.lw * 1.8;
+    ctx.strokeStyle = mix(sh.accent, sh.outline, 0.2);
+    ctx.lineWidth = c.lw * 1.6;
     ctx.stroke();
-    ctx.fillStyle = pal.accent;
-    for (let i = 0; i < 3; i++) {
-      const fx = len * (0.5 + i * 0.2);
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const fx = len * (0.35 + i * 0.11);
       for (const side of [-1, 1]) {
-        ellipsePath(ctx, fx + 1, side * 1.8, 2.2, 1.1, side * 0.7);
-        ctx.fill();
+        ctx.moveTo(fx, 0);
+        ctx.quadraticCurveTo(fx + 1, side * 1.6, fx + 2.2, side * 3);
       }
     }
+    ctx.strokeStyle = rgba(sh.accent, 0.85);
+    ctx.lineWidth = c.lw * 0.7;
+    ctx.stroke();
     ctx.restore();
   };
-  gill(-1.6, 15);
-  gill(-2.25, 17);
-  gill(-2.85, 15);
-  // big round head
-  ellipsePath(ctx, 20, 0, 13, 11);
-  fillStroke(c, bodyGrad(c, 11));
-  eye(c, 25, -3, 2.4, 0.9);
-  // wide smile
+  gillStalk(-1.6, 15);
+  gillStalk(-2.25, 17);
+  gillStalk(-2.85, 15);
+  const head = new Path2D();
+  head.ellipse(20, 0, 13, 10.5, 0, 0, Math.PI * 2);
+  shadeBody(c, head, { x0: 7, x1: 33, top: -10.5, bottom: 10.5 }, { scaleSize: 0, seed: 17 });
+  // Natural pink flush under the skin (not a cartoon blush).
   ctx.beginPath();
-  ctx.arc(26, 1, 6, 0.15 * Math.PI, c.p.sad ? 0.25 * Math.PI : 0.62 * Math.PI);
-  ctx.strokeStyle = c.outline;
-  ctx.lineWidth = c.lw;
+  ctx.ellipse(21, 4, 6, 3, 0, 0, Math.PI * 2);
+  ctx.fillStyle = rgba(sh.accent, 0.12);
+  ctx.fill();
+  eye(c, 26, -3.2, 1.9, { bead: true });
+  // Wide, gentle mouth line.
+  ctx.beginPath();
+  ctx.moveTo(32.5, 1.5);
+  ctx.quadraticCurveTo(28, c.p.sad ? 3 : 5.2, 22.5, 3.6);
+  ctx.strokeStyle = rgba(sh.outline, 0.75);
+  ctx.lineWidth = c.lw * 0.65;
   ctx.stroke();
-  cheek(c, 22, 5, 2.4);
 }
 
 function drawKoi(c: Paint): void {
-  const { ctx, pal } = c;
-  // flowing two-lobed tail
-  ctx.save();
-  ctx.translate(-27, 0);
-  ctx.rotate(c.wob);
-  const r = Math.sin(c.p.phase * 1.2) * 3 * c.p.wobbleAmp;
-  ctx.beginPath();
-  ctx.moveTo(3, 0);
-  ctx.bezierCurveTo(-6, -4, -14, -16 - r, -22, -14 - r);
-  ctx.quadraticCurveTo(-16, 0, -22, 14 + r);
-  ctx.bezierCurveTo(-14, 16 + r, -6, 4, 3, 0);
-  ctx.closePath();
-  fillStroke(c, hGrad(c, 0, -22, pal.fin, pal.belly));
-  ctx.restore();
-  // long dorsal ridge
-  ctx.beginPath();
-  ctx.moveTo(12, -10);
-  ctx.quadraticCurveTo(0, -18 + Math.sin(c.p.phase) * 1.5, -16, -8);
-  ctx.closePath();
-  fillStroke(c, pal.fin, 0.8);
-  ellipsePath(ctx, 2, 0, 31, 11);
-  ctx.fillStyle = bodyGrad(c, 11);
-  ctx.fill();
-  clipped(ctx, () => {
-    ctx.fillStyle = pal.accent;
-    ctx.globalAlpha = 0.85;
-    ctx.beginPath();
-    ctx.ellipse(16, -6, 9, 6, 0.2, 0, TAU);
-    ctx.ellipse(-4, -4, 8, 7, -0.3, 0, TAU);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(-16, 3, 6, 4, 0.4, 0, TAU);
-    ctx.fill();
-    ctx.globalAlpha = 1;
+  const { ctx, sh } = c;
+  const pr: Profile = { nose: [34, 1], top: 11, topX: 8, bottom: 9.5, bottomX: 6, pedX: -25, ped: 4 };
+  const b = boundsOf(pr);
+  swinging(c, pr.pedX + 1, 0, 1, () => {
+    const r = Math.sin(c.p.phase * 1.2) * 3 * c.p.wobbleAmp;
+    const tail = new Path2D();
+    tail.moveTo(1, -3.4);
+    tail.bezierCurveTo(-6, -6, -14, -16 - r, -23, -15 - r);
+    tail.quadraticCurveTo(-17, -1, -16, 0);
+    tail.quadraticCurveTo(-17, 1, -23, 15 + r);
+    tail.bezierCurveTo(-14, 16 + r, -6, 6, 1, 3.4);
+    tail.closePath();
+    paintFin(c, tail, [0, 0], [-23, 0], { rays: raysAlong([-23, -15], [-23, 15], 9) });
   });
-  ellipsePath(ctx, 2, 0, 31, 11);
-  fillStroke(c, 'rgba(0,0,0,0)');
-  paddleFin(c, 14, 7, 5.5, 2.6);
-  // whiskers
-  ctx.strokeStyle = c.outline;
-  ctx.lineWidth = c.lw * 0.8;
-  for (const dy of [0, 2]) {
-    ctx.beginPath();
-    ctx.moveTo(31, 3 + dy);
-    ctx.quadraticCurveTo(35, 5 + dy, 34 + Math.sin(c.p.phase + dy) * 1, 9 + dy);
-    ctx.stroke();
+  const dorsal = new Path2D();
+  dorsal.moveTo(14, -10.3);
+  dorsal.quadraticCurveTo(4, -17 + Math.sin(c.p.phase) * 1.5, -14, -7.5);
+  dorsal.closePath();
+  paintFin(c, dorsal, [8, -10], [-6, -14], { rays: raysAlong([10, -15], [-12, -8], 7) });
+  const body = bodyPath(pr);
+  shadeBody(c, body, b, {
+    scaleSize: 2.4,
+    scaleStrength: 1,
+    pattern: () => {
+      // Irregular painted patches (kohaku/sanke) or metallic sheen (ogon).
+      const rand = hashSeq(5);
+      ctx.fillStyle = rgba(sh.accent, 0.88);
+      for (const [x, y, rx, ry] of [[20, -5, 8, 5], [3, -6, 9, 6], [-12, -3, 6, 4.5]] as const) {
+        // Smooth organic blob: a closed curve through jittered points (midpoint quadratic smoothing).
+        const pts: [number, number][] = [];
+        for (let i = 0; i < 9; i++) {
+          const a = (i / 9) * Math.PI * 2;
+          const wobble = 0.75 + rand() * 0.45;
+          pts.push([x + Math.cos(a) * rx * wobble, y + Math.sin(a) * ry * wobble]);
+        }
+        ctx.beginPath();
+        const mid = (i: number): [number, number] => {
+          const p0 = pts[i % pts.length]!;
+          const p1 = pts[(i + 1) % pts.length]!;
+          return [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2];
+        };
+        const start = mid(0);
+        ctx.moveTo(start[0], start[1]);
+        for (let i = 1; i <= pts.length; i++) {
+          const ctrl = pts[i % pts.length]!;
+          const end = mid(i);
+          ctx.quadraticCurveTo(ctrl[0], ctrl[1], end[0], end[1]);
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
+    },
+  });
+  // Large rounded pectoral fin with a pale edge.
+  pectoral(c, 18, 5, 10, 4);
+  // Barbels.
+  ctx.beginPath();
+  for (const dy of [0, 1.6]) {
+    ctx.moveTo(32.5, 2.6 + dy);
+    ctx.quadraticCurveTo(36, 4.5 + dy, 35 + Math.sin(c.p.phase + dy) * 0.8, 8.5 + dy);
   }
-  eye(c, 23, -3, 4.2);
-  mouth(c, 31, 2, 1.8);
-  cheek(c, 24, 3, 2);
+  ctx.strokeStyle = rgba(sh.outline, 0.8);
+  ctx.lineWidth = c.lw * 0.6;
+  ctx.stroke();
+  gill(c, 22, -6.5, 6.5);
+  eye(c, 27.5, -2.8, 2.1, { iris: '#3a3330' });
+  mouth(c, 34, 1, 1.6);
 }
 
 const SPECIES_DRAW: Record<SpeciesId, (c: Paint) => void> = {
@@ -768,17 +1137,18 @@ export function drawFish(ctx: Ctx, x: number, y: number, p: FishDrawParams): voi
   ctx.rotate(tilt);
   // Squash through the flip but never to zero width, so a turning fish never vanishes.
   const flipX = dir * Math.max(MIN_FLIP_SCALE, Math.abs(p.facing));
-  ctx.scale(flipX * scale, scale);
+  // Chunky cartoon proportions: a little taller/rounder than the natural silhouettes.
+  ctx.scale(flipX * scale, scale * FISH_CHUNK);
 
   const paint: Paint = {
     ctx,
-    pal: p.variant,
+    sh: shadesFor(p.variant),
     outline: p.shiny ? SHINY_OUTLINE : p.variant.outline,
     lw: (OUTLINE_PX * p.px) / scale,
     glow: p.glow,
     glowBlur: 8 * p.dpr,
-    eyeBoost: p.stage === 'baby' ? 1.3 : p.stage === 'juvenile' ? 1.12 : 1,
-    wob: Math.sin(p.phase) * 0.32 * p.wobbleAmp,
+    eyeBoost: p.stage === 'baby' ? 1.18 : p.stage === 'juvenile' ? 1.08 : 1,
+    wob: Math.sin(p.phase) * 0.3 * p.wobbleAmp,
     p,
   };
   SPECIES_DRAW[p.speciesId](paint);

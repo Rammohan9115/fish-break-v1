@@ -18,12 +18,14 @@ function fakeAudio() {
       currentTime: 0,
       sampleRate: 8000,
       destination: {},
-      state: 'suspended',
+      state: 'suspended' as string,
       resume: async () => {
         counts.resumes += 1;
+        ctx.state = 'running';
       },
       suspend: async () => {
         counts.suspends += 1;
+        ctx.state = 'suspended';
       },
       createGain: () => ({ ...node(), gain: param() }),
       createOscillator: () => {
@@ -37,9 +39,11 @@ function fakeAudio() {
         return { ...node(), buffer: null, loop: false, start() {}, stop() {} };
       },
     };
+    created.push(ctx);
     return ctx as unknown as AudioContext;
   };
-  return { counts, createContext };
+  const created: { state: string }[] = [];
+  return { counts, createContext, created };
 }
 
 describe('SoundEngine', () => {
@@ -117,5 +121,56 @@ describe('levels', () => {
     const { SOUND_MASTER_VOLUME } = await import('../game/constants');
     expect(SOUND_MASTER_VOLUME).toBeGreaterThanOrEqual(0.6);
     expect(SOUND_MASTER_VOLUME).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('unlocking (Safari/iOS quirks)', () => {
+  const fresh = () => {
+    const fake = fakeAudio();
+    return { fake, sfx: new SoundEngine({ createContext: fake.createContext, now: () => 0, random: () => 0.5 }) };
+  };
+
+  it('primes iOS with a silent buffer once, inside the first gesture', () => {
+    const { fake, sfx } = fresh();
+    sfx.setMuted(false); // unmute click → unlock
+    expect(fake.counts.sources).toBe(1);
+    sfx.unlock();
+    sfx.unlock();
+    expect(fake.counts.sources).toBe(1);
+  });
+
+  it("resumes any non-running state, including Safari's 'interrupted'", async () => {
+    const { fake, sfx } = fresh();
+    sfx.setMuted(false);
+    await Promise.resolve();
+    expect(sfx.state).toBe('running');
+    fake.created[0]!.state = 'interrupted';
+    sfx.unlock();
+    await Promise.resolve();
+    expect(sfx.state).toBe('running');
+  });
+
+  it('a play() from a tap also resumes a suspended context', async () => {
+    const { fake, sfx } = fresh();
+    sfx.setMuted(false);
+    await Promise.resolve();
+    fake.created[0]!.state = 'suspended';
+    expect(sfx.play('plop')).toBe(true);
+    await Promise.resolve();
+    expect(sfx.state).toBe('running');
+  });
+
+  it('asks iOS to ignore the silent switch when the Audio Session API exists', () => {
+    const session = { type: 'auto' };
+    vi.stubGlobal('navigator', { audioSession: session });
+    const { sfx } = fresh();
+    sfx.setMuted(false);
+    expect(session.type).toBe('playback');
+    vi.unstubAllGlobals();
+  });
+
+  it('reports state for diagnostics', () => {
+    const { sfx } = fresh();
+    expect(sfx.state).toBe('none');
   });
 });

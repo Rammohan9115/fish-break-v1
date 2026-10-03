@@ -117,6 +117,17 @@ export function migrate(data: SaveData, table: Record<number, Migration> = migra
   return current;
 }
 
+/** Parses save data from any source (e.g. the cloud): migrates to the current version and validates. Null if unusable. */
+export function parseSaveData(data: unknown, table: Record<number, Migration> = migrations): GameState | null {
+  try {
+    if (!isObject(data)) return null;
+    const migrated = migrate(data, table);
+    return isValidGameState(migrated) ? migrated : null;
+  } catch {
+    return null;
+  }
+}
+
 export interface LoadResult {
   state: GameState;
   /** Present when offline catch-up ran for at least OFFLINE_SUMMARY_MIN_MS. */

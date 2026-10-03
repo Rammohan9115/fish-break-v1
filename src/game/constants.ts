@@ -260,6 +260,12 @@ export const AMBIENCE_BLIPS_PER_SEC = 1.6;
 export const AMBIENCE_BED_VOLUME = 0.06;
 
 // ---------------------------------------------------------------------------
+// Dev tools
+// ---------------------------------------------------------------------------
+/** Show the dev/art-preview panel in production builds too (it's always on in `npm run dev`). Set false to ship without it. */
+export const DEV_TOOLS_IN_PRODUCTION = true;
+
+// ---------------------------------------------------------------------------
 // Interaction / UI
 // ---------------------------------------------------------------------------
 export const FEED_COOLDOWN_MS = 150;
@@ -325,8 +331,9 @@ export const HUNGRY_INDICATOR_HUNGER = GROWTH_STOP_HUNGER;
 // Rendering
 // ---------------------------------------------------------------------------
 /** Global multiplier on fish art size (design units → tank units). */
-export const FISH_ART_SCALE = 1.25;
-export const OUTLINE_PX = 2;
+export const FISH_ART_SCALE = 1.45;
+/** Fish outline thickness in CSS pixels (CLAUDE.md Art Style: thick 3-4px, darker shade of the fill). */
+export const OUTLINE_PX = 3.4;
 export const BUBBLER_X = 70;
 export const BUBBLES_PER_SEC = 5;
 export const BUBBLES_PER_SEC_REDUCED = 1.2;
@@ -338,6 +345,14 @@ export const PUFF_DURATION_MS = 2200;
 export const PUFF_ATTACK_MS = 180;
 export const PUFF_RELEASE_MS = 500;
 export const REDUCED_WOBBLE = 0.4;
+/** On tall (portrait) screens, zoom in up to this multiple of "fit width" and let the player pan sideways. */
+export const PORTRAIT_ZOOM = 2.1;
+/** On tall screens, the share of extra height shown above the world (more water) vs. below (more sand). */
+export const EXTRA_HEIGHT_ABOVE = 0.6;
+/** localStorage flag: the one-time "drag to look around" tip has been shown. */
+export const PAN_TIP_KEY = 'fishbowl-pan-tip-shown';
+/** localStorage flag: the iPhone "Add to Home Screen for fullscreen" hint was dismissed. */
+export const IOS_INSTALL_HINT_KEY = 'fishbowl-ios-install-hint-dismissed';
 /** Click radius for collecting a shell/pearl on the sand (tank units). */
 export const DROP_HIT_RADIUS = 16;
 export const POP_TEXT_DURATION_MS = 900;
@@ -351,6 +366,14 @@ export const PAIR_LINGER_MS = 2500;
 // Persistence
 // ---------------------------------------------------------------------------
 export const SAVE_KEY = 'fishbowl-save';
+/** localStorage: which user this device last synced with, and the cloud updated_at it last saw. */
+export const CLOUD_META_KEY = 'fishbowl-cloud-meta';
+/** Cloud saves are debounced: at most one write per this interval while the game changes. */
+export const CLOUD_SAVE_DEBOUNCE_MS = 30 * SECOND_MS;
+/** Logging out waits at most this long for the final cloud save. */
+export const CLOUD_FINAL_SAVE_TIMEOUT_MS = 5 * SECOND_MS;
+/** Feature flag: show "Continue with Google" on the login modal (needs the Google provider configured in Supabase). */
+export const AUTH_GOOGLE_ENABLED = false;
 export const ONBOARDING_KEY = 'fishbowl-onboarding';
 export const CORRUPT_SAVE_PREFIX = 'fishbowl-save-corrupt-';
 export const SAVE_INTERVAL_MS = 10 * SECOND_MS;

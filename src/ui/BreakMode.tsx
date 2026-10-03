@@ -13,14 +13,21 @@ function formatClock(ms: number): string {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 }
 
+/** True only if this break turned fullscreen on (so ending it doesn't kick a landscape player out of fullscreen). */
+let breakOwnsFullscreen = false;
+
 /** Fullscreen is a nice-to-have: ignore browsers/frames that refuse it. */
 function enterFullscreen(): void {
   if (document.fullscreenElement || !document.documentElement.requestFullscreen) return;
-  document.documentElement.requestFullscreen().catch(() => undefined);
+  breakOwnsFullscreen = true;
+  document.documentElement.requestFullscreen().catch(() => {
+    breakOwnsFullscreen = false;
+  });
 }
 
 function leaveFullscreen(): void {
-  if (document.fullscreenElement) document.exitFullscreen().catch(() => undefined);
+  if (breakOwnsFullscreen && document.fullscreenElement) document.exitFullscreen().catch(() => undefined);
+  breakOwnsFullscreen = false;
 }
 
 function BreakSetup() {
@@ -98,7 +105,10 @@ function ActiveBreak({ session }: { session: BreakSession }) {
   // Leaving fullscreen (e.g. the browser eats Esc) ends the break too.
   useEffect(() => {
     const onChange = () => {
-      if (!document.fullscreenElement) exitBreak();
+      if (!document.fullscreenElement && breakOwnsFullscreen) {
+        breakOwnsFullscreen = false;
+        exitBreak();
+      }
     };
     document.addEventListener('fullscreenchange', onChange);
     return () => document.removeEventListener('fullscreenchange', onChange);
