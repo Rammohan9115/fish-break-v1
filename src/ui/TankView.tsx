@@ -1,7 +1,7 @@
 // Hosts the tank canvas and the renderer. React never draws fish; it only mounts the canvas
-// and routes input: collect a drop > sponge (Clean) / drop food (Feed/Premium) > fish > decor (drag to move).
+// and routes input: collect a drop > sponge (Clean) / drop food (Feed/Premium) > fish > decor (hold to pick up, then drag).
 import { useEffect, useRef } from 'react';
-import { DRAG_THRESHOLD_PX, PAN_TIP_KEY, SAND_Y, XP } from '../game/constants';
+import { DECOR_LONG_PRESS_MS, DRAG_THRESHOLD_PX, LONG_PRESS_SLOP_PX, PAN_TIP_KEY, SAND_Y, XP } from '../game/constants';
 import { algaeTouchedBySponge } from '../game/sim';
 import { sound } from '../audio/sound';
 import { breedingQuestStep, breedingUnlocked, compatiblePartners, isReadyToPair } from '../game/breeding';
@@ -16,6 +16,8 @@ type Point = { x: number; y: number };
 type Gesture =
   | { kind: 'sponge'; last: Point }
   | { kind: 'decor'; id: string; grabOffset: number; startClientX: number; dragging: boolean }
+  /** A press on decor that isn't picked up yet: it only moves if held for DECOR_LONG_PRESS_MS. */
+  | { kind: 'hold'; id: string; grabOffset: number; startClientX: number; startClientY: number }
   | { kind: 'pan'; lastClientX: number }
   | null;
 
@@ -121,8 +123,14 @@ function handleTankPress(renderer: Renderer, clientX: number, clientY: number): 
   const decorId = renderer.decorAt(x, y);
   if (decorId) {
     const placed = store.game.tanks.find((t) => t.id === store.game.activeTankId)?.decor.find((d) => d.id === decorId);
-    store.selectDecor(decorId);
-    return { kind: 'decor', id: decorId, grabOffset: x - (placed?.x ?? x), startClientX: clientX, dragging: false };
+    const grabOffset = x - (placed?.x ?? x);
+    // Already picked up (its card is open): drag it right away.
+    if (decorId === store.selectedDecorId) return { kind: 'decor', id: decorId, grabOffset, startClientX: clientX, dragging: false };
+    // Otherwise a tap is just a tap on the water; holding picks it up.
+    store.selectFish(null);
+    store.selectDecor(null);
+    store.showQuickActions(null);
+    return { kind: 'hold', id: decorId, grabOffset, startClientX: clientX, startClientY: clientY };
   }
 
   store.selectFish(null);
@@ -139,6 +147,15 @@ export function TankView() {
   const mode = useGameStore((s) => s.mode);
   /** The gesture in progress (sponge stroke or decor drag), if any. */
   const gestureRef = useRef<Gesture>(null);
+  /** Pending long-press timer for a 'hold' gesture. */
+  const holdTimerRef = useRef<number | null>(null);
+  /** The "hold to move" tip shows once per visit, on the first short tap on decor. */
+  const holdTipShownRef = useRef(false);
+
+  const clearHold = () => {
+    if (holdTimerRef.current !== null) window.clearTimeout(holdTimerRef.current);
+    holdTimerRef.current = null;
+  };
 
   useEffect(() => {
     const container = containerRef.current;
@@ -187,6 +204,7 @@ export function TankView() {
       if (events.some((e) => e.type === 'hatched')) sound.play('bubble');
     });
     return () => {
+      if (holdTimerRef.current !== null) window.clearTimeout(holdTimerRef.current);
       unsubscribe();
       observer.disconnect();
       renderer.stop();
@@ -198,9 +216,24 @@ export function TankView() {
     if (e.button !== 0) return;
     const renderer = rendererRef.current;
     if (!renderer) return;
+    clearHold();
     const gesture = handleTankPress(renderer, e.clientX, e.clientY);
     gestureRef.current = gesture;
     if (gesture) e.currentTarget.setPointerCapture(e.pointerId);
+    if (gesture?.kind === 'hold') {
+      const canvas = e.currentTarget;
+      holdTimerRef.current = window.setTimeout(() => {
+        holdTimerRef.current = null;
+        if (gestureRef.current !== gesture) return;
+        // Picked up: the card opens, the piece lifts, and dragging now moves it.
+        useGameStore.getState().selectDecor(gesture.id);
+        renderer.liftDecor(gesture.id);
+        navigator.vibrate?.(15);
+        sound.play('bubble');
+        canvas.style.cursor = 'grabbing';
+        gestureRef.current = { kind: 'decor', id: gesture.id, grabOffset: gesture.grabOffset, startClientX: gesture.startClientX, dragging: true };
+      }, DECOR_LONG_PRESS_MS);
+    }
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -214,6 +247,13 @@ export function TankView() {
       if (useGameStore.getState().mode !== 'clean') return;
       sponge(renderer, gesture.last, point);
       gesture.last = point;
+      return;
+    }
+    if (gesture?.kind === 'hold') {
+      // Moving before the hold completes means the finger is looking around, not picking up.
+      if (Math.hypot(e.clientX - gesture.startClientX, e.clientY - gesture.startClientY) < LONG_PRESS_SLOP_PX) return;
+      clearHold();
+      gestureRef.current = renderer.canPan ? { kind: 'pan', lastClientX: e.clientX } : null;
       return;
     }
     if (gesture?.kind === 'pan') {
@@ -233,11 +273,17 @@ export function TankView() {
     const look = useGameStore.getState().mode === 'look';
     const hover = look && e.pointerType === 'mouse' && !renderer.fishAt(point.x, point.y) ? renderer.decorAt(point.x, point.y) : null;
     renderer.setHoverDecor(hover);
-    e.currentTarget.style.cursor = hover ? 'grab' : '';
+    // Only a picked-up piece can be grabbed straight away; others need a hold.
+    e.currentTarget.style.cursor = !hover ? '' : hover === useGameStore.getState().selectedDecorId ? 'grab' : 'pointer';
   };
 
   const endGesture = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const gesture = gestureRef.current;
+    clearHold();
+    if (gesture?.kind === 'hold' && e.type === 'pointerup' && !holdTipShownRef.current) {
+      holdTipShownRef.current = true;
+      useGameStore.getState().addToast('Hold a decoration to move it ✋');
+    }
     if (gesture?.kind === 'decor') {
       e.currentTarget.style.cursor = '';
       if (gesture.dragging) {

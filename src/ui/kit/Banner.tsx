@@ -9,6 +9,7 @@ export function Banner({
   onClose,
   closeLabel = 'Close',
   slot = 'top',
+  compact = false,
   className = '',
 }: {
   children: ReactNode;
@@ -18,10 +19,12 @@ export function Banner({
   closeLabel?: string;
   /** top: under the HUD · bottom: above the toolbar. */
   slot?: 'top' | 'bottom';
+  /** A slim one-line pill tucked under the XP bar, so the tank stays in view. */
+  compact?: boolean;
   className?: string;
 }) {
   return (
-    <div className={`banner banner-${tone} banner-${slot}${onClose ? ' banner-closable' : ''} ${className}`} role="status">
+    <div className={`banner banner-${tone} banner-${slot}${compact ? ' banner-compact' : ''}${onClose ? ' banner-closable' : ''} ${className}`} role="status">
       <div className="banner-text">
         <span className="banner-main">{children}</span>
         {sub && <span className="banner-sub">{sub}</span>}

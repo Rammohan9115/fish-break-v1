@@ -787,15 +787,6 @@ export class Renderer {
     for (const d of tank.decor) {
       if (decorLayer(d.decorId) === 'back' || !decorSpriteSize(d.decorId)) this.drawDecorItem(d, tank, now, timeSec, px, grid, shadowShift, fx);
     }
-    const wallNow = Date.now();
-    for (const egg of game.eggs) {
-      if (egg.tankId === tank.id) this.drawEggItem(egg, wallNow, timeSec, px, grid, reduced);
-    }
-    for (const drop of tank.shells) {
-      const lift = this.sandItems.lift(drop.id, now);
-      if (!drawSandItem(ctx, drop.pearl ? 'pearl' : 'shell', drop.x, grid, { lift: -lift })) drawDrop(ctx, drop, px, timeSec);
-      else if (lift === 0) this.sandItems.drawGlint(ctx, drop, timeSec, px);
-    }
     this.particles.drawSandPuffs(ctx, pal.sandLight);
     this.fx.drawSpecks(fx, 1);
     for (const p of tank.pellets) drawPellet(ctx, p.x, Math.min(pelletY(p, game), SAND_Y - 1), p.premium, px, timeSec);
@@ -880,6 +871,16 @@ export class Renderer {
       if (decorLayer(d.decorId) === 'front' && decorSpriteSize(d.decorId)) this.drawDecorItem(d, tank, now, timeSec, px, grid, shadowShift, fx);
     }
     if (!picture) drawFrontPlants(ctx, pal, sceneTime, px, view);
+    // Eggs and shell drops sit in front of everything on the sand, so they're never hidden behind decor or fish.
+    const wallNow = Date.now();
+    for (const egg of game.eggs) {
+      if (egg.tankId === tank.id) this.drawEggItem(egg, wallNow, timeSec, px, grid, reduced);
+    }
+    for (const drop of tank.shells) {
+      const lift = this.sandItems.lift(drop.id, now);
+      if (!drawSandItem(ctx, drop.pearl ? 'pearl' : 'shell', drop.x, grid, { lift: -lift })) drawDrop(ctx, drop, px, timeSec);
+      else if (lift === 0) this.sandItems.drawGlint(ctx, drop, timeSec, px);
+    }
     // Scene-wide light: the theme's ambient tint (e.g. moonlit blue), then the time of day.
     this.drawSceneLight(tank.theme, view);
     const lights = Math.max(day.lights, THEME_ART[tank.theme].minLights);

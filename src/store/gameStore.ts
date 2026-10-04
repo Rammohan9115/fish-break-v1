@@ -529,7 +529,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
     },
 
     buyPremiumFood: () => commitResult(economy.buyPremiumFood(get().game), '🌟 +3 premium food'),
-    buyDecor: (decorId) => commitResult(economy.buyDecor(get().game, decorId, Date.now(), Math.random), '🪴 Placed! Drag it along the sand to move it.'),
+    buyDecor: (decorId) => commitResult(economy.buyDecor(get().game, decorId, Date.now(), Math.random), '🪴 Placed! Hold it, then drag to move it.'),
     sellDecor: (tankId, placedId) => {
       const placed = get().game.tanks.find((t) => t.id === tankId)?.decor.find((d) => d.id === placedId);
       const refund = placed ? economy.decorRefund(placed.decorId) : null;

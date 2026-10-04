@@ -1027,6 +1027,51 @@
   color: var(--color-text-love);
 }
 
+.banner-compact {
+  top: calc(var(--banner-compact-top, 46px) + env(safe-area-inset-top));
+  min-height: 0;
+  max-width: min(420px, calc(100vw - 140px));
+  padding: 2px var(--space-1) 2px var(--space-3);
+  border-width: 2px;
+  border-radius: 999px;
+  box-shadow: 0 2px 0 var(--banner-edge), var(--shadow-float);
+  opacity: 0.94;
+}
+
+.banner-compact .banner-text {
+  flex-direction: row;
+  align-items: baseline;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 0;
+  white-space: nowrap;
+}
+
+.banner-compact .banner-main {
+  font-size: var(--text-label);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.banner-compact .banner-sub::before {
+  content: '· ';
+}
+
+/* The ✕ looks small but keeps a full-size tap area. */
+.banner-compact .btn-close {
+  position: relative;
+  width: 28px;
+  min-height: 28px;
+  height: 28px;
+  font-size: var(--text-body);
+}
+
+.banner-compact .btn-close::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .banner {
     animation: none;

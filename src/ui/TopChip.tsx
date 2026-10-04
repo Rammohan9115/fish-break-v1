@@ -41,14 +41,14 @@ function ModeBanner() {
   const exit = () => setMode('look');
   if (mode === 'clean') {
     return (
-      <Banner onClose={exit} closeLabel="Stop cleaning" sub={algae > 0 ? `${algae} spot${algae === 1 ? '' : 's'} left · tap 🧽 again or ✕ to stop` : 'All clean ✨'}>
-        🧽 Cleaning: drag over the green spots
+      <Banner compact onClose={exit} closeLabel="Stop cleaning" sub={algae > 0 ? `${algae} left` : 'All clean ✨'}>
+        🧽 Wipe the green spots
       </Banner>
     );
   }
   return (
-    <Banner onClose={exit} closeLabel="Stop feeding" sub={mode === 'premium' ? `${premiumLeft} premium left · ✕ to stop` : 'Tap the tool again or ✕ to stop'}>
-      {mode === 'premium' ? '🌟 Premium food: tap the water' : '🍤 Feeding: tap the water to drop a pellet'}
+    <Banner compact onClose={exit} closeLabel="Stop feeding" sub={mode === 'premium' ? `${premiumLeft} left` : undefined}>
+      {mode === 'premium' ? '🌟 Tap the water to feed' : '🍤 Tap the water to feed'}
     </Banner>
   );
 }

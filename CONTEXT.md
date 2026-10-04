@@ -207,8 +207,8 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
   - Hit tests and coordinates: `toTank`, `fishAt`, `dropAt`, `decorAt`.
   - Effects: `popDrop`, `wipeEffect`, `suds`, `poke` (puffer inflate).
   - `handleEvents(SimEvent[])`: heart between the pair, egg x under the parents, hatchling spawns at its egg.
-  - Draw order: water, rays, sand, bubbler, theme scenery, decor, eggs, drops, pellets, bubbles, fish, indicators,
-    hearts, sparkles, pops, algae, glass.
+  - Draw order: water, rays, sand, bubbler, theme scenery, decor (all `layer: 'back'`, behind fish), pellets, bubbles, fish, indicators,
+    front plants, then eggs and shell drops (always in front so they're never hidden), hearts, sparkles, pops, algae, glass.
   - Pellet y is extrapolated between sim ticks.
 - **`behavior.ts`:** `createActor`/`updateActor` (steering with a turn-rate limit, edge avoidance, food seeking with wider
   bounds so fish can reach sand and surface, tetra schooling, axolotl band near the bottom, flip easing,
@@ -224,7 +224,8 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
 **`src/ui/`** (React; overlays only)
 - **`App.tsx`:** mounts everything; during Break Mode it renders only TankView and BreakMode. It runs `useSoundSync` and the global Esc handler.
 - **`TankView.tsx`:** owns the canvas and input gestures. Press priority: break (poke only) > collect drop > clean (sponge drag) >
-  feed/premium (pellet) > fish select > decor (select + horizontal drag). Sound triggers live here.
+  feed/premium (pellet) > fish select > decor. A tap on decor never moves it: hold `DECOR_LONG_PRESS_MS` to pick it up
+  (selects it, opens DecorCard, lifts), then drag; the selected piece drags straight away. Moving before the hold completes pans instead. Sound triggers live here.
 - **The other components:** Hud (level/XP/shells/pearls/tank chip/mute), Toolbar, FishCard (name edit, meters, growth ETA, breeding status,
   Move to tank, sell with confirm), DecorCard, Shop (four tabs, `PriceTag`), TankSwitcher, LevelUpModal, DailyGift (DOM overlay
   inside the tank), Onboarding, Toasts (at most 3), BreakMode (setup + active + end), Preview (static canvas fish/decor).
@@ -244,6 +245,8 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
 - Renderer: `getBreedingView` (from TankView) → 💕 markers, pairing dim/fade/glow, courtship heart loop (`behavior.heartPoint`,
   mirror halves, shared wave phase, floating hearts), 👇 quest arrow, egg at `egg.x`, newborn spin, shiny gold burst.
 - Dev panel → Breeding: Make ready, Finish courtship, Hatch eggs now, Fill tank.
+
+- **Tool-mode banners** (Feed/Premium/Clean) use `Banner compact`: a slim pill under the XP bar so the tank stays visible.
 
 ## Lessons learned (don't repeat these)
 - **Breeding checks are no longer clock-based** (the old "shift Date.now" trick is obsolete): use the dev buttons, or set

@@ -107,8 +107,8 @@ export interface DecorArt {
 }
 
 export const DECOR_ART: Record<DecorId, DecorArt> = {
-  plant_small: { file: 'elements/plant_small.png', width: 74, layer: 'front', sink: 0.04, behaviors: ['sway', 'breathe'], sway: { amp: 3.5, speed: 1.1 } },
-  plant_tall: { file: 'elements/plant_tall.png', width: 96, layer: 'front', sink: 0.04, behaviors: ['sway', 'breathe'], sway: { amp: 6.5, speed: 0.7 } },
+  plant_small: { file: 'elements/plant_small.png', width: 74, layer: 'back', sink: 0.04, behaviors: ['sway', 'breathe'], sway: { amp: 3.5, speed: 1.1 } },
+  plant_tall: { file: 'elements/plant_tall.png', width: 96, layer: 'back', sink: 0.04, behaviors: ['sway', 'breathe'], sway: { amp: 6.5, speed: 0.7 } },
   rock: {
     file: 'elements/rock.png',
     width: 100,

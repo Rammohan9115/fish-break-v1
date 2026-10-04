@@ -294,6 +294,10 @@ export const FISH_NAME_MAX_LENGTH = 20;
 export const TANK_NAME_MAX_LENGTH = 20;
 /** Pointer travel (CSS px) below which a press counts as a click, not a drag. */
 export const DRAG_THRESHOLD_PX = 5;
+/** Hold this long on a decor item to pick it up (taps never move decor). */
+export const DECOR_LONG_PRESS_MS = 450;
+/** Pointer travel (CSS px) that cancels a pending long press (the finger is panning instead). */
+export const LONG_PRESS_SLOP_PX = 10;
 
 // ---------------------------------------------------------------------------
 // Behavior (renderer)

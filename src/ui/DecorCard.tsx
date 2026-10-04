@@ -22,7 +22,7 @@ export function DecorCard() {
         <DecorPreview decorId={placed.decorId} />
         <div>
           <p className="meta">+{HAPPINESS_PER_DECOR} happiness for fish in {tank.name}</p>
-          <p className="decorcard-hint">↔ Drag it along the sand to move it.</p>
+          <p className="decorcard-hint">↔ Drag it along the sand to move it. Next time, hold it to pick it up.</p>
         </div>
       </div>
       <Button variant="danger" size="sm" onClick={() => setConfirming(true)}>
