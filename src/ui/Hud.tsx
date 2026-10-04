@@ -3,7 +3,10 @@
 // and round icon buttons (mute, fullscreen, settings) plus the cloud-sync badge under the coins.
 import { useEffect, useState } from 'react';
 import { sound } from '../audio/sound';
+import { CAPACITY_WARN_FRACTION, UNLOCK_LEVEL } from '../game/constants';
+import { capacityUpgradeCost } from '../game/economy';
 import { xpToNext } from '../game/levels';
+import { tankOccupancy } from '../game/sim';
 import { useGameStore } from '../store/gameStore';
 import { fullscreenSupported, toggleFullscreen } from './fullscreen';
 import { SyncBadge } from './SyncIndicator';
@@ -35,6 +38,13 @@ export function Hud() {
   const toggleMute = useGameStore((s) => s.toggleMute);
   const tankName = useGameStore((s) => s.game.tanks.find((t) => t.id === s.game.activeTankId)?.name ?? '');
   const tankCount = useGameStore((s) => s.game.tanks.length);
+  const capUsed = useGameStore((s) => tankOccupancy(s.game, s.game.activeTankId));
+  const capMax = useGameStore((s) => s.game.tanks.find((t) => t.id === s.game.activeTankId)?.capacity ?? 0);
+  const canUpgrade = useGameStore((s) => {
+    const tank = s.game.tanks.find((t) => t.id === s.game.activeTankId);
+    return !!tank && s.game.level >= UNLOCK_LEVEL.capacityUpgrade && capacityUpgradeCost(tank) !== null;
+  });
+  const capacity = capMax > 0 ? { used: capUsed, max: capMax, crowded: capUsed >= capMax * CAPACITY_WARN_FRACTION, canUpgrade } : null;
   const openPanel = useGameStore((s) => s.openPanel);
   const [isFullscreen, setIsFullscreen] = useState(() => Boolean(document.fullscreenElement));
   const shellBump = useBump('shell');
@@ -96,12 +106,24 @@ export function Hud() {
         </div>
       </div>
 
+      <div className="hud-right">
       <button type="button" className="hud-tank" onClick={() => openPanel('tanks')} aria-label={`${tankName}. Open tanks`}>
         <span className="hud-tank-name">{tankName}</span>
+        {capacity && (
+          <span className={`hud-cap${capacity.used >= capacity.max ? ' hud-cap-full' : ''}`} aria-label={`${capacity.used} of ${capacity.max} spots`}>
+            🐟 {capacity.used}/{capacity.max}
+          </span>
+        )}
         <span className="hud-tank-icon" aria-hidden="true">
           🐠{tankCount > 1 && <small>{tankCount}</small>}
         </span>
       </button>
+      {capacity?.crowded && capacity.canUpgrade && (
+        <button type="button" className="hud-upgrade" onClick={() => openPanel('shop', 'tanks')}>
+          ⬆️ Upgrade
+        </button>
+      )}
+      </div>
     </header>
   );
 }

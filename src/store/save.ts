@@ -1,5 +1,7 @@
 // Versioned localStorage persistence with migrations, corrupt-save backup, and offline catch-up.
 import {
+  BREEDING_QUEST_REWARD,
+  CAPACITY_UPGRADE,
   CORRUPT_SAVE_PREFIX,
   MINUTE_MS,
   OFFLINE_SUMMARY_MIN_MS,
@@ -8,7 +10,9 @@ import {
   SAVE_INTERVAL_MS,
   SAVE_KEY,
   SAVE_VERSION,
+  UNLOCK_LEVEL,
 } from '../game/constants';
+import { baseCapacity } from '../game/economy';
 import { createInitialState, simulateOffline, type OfflineSummary } from '../game/sim';
 import type { GameState, Rng } from '../game/types';
 
@@ -36,7 +40,36 @@ export const migrations: Record<number, Migration> = {
   },
   // v2 → v3: Break Mode XP cooldown.
   2: (data) => ({ ...data, lastBreakXpAt: null }),
+  // v3 → v4: player-driven breeding and roomier tanks.
+  // - Capacity: tanks start at 10 / 12 / 15 (by order) and each upgrade adds 3. Upgrades already bought
+  //   (old: +2 each from 6) carry over as the same number of new +3 steps.
+  // - The old random breeding kept no pending state beyond lastBredAt (kept) and eggs (kept as-is;
+  //   they simply stop counting toward capacity). Courtships and the Nursery start empty.
+  // - Players already at the breeding level see the new guide and quest once.
+  3: (data) => {
+    const tanks = Array.isArray(data.tanks)
+      ? data.tanks.map((t, i) => {
+          if (!isObject(t)) return t;
+          const oldCapacity = isNum(t.capacity) ? t.capacity : V3_BASE_CAPACITY;
+          const upgrades = Math.min(V3_MAX_UPGRADES, Math.max(0, Math.round((oldCapacity - V3_BASE_CAPACITY) / V3_UPGRADE_SLOTS)));
+          return { ...t, upgrades, capacity: baseCapacity(i) + upgrades * CAPACITY_UPGRADE.slots };
+        })
+      : data.tanks;
+    const level = isNum(data.level) ? data.level : 1;
+    return {
+      ...data,
+      tanks,
+      courtships: [],
+      nursery: [],
+      breedingQuest: { guideSeen: false, status: level >= UNLOCK_LEVEL.breeding ? 'active' : 'off' },
+    };
+  },
 };
+
+/** The v3 capacity rules, needed to read old saves: base 6, +2 per upgrade, at most 3 upgrades. */
+const V3_BASE_CAPACITY = 6;
+const V3_UPGRADE_SLOTS = 2;
+const V3_MAX_UPGRADES = 3;
 
 // ---------------------------------------------------------------------------
 // Validation
@@ -52,6 +85,7 @@ function isTank(v: unknown): boolean {
     isStr(v.id) &&
     isStr(v.theme) &&
     isNum(v.capacity) &&
+    isNum(v.upgrades) &&
     isNum(v.cleanliness) &&
     Array.isArray(v.algaeSpots) &&
     Array.isArray(v.decor) &&
@@ -82,6 +116,8 @@ export function isValidGameState(v: unknown): v is GameState {
   if (!Array.isArray(v.tanks) || v.tanks.length === 0 || !v.tanks.every(isTank)) return false;
   if (!Array.isArray(v.fish) || !v.fish.every(isFish)) return false;
   if (!Array.isArray(v.eggs)) return false;
+  if (!Array.isArray(v.courtships) || !Array.isArray(v.nursery) || !v.nursery.every(isFish)) return false;
+  if (!isObject(v.breedingQuest) || typeof v.breedingQuest.guideSeen !== 'boolean' || !isStr(v.breedingQuest.status)) return false;
   if (!isObject(v.inventory) || !isNum(v.inventory.premiumFood)) return false;
   if (!isObject(v.settings) || !isObject(v.stats)) return false;
   if (!isObject(v.feedXp) || !isNum(v.feedXp.windowStart) || !isNum(v.feedXp.earned)) return false;
@@ -194,7 +230,7 @@ export function saveOnboarding(storage: SaveStorage, step: number | null): void 
 // Offline summary text
 // ---------------------------------------------------------------------------
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const plural = (n: number, word: string, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
 
 function formatDuration(ms: number): string {
   const totalMin = Math.round(ms / MINUTE_MS);
@@ -208,7 +244,10 @@ export function formatOfflineSummary(summary: OfflineSummary): string {
   const parts: string[] = [];
   if (summary.shellsDropped > 0) parts.push(`🐚 ${summary.shellValue} shells dropped`);
   if (summary.pearlsDropped > 0) parts.push(`⚪ ${plural(summary.pearlsDropped, 'pearl')}`);
+  if (summary.eggsLaid > 0) parts.push(`💕 ${plural(summary.eggsLaid, 'egg')} laid`);
   if (summary.eggsHatched > 0) parts.push(`🥚 ${plural(summary.eggsHatched, 'egg')} hatched`);
+  if (summary.questComplete) parts.push(`🎉 first baby: +${BREEDING_QUEST_REWARD.shells} 🐚 +${BREEDING_QUEST_REWARD.pearls} ⚪`);
+  if (summary.toNursery > 0) parts.push(`🍼 ${plural(summary.toNursery, 'baby', 'babies')} napping in the Nursery`);
   if (summary.fishGrown > 0) parts.push(`🐟 ${summary.fishGrown} grew up a stage`);
   const head = `While you were away (${formatDuration(summary.elapsedMs)})`;
   return parts.length > 0 ? `${head}: ${parts.join(', ')}` : `${head}, your fish missed you!`;

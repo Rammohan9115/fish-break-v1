@@ -1,6 +1,6 @@
 // Tanks panel: every tank at a glance, switch between them, rename, and buy the next tank.
 import { useState } from 'react';
-import { MAX_DECOR_PER_TANK, TANK_NAME_MAX_LENGTH, THEMES } from '../game/constants';
+import { CAPACITY_UPGRADE, MAX_DECOR_PER_TANK, TANK_NAME_MAX_LENGTH, THEMES } from '../game/constants';
 import { checkBuyTank, nextTankPurchase } from '../game/economy';
 import { tankOccupancy } from '../game/sim';
 import type { GameState, Tank } from '../game/types';
@@ -29,7 +29,6 @@ function TankCard({ tank, game }: { tank: Tank; game: GameState }) {
   const switchTank = useGameStore((s) => s.switchTank);
   const openPanel = useGameStore((s) => s.openPanel);
   const active = tank.id === game.activeTankId;
-  const fish = game.fish.filter((f) => f.tankId === tank.id).length;
   const eggs = game.eggs.filter((e) => e.tankId === tank.id).length;
   const drops = tank.shells.length;
 
@@ -39,7 +38,8 @@ function TankCard({ tank, game }: { tank: Tank; game: GameState }) {
       <div className="tankcard-info">
         <TankName key={tank.id} tank={tank} />
         <div className="fishcard-sub">
-          {THEMES[tank.theme].name} · {fish} fish{eggs > 0 ? ` · ${eggs} egg${eggs === 1 ? '' : 's'}` : ''} · {tankOccupancy(game, tank.id)}/{tank.capacity} spots
+          {THEMES[tank.theme].name} · 🐟 {tankOccupancy(game, tank.id)}/{tank.capacity}
+          {eggs > 0 ? ` · 🥚 ${eggs}` : ''} · {tank.upgrades}/{CAPACITY_UPGRADE.maxPurchases} upgrades
         </div>
         <div className="fishcard-sub">
           🪴 {tank.decor.length}/{MAX_DECOR_PER_TANK} decor · 🧽 {Math.round(tank.cleanliness)}% clean

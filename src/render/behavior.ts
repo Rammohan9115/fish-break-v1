@@ -28,6 +28,7 @@ import {
   MIN_CRUISE_FRACTION,
   SAD_HAPPINESS,
   SAD_SINK,
+  COURTSHIP_SPEED,
   GLOOM_SMOOTHING,
   SAD_SPEED_MULTIPLIER,
   SAND_Y,
@@ -117,6 +118,20 @@ export interface BehaviorInput {
   food: FoodTarget[];
   /** Other actors of the same species in this tank (used for schooling). */
   schoolmates: FishActor[];
+  /** Courting: swim toward this point on the pair's heart loop instead of wandering or chasing food. */
+  courtship?: { x: number; y: number };
+}
+
+/**
+ * A point on a heart-shaped loop (the classic parametric heart), `w` wide and `h` tall, centered on 0.
+ * u is the angle around the loop (radians); y grows downward like the canvas. Pure; unit-tested.
+ */
+export function heartPoint(u: number, w: number, h: number): { x: number; y: number } {
+  const s = Math.sin(u);
+  const x = 16 * s * s * s;
+  const y = 13 * Math.cos(u) - 5 * Math.cos(2 * u) - 2 * Math.cos(3 * u) - Math.cos(4 * u);
+  // Raw ranges: x ∈ [-16, 16], y ∈ [-17, 12] (up is +); center vertically and flip for canvas.
+  return { x: (x / 16) * (w / 2), y: -((y + 2.5) / 14.5) * (h / 2) };
 }
 
 const rand = (rng: Rng, min: number, max: number) => min + rng() * (max - min);
@@ -296,11 +311,16 @@ export function updateActor(actor: FishActor, input: BehaviorInput): string | nu
     actor.nextDartAt = now + rand(rng, DART_GAP_MIN_MS, DART_GAP_MAX_MS);
   }
 
-  // Target: nearest food if hungry enough, otherwise wander
-  const food = fish.hunger < FULL_HUNGER ? nearestFood(actor, input.food) : null;
+  // Target: the courtship loop, else nearest food if hungry enough, otherwise wander
+  const courting = input.courtship;
+  const food = !courting && fish.hunger < FULL_HUNGER ? nearestFood(actor, input.food) : null;
   let tx: number;
   let ty: number;
-  if (food) {
+  if (courting) {
+    tx = courting.x;
+    ty = courting.y;
+    actor.nextWanderAt = now + WANDER_MIN_MS;
+  } else if (food) {
     // Aim so the mouth (not the center) meets the pellet.
     const side = food.x >= actor.x ? 1 : -1;
     tx = food.x - side * mouthOffset(fish.speciesId, fish.stage) * 0.8;
@@ -335,8 +355,10 @@ export function updateActor(actor: FishActor, input: BehaviorInput): string | nu
   const delta = wrapAngle(desiredHeading - actor.heading);
   actor.heading = wrapAngle(actor.heading + clamp(delta, -turnRate * dt, turnRate * dt));
 
-  const maxSpeed = maxSpeedFor(fish, actor, now, food !== null);
-  const arriveFactor = food ? 1 : Math.max(MIN_CRUISE_FRACTION, Math.min(1, dist / ARRIVE_SLOWDOWN_DIST));
+  // Courting is a slow, dreamy glide once on the loop; catching up to it is a normal swim.
+  const maxSpeed = maxSpeedFor(fish, actor, now, food !== null) * (courting ? COURTSHIP_SPEED : 1);
+  // Courting fish ease onto the moving loop point instead of overshooting it.
+  const arriveFactor = food ? 1 : Math.max(courting ? 0.15 : MIN_CRUISE_FRACTION, Math.min(1, dist / ARRIVE_SLOWDOWN_DIST));
   const targetSpeed = maxSpeed * arriveFactor;
   const accel = maxSpeed * ACCEL_FRACTION * dt;
   const prevSpeed = actor.speed;

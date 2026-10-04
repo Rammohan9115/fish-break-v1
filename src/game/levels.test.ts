@@ -39,9 +39,10 @@ describe('unlocks', () => {
     expect(ids(1)).toEqual(['danio', 'guppy']);
     expect(ids(2)).toEqual(['premiumFood']);
     expect(ids(3)).toEqual(['decorShop', 'goldfish', 'plant_small', 'plant_tall', 'rock'].sort());
+    expect(ids(4)).toEqual(['capacityUpgrade']);
     expect(ids(5)).toEqual(['betta', 'breeding']);
     expect(ids(6)).toEqual(['castle', 'tetra']);
-    expect(ids(7)).toEqual(['capacityUpgrade']);
+    expect(ids(7)).toEqual([]);
     expect(ids(8)).toEqual(['angelfish', 'tank2']);
     expect(ids(9)).toEqual(['chest']);
     expect(ids(10)).toEqual(['night']);

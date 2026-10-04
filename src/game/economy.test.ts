@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { FEED_XP_MAX_PER_HOUR, HOUR_MS, MAX_DECOR_PER_TANK, NEW_TANK_CAPACITY, XP } from './constants';
+import { BREEDING, FEED_XP_MAX_PER_HOUR, HOUR_MS, MAX_DECOR_PER_TANK, TANK_BASE_CAPACITY, XP } from './constants';
 import {
   applyTheme,
   buyCapacityUpgrade,
+  moveFromNursery,
+  rehomeNurseryBaby,
+  rehomeValue,
   buyDecor,
   buyFish,
   buyPremiumFood,
@@ -30,7 +33,7 @@ import {
 import { happinessTarget } from './sim';
 import { SPECIES } from './species';
 import { constRng, makeFish, makeState, makeTank, seededRng, T0 } from './testUtils';
-import type { GameState } from './types';
+import type { Fish, GameState } from './types';
 
 const rich = (o: Partial<GameState> = {}) => makeState({ overrides: { shells: 100_000, pearls: 1_000, level: 30, ...o } });
 const okState = (r: Result): GameState => {
@@ -74,11 +77,12 @@ describe('buying fish', () => {
     expect(reason(buyFish(makeState({ overrides: { shells: 9 } }), 'danio', T0, seededRng(1)))).toBe('cost');
   });
 
-  it('checks capacity, counting eggs', () => {
+  it('checks capacity; eggs don’t take up room', () => {
     const full = rich();
-    full.fish = Array.from({ length: 5 }, () => makeFish());
-    expect(checkBuyFish(full, 'danio')).toBeNull();
+    full.fish = Array.from({ length: TANK_BASE_CAPACITY[0] - 1 }, () => makeFish());
     full.eggs = [{ id: 'e', speciesId: 'danio', variant: 'zebra', shiny: false, tankId: 'tank-1', hatchAt: T0 + HOUR_MS }];
+    expect(checkBuyFish(full, 'danio')).toBeNull();
+    full.fish.push(makeFish());
     expect(checkBuyFish(full, 'danio')).toBe('full');
   });
 
@@ -185,17 +189,18 @@ describe('decor', () => {
 });
 
 describe('tank capacity upgrade', () => {
-  it('unlocks at L7: +2 slots, 200 shells, doubling, max 3', () => {
-    expect(reason(buyCapacityUpgrade(rich({ level: 6 })))).toBe('locked');
-    let state = rich({ level: 7, shells: 10_000 });
+  it('unlocks at L4: +3 slots, 150 shells growing ×1.6, max 5 per tank', () => {
+    expect(reason(buyCapacityUpgrade(rich({ level: 3 })))).toBe('locked');
+    let state = rich({ level: 4, shells: 10_000 });
+    expect(state.tanks[0]!.capacity).toBe(10);
     const costs: number[] = [];
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 5; i++) {
       costs.push(capacityUpgradeCost(state.tanks[0]!)!.amount);
       state = okState(buyCapacityUpgrade(state));
     }
-    expect(costs).toEqual([200, 400, 800]);
-    expect(state.tanks[0]!.capacity).toBe(NEW_TANK_CAPACITY + 6);
-    expect(state.shells).toBe(10_000 - 1400);
+    expect(costs).toEqual([150, 240, 384, 614, 983]);
+    expect(state.tanks[0]).toMatchObject({ capacity: 25, upgrades: 5 });
+    expect(state.shells).toBe(10_000 - 2371);
     expect(capacityUpgradeCost(state.tanks[0]!)).toBeNull();
     expect(reason(buyCapacityUpgrade(state))).toBe('max');
   });
@@ -209,10 +214,11 @@ describe('extra tanks', () => {
     expect(state.tanks).toHaveLength(2);
     expect(state.shells).toBe(2500);
     expect(state.activeTankId).toBe(state.tanks[1]!.id);
-    expect(state.tanks[1]).toMatchObject({ capacity: NEW_TANK_CAPACITY, theme: 'classic', cleanliness: 100 });
+    expect(state.tanks[1]).toMatchObject({ capacity: 12, upgrades: 0, theme: 'classic', cleanliness: 100 });
     expect(reason(buyTank(state, T0, seededRng(2)))).toBe('locked');
     state = okState(buyTank({ ...state, level: 14 }, T0 + 1, seededRng(2)));
     expect(state.tanks).toHaveLength(3);
+    expect(state.tanks[2]).toMatchObject({ capacity: 15, upgrades: 0 });
     expect(state.shells).toBe(500);
     expect(reason(buyTank(state, T0, seededRng(3)))).toBe('max');
   });
@@ -296,10 +302,20 @@ describe('moving fish between tanks', () => {
     expect(okState(moveFish(s, fish.id, 'tank-2')).fish[0]!.tankId).toBe('tank-2');
   });
 
-  it('refuses a full target tank (eggs count)', () => {
+  it('refuses a full target tank (only hatched fish count)', () => {
     const fish = makeFish();
-    const s = { ...twoTanks({ capacity2: 1 }), fish: [fish], eggs: [{ id: 'e', speciesId: 'danio' as const, variant: 'zebra', shiny: false, tankId: 'tank-2', hatchAt: T0 + HOUR_MS }] };
-    expect(reason(moveFish(s, fish.id, 'tank-2'))).toBe('full');
+    const egg = { id: 'e', speciesId: 'danio' as const, variant: 'zebra', shiny: false, tankId: 'tank-2', hatchAt: T0 + HOUR_MS };
+    expect(reason(moveFish({ ...twoTanks({ capacity2: 1 }), fish: [fish], eggs: [egg] }, fish.id, 'tank-2'))).toBe('ok');
+    const resident = makeFish({ tankId: 'tank-2' });
+    expect(reason(moveFish({ ...twoTanks({ capacity2: 1 }), fish: [fish, resident] }, fish.id, 'tank-2'))).toBe('full');
+  });
+
+  it('a courting fish can’t be moved or sold', () => {
+    const a = makeFish({ stage: 'adult', growth: 1200 });
+    const b = makeFish({ stage: 'adult', growth: 1200 });
+    const s = { ...twoTanks(), fish: [a, b], courtships: [{ id: 'c', tankId: 'tank-1', fishIds: [a.id, b.id] as [string, string], startedAt: T0, endsAt: T0 + BREEDING.courtshipMs, x: 400 }] };
+    expect(reason(moveFish(s, a.id, 'tank-2'))).toBe('courting');
+    expect(reason(sellFish(s, b.id))).toBe('courting');
   });
 
   it('keeps clownfish in coral tanks and koi in pond tanks', () => {
@@ -340,5 +356,39 @@ describe('break mode XP', () => {
     expect(okState(again).xp).toBe(XP.breakComplete);
     expect(completeBreak(s1, T0 + HOUR_MS).xp).toBe(XP.breakComplete);
     expect(breakXpAvailable(s1, T0 + 10)).toBe(false);
+  });
+});
+
+describe('nursery', () => {
+  const baby = (o: Partial<Fish> = {}) => makeFish({ speciesId: 'goldfish', tankId: '', ...o });
+  const withNursery = (babies: Fish[], o: { fishInTank?: number; theme?: 'classic' | 'coral' } = {}) => {
+    const s = rich();
+    s.tanks = [makeTank({ id: 'tank-1', capacity: 3, theme: o.theme ?? 'classic' })];
+    s.fish = Array.from({ length: o.fishInTank ?? 0 }, () => makeFish());
+    s.nursery = babies;
+    return s;
+  };
+
+  it('moves a napping baby into a tank with room, where it starts growing', () => {
+    const b = baby();
+    const s = okState(moveFromNursery(withNursery([b]), b.id, 'tank-1', T0 + 5));
+    expect(s.nursery).toHaveLength(0);
+    expect(s.fish.find((f) => f.id === b.id)).toMatchObject({ tankId: 'tank-1', stage: 'baby', lastDropAt: T0 + 5 });
+  });
+
+  it('won’t move into a full tank or the wrong theme', () => {
+    const b = baby();
+    expect(reason(moveFromNursery(withNursery([b], { fishInTank: 3 }), b.id, 'tank-1', T0))).toBe('full');
+    const clown = baby({ speciesId: 'clownfish' });
+    expect(reason(moveFromNursery(withNursery([clown]), clown.id, 'tank-1', T0))).toBe('theme');
+    expect(reason(moveFromNursery(withNursery([clown], { theme: 'coral' }), clown.id, 'tank-1', T0))).toBe('ok');
+  });
+
+  it('rehoming pays 20% of the adult price', () => {
+    const b = baby();
+    expect(rehomeValue(b)).toBe(16); // goldfish sells for 80
+    const s = okState(rehomeNurseryBaby(withNursery([b]), b.id));
+    expect(s.nursery).toHaveLength(0);
+    expect(s.shells).toBe(rich().shells + 16);
   });
 });

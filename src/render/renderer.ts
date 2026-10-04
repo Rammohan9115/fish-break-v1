@@ -4,6 +4,13 @@ import {
   DECOR_DROP_PUFFS,
   DECOR_LIFT_SMOOTHING,
   EGG_BURST_CHIPS,
+  EGG_EAGER_MS,
+  COURTSHIP_HEART_GAP_S,
+  COURTSHIP_HEIGHT,
+  COURTSHIP_LOOP_H,
+  COURTSHIP_LOOP_S,
+  COURTSHIP_LOOP_W,
+  HATCH_SPIN_MS,
   RAY_SPEED,
   SHADOW_SHIFT,
   EGG_EDGE_MARGIN,
@@ -28,7 +35,7 @@ import {
 } from '../game/constants';
 import { getSpecies, getVariant, SHINY_OUTLINE, SHINY_SPARKLE } from '../game/species';
 import type { Fish, GameState, Tank, ThemeId } from '../game/types';
-import { createActor, isSad, setSwimExtent, updateActor, type FishActor, type FoodTarget } from './behavior';
+import { createActor, heartPoint, isSad, setSwimExtent, updateActor, type FishActor, type FoodTarget } from './behavior';
 import { drawFish, drawStar, fishHalfHeight, FISH_ART, fishScale, mouthOffset } from './drawFish';
 import { eatSquash, pokeBounce, speedFraction } from './fishMotion';
 import { dropShadow } from './paint';
@@ -57,7 +64,7 @@ import { currentHour, dayLight, getHourOverride, setHourOverride, type DayLight 
 import { DecorBehaviors } from './ambient/decorBehaviors';
 import { QualityManager, type QualityLevel } from './ambient/quality';
 import { SandItems } from './ambient/sandItems';
-import type { DecorId } from '../game/types';
+import type { Courtship, DecorId, Egg } from '../game/types';
 import type { SimEvent } from '../game/sim';
 import { drawDrop, drawPellet, Particles } from './particles';
 
@@ -74,7 +81,23 @@ export interface RendererDeps {
   getHudTarget?: (icon: IconId) => { x: number; y: number } | null;
   /** A collected drop reached its HUD counter (the counter bumps). */
   onHudArrive?: (icon: IconId) => void;
+  /** Breeding state to show (read once per frame). */
+  getBreedingView?: () => BreedingView;
 }
+
+/** What the tank shows for breeding. */
+export interface BreedingView {
+  /** Fish ready to pair (with a ready partner): a pulsing 💕 floats above them. */
+  readyIds: Set<string>;
+  /** Pairing mode: the chooser, and the partners that glow (everyone else fades). */
+  pairing: { fishId: string; compatibleIds: Set<string> } | null;
+  /** Courtships in the active tank (the pair swims a heart loop). */
+  courtships: Courtship[];
+  /** The first-baby quest points at this fish. */
+  questFishId: string | null;
+}
+
+const NO_BREEDING: BreedingView = { readyIds: new Set(), pairing: null, courtships: [], questFishId: null };
 
 const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
@@ -138,6 +161,11 @@ export class Renderer {
   /** Pellets already seen (a new one makes a ripple ring at the surface). */
   private seenPellets: Set<string> | null = null;
   private day: DayLight = dayLight(12);
+  private breeding: BreedingView = NO_BREEDING;
+  /** When each newborn arrived (it does a little happy spin). */
+  private readonly spinAt = new Map<string, number>();
+  /** Seconds until the next floating heart, per courtship. */
+  private readonly heartTimers = new Map<string, number>();
   private raf = 0;
   private last = 0;
   private dpr = 1;
@@ -339,38 +367,51 @@ export class Renderer {
     const now = performance.now();
     for (const e of events) {
       if (e.type === 'eggLaid') {
-        const a = this.actors.get(e.parentIds[0]);
-        const b = this.actors.get(e.parentIds[1]);
-        if (!a || !b) continue;
-        const mx = (a.x + b.x) / 2;
-        const my = (a.y + b.y) / 2;
-        this.particles.spawnHeart(mx, my - 8);
-        this.eggX.set(e.eggId, Math.min(TANK_WIDTH - EGG_EDGE_MARGIN, Math.max(EGG_EDGE_MARGIN, mx)));
-        // The happy pair drifts together for a moment.
-        for (const actor of [a, b]) {
-          actor.targetX = mx;
-          actor.targetY = my;
-          actor.nextWanderAt = now + PAIR_LINGER_MS;
+        // The egg settles where the pair danced; a little burst of hearts marks it.
+        const egg = this.deps.getGame().eggs.find((g) => g.id === e.eggId);
+        const x = egg ? this.eggPosition(egg) : null;
+        if (x !== null) for (let i = 0; i < 3; i++) this.particles.spawnHeart(x + (i - 1) * 14, SAND_Y - 40 - i * 6);
+        for (const id of e.parentIds) {
+          const actor = this.actors.get(id);
+          if (actor) actor.nextWanderAt = now + PAIR_LINGER_MS;
         }
       } else if (e.type === 'hatched') {
-        const x = this.eggPosition(e.eggId);
-        this.spawnAt.set(e.fishId, { x, y: SAND_Y - 24 });
+        const x = this.eggX.get(e.eggId) ?? this.hatchSpot(e.eggId);
         this.eggX.delete(e.eggId);
+        if (e.destination === 'tank') {
+          this.spawnAt.set(e.fishId, { x, y: SAND_Y - 24 });
+          this.spinAt.set(e.fishId, now);
+        }
         for (let i = 0; i < 8; i++) this.particles.spawnSparkle(x + (Math.random() - 0.5) * 30, SAND_Y - Math.random() * 24);
         this.particles.spawnChips(x, SAND_Y - 10, '#ffb347', EGG_BURST_CHIPS);
+        if (e.shiny) {
+          // A golden burst for a shiny baby.
+          for (let i = 0; i < 18; i++) this.particles.spawnSparkle(x + (Math.random() - 0.5) * 70, SAND_Y - 10 - Math.random() * 70);
+          this.particles.spawnChips(x, SAND_Y - 16, '#ffd84a', 10);
+        }
       }
     }
   }
 
-  /** Egg x on the sand: remembered from when it was laid, else a stable spot derived from its id. */
-  private eggPosition(eggId: string): number {
-    const known = this.eggX.get(eggId);
-    if (known !== undefined) return known;
+  /** Egg x on the sand: where it was laid (saved), else a stable spot derived from its id. Remembered for the hatch. */
+  private eggPosition(egg: Egg): number {
+    const x = egg.x !== undefined ? Math.min(TANK_WIDTH - EGG_EDGE_MARGIN, Math.max(EGG_EDGE_MARGIN, egg.x)) : this.hatchSpot(egg.id);
+    this.eggX.set(egg.id, x);
+    return x;
+  }
+
+  private hatchSpot(eggId: string): number {
     let h = 0;
     for (let i = 0; i < eggId.length; i++) h = (h * 31 + eggId.charCodeAt(i)) >>> 0;
-    const x = EGG_EDGE_MARGIN + (h % 1000) / 1000 * (TANK_WIDTH - 2 * EGG_EDGE_MARGIN);
-    this.eggX.set(eggId, x);
-    return x;
+    return EGG_EDGE_MARGIN + ((h % 1000) / 1000) * (TANK_WIDTH - 2 * EGG_EDGE_MARGIN);
+  }
+
+  /** Where a pair would court (and lay their egg): between them, on the sand. */
+  pairSpot(aId: string, bId: string): number | undefined {
+    const a = this.actors.get(aId);
+    const b = this.actors.get(bId);
+    if (!a || !b) return undefined;
+    return Math.min(TANK_WIDTH - EGG_EDGE_MARGIN * 2, Math.max(EGG_EDGE_MARGIN * 2, (a.x + b.x) / 2));
   }
 
   /** Visual-only reaction to a click: every fish bounces, puffers also inflate. */
@@ -465,6 +506,7 @@ export class Renderer {
     const game = this.deps.getGame();
     const tank = game.tanks.find((tk) => tk.id === game.activeTankId) ?? game.tanks[0];
     if (tank) {
+      this.breeding = this.deps.getBreedingView?.() ?? NO_BREEDING;
       this.update(game, tank, t, dt);
       this.draw(game, tank, t, dt);
     }
@@ -477,12 +519,13 @@ export class Renderer {
     const reduced = this.reducedMotion(game);
 
     let food: FoodTarget[] = tank.pellets.map((p) => ({ id: p.id, x: p.x, y: Math.min(pelletY(p, game), SAND_Y - FOOD_SAND_OFFSET) }));
+    const loops = this.courtshipTargets(reduced);
     for (const f of fish) {
       const actor = this.actors.get(f.id)!;
       const mates = getSpecies(f.speciesId).traits.includes('schools')
         ? fish.filter((o) => o.speciesId === f.speciesId).map((o) => this.actors.get(o.id)!)
         : [];
-      const eaten = updateActor(actor, { fish: f, now, dt, rng: Math.random, food, schoolmates: mates });
+      const eaten = updateActor(actor, { fish: f, now, dt, rng: Math.random, food, schoolmates: mates, courtship: loops.get(f.id) });
       this.updateGaze(actor, food, dt);
       if (eaten) {
         food = food.filter((p) => p.id !== eaten);
@@ -510,6 +553,22 @@ export class Renderer {
         this.openChests.delete(d.id);
       }
     }
+    // Courting pairs swim in step (shared body-wave phase) and float hearts now and then.
+    for (const c of this.breeding.courtships) {
+      const a = this.actors.get(c.fishIds[0]);
+      const b = this.actors.get(c.fishIds[1]);
+      if (!a || !b) continue;
+      b.phase = a.phase;
+      const left = (this.heartTimers.get(c.id) ?? 0) - dt;
+      if (left <= 0) {
+        this.particles.spawnHeart((a.x + b.x) / 2 + (Math.random() - 0.5) * 16, Math.min(a.y, b.y) - 14);
+        this.heartTimers.set(c.id, COURTSHIP_HEART_GAP_S * (reduced ? 3 : 1));
+      } else {
+        this.heartTimers.set(c.id, left);
+      }
+    }
+    for (const id of this.heartTimers.keys()) if (!this.breeding.courtships.some((c) => c.id === id)) this.heartTimers.delete(id);
+    for (const [id, at] of this.spinAt) if (now - at > HATCH_SPIN_MS) this.spinAt.delete(id);
     for (const [id, lift] of this.decorLift) {
       lift.v += (lift.target - lift.v) * Math.min(1, dt * DECOR_LIFT_SMOOTHING);
       if (lift.target === 0 && lift.v < 0.002) this.decorLift.delete(id);
@@ -529,6 +588,28 @@ export class Renderer {
     if (this.seenPellets) for (const p of tank.pellets) if (!this.seenPellets.has(p.id)) this.fx.ripple(p.x);
     this.seenPellets = ids;
     this.particles.update(dt, reduced, current.total);
+  }
+
+  /**
+   * Where each courting fish should be on its heart loop right now: the pair traces mirror-image
+   * halves, meeting at the top dip and the bottom point. Reduced motion: they float side by side.
+   */
+  private courtshipTargets(reduced: boolean): Map<string, { x: number; y: number }> {
+    const out = new Map<string, { x: number; y: number }>();
+    const wall = Date.now();
+    for (const c of this.breeding.courtships) {
+      const cy = SAND_Y - COURTSHIP_HEIGHT;
+      if (reduced) {
+        out.set(c.fishIds[0], { x: c.x - 26, y: cy });
+        out.set(c.fishIds[1], { x: c.x + 26, y: cy });
+        continue;
+      }
+      const u = ((wall - c.startedAt) / 1000 / COURTSHIP_LOOP_S) * Math.PI * 2;
+      const p = heartPoint(u, COURTSHIP_LOOP_W * 2, COURTSHIP_LOOP_H * 2);
+      out.set(c.fishIds[0], { x: c.x + p.x, y: cy + p.y });
+      out.set(c.fishIds[1], { x: c.x - p.x, y: cy + p.y });
+    }
+    return out;
   }
 
   /** Everything the background effects need this frame. */
@@ -613,13 +694,35 @@ export class Renderer {
       const size = mouthOffset(f.speciesId, f.stage) * (1.1 + (1 - closeness) * 0.6);
       dropShadow(ctx, actor.x, SAND_Y + 8, size, size * 0.22, 0.12 + 0.28 * closeness);
     }
+    // Pairing mode: the tank dims a little; compatible partners glow and bob, everyone else fades.
+    const pairing = this.breeding.pairing;
+    if (pairing) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(12, 22, 60, 0.3)';
+      ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0);
+      ctx.restore();
+    }
     const selectedId = this.deps.getSelectedFishId();
     for (const f of game.fish) {
       if (f.tankId !== tank.id) continue;
       const actor = this.actors.get(f.id);
       if (!actor) continue;
+      const glowing = pairing?.compatibleIds.has(f.id) ?? false;
+      const chooser = pairing?.fishId === f.id;
+      const bob = glowing && !reduced ? Math.sin(timeSec * 4 + actor.phase) * 3 : 0;
       if (f.id === selectedId) this.drawSelection(actor, f, timeSec, px);
-      drawFish(ctx, actor.x, actor.y, {
+      if (glowing || chooser) this.drawSelection(actor, f, timeSec, px, chooser ? '#ffffff' : '#ff8fb8', bob);
+      ctx.save();
+      if (pairing && !glowing && !chooser) ctx.globalAlpha = 0.35;
+      // A newborn's happy spin: one full turn, easing out.
+      const spinAt = this.spinAt.get(f.id);
+      if (spinAt !== undefined && !reduced) {
+        const t = Math.min(1, (now - spinAt) / HATCH_SPIN_MS);
+        ctx.translate(actor.x, actor.y);
+        ctx.rotate((1 - (1 - t) ** 3) * Math.PI * 2 * (actor.facing >= 0 ? -1 : 1));
+        ctx.translate(-actor.x, -actor.y);
+      }
+      drawFish(ctx, actor.x, actor.y + bob, {
         speciesId: f.speciesId,
         variant: getVariant(f.speciesId, f.variant),
         shiny: f.shiny,
@@ -642,11 +745,13 @@ export class Renderer {
         wobbleAmp: reduced ? REDUCED_WAVE : 1,
         time: timeSec,
       });
+      ctx.restore();
     }
     for (const f of game.fish) {
       const actor = this.actors.get(f.id);
       if (actor?.indicator && f.tankId === tank.id) this.drawIndicator(actor, f, now, px);
     }
+    this.drawBreedingMarkers(game.fish.filter((f) => f.tankId === tank.id), timeSec, reduced);
     for (const d of tank.decor) {
       if (decorLayer(d.decorId) === 'front' && decorSpriteSize(d.decorId)) this.drawDecorItem(d, tank, now, timeSec, px, grid, shadowShift, fx);
     }
@@ -716,13 +821,13 @@ export class Renderer {
 
   /** An egg on the sand, rocking more as hatching nears: the egg sprite, or the drawn egg. */
   private drawEggItem(egg: GameState['eggs'][number], wallNow: number, timeSec: number, px: number, grid: PixelGrid, reduced: boolean): void {
-    const x = this.eggPosition(egg.id);
+    const x = this.eggPosition(egg);
     const wobble = reduced ? REDUCED_WOBBLE : 1;
     const progress = eggProgress(egg, wallNow);
-    const burst = Math.sin(timeSec * 1.3 + x) > 0.2 ? 1 : 0.35;
-    const angle = Math.sin(timeSec * (6 + progress * 6) + x) * (0.04 + 0.22 * progress * progress) * burst * wobble;
-    // In the last stretch it gives little hops, as if something inside is eager to come out.
-    const eager = Math.max(0, (progress - 0.85) / 0.15);
+    // In its last minute it wobbles faster and gives little hops, as if someone inside can't wait.
+    const eager = Math.max(0, Math.min(1, 1 - (egg.hatchAt - wallNow) / EGG_EAGER_MS));
+    const burst = eager > 0 || Math.sin(timeSec * 1.3 + x) > 0.2 ? 1 : 0.35;
+    const angle = Math.sin(timeSec * (6 + progress * 6 + eager * 10) + x) * (0.04 + 0.22 * progress * progress + 0.08 * eager) * burst * wobble;
     const hop = -Math.max(0, Math.sin(timeSec * 5 + x)) * 2.5 * eager * burst * wobble;
     if (!drawSandItem(this.ctx, 'egg', x, grid, { angle, lift: hop, scale: 1 + eager * 0.04 * Math.sin(timeSec * 10) })) {
       drawEgg(this.ctx, egg, x, wallNow, timeSec, px, wobble);
@@ -761,21 +866,59 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** Soft pulsing ring behind the selected fish. */
-  private drawSelection(actor: FishActor, fish: Fish, timeSec: number, px: number): void {
+  /** Soft pulsing ring behind a fish: white dashes for the selected one, a pink glow for pairing partners. */
+  private drawSelection(actor: FishActor, fish: Fish, timeSec: number, px: number, color = '#ffffff', dy = 0): void {
     const { ctx } = this;
     const rx = FISH_ART[fish.speciesId].mouthX * fishScale(fish.stage) * 1.35;
     const ry = fishHalfHeight(fish.speciesId, fish.stage) * 1.45;
     const pulse = 1 + Math.sin(timeSec * 4) * 0.05;
     ctx.save();
     ctx.beginPath();
-    ctx.ellipse(actor.x, actor.y, rx * pulse, ry * pulse, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
-    ctx.fill();
-    ctx.setLineDash([6 * px, 5 * px]);
-    ctx.lineWidth = 2 * px;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
-    ctx.stroke();
+    ctx.ellipse(actor.x, actor.y + dy, rx * pulse, ry * pulse, 0, 0, Math.PI * 2);
+    if (color === '#ffffff') {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+      ctx.fill();
+      ctx.setLineDash([6 * px, 5 * px]);
+      ctx.lineWidth = 2 * px;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.stroke();
+    } else {
+      const g = ctx.createRadialGradient(actor.x, actor.y + dy, 0, actor.x, actor.y + dy, rx * pulse * 1.15);
+      g.addColorStop(0, 'rgba(255, 170, 210, 0.45)');
+      g.addColorStop(1, 'rgba(255, 140, 190, 0)');
+      ctx.fillStyle = g;
+      ctx.fill();
+      ctx.lineWidth = 2.5 * px;
+      ctx.strokeStyle = color;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** A pulsing 💕 above ready fish, and a bouncing 👇 over the fish the first-baby quest points at. */
+  private drawBreedingMarkers(fish: Fish[], timeSec: number, reduced: boolean): void {
+    const { ctx } = this;
+    const { readyIds, pairing, questFishId } = this.breeding;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const f of fish) {
+      const actor = this.actors.get(f.id);
+      if (!actor) continue;
+      const top = actor.y - fishHalfHeight(f.speciesId, f.stage) - 12;
+      if (f.id === questFishId) {
+        const hop = reduced ? 0 : Math.abs(Math.sin(timeSec * 3.2)) * 8;
+        ctx.font = `22px ${EMOJI_FONT}`;
+        ctx.fillText('👇', actor.x, top - 22 - hop);
+      }
+      if (!pairing && readyIds.has(f.id) && !actor.indicator) {
+        const pulse = reduced ? 1 : 1 + Math.sin(timeSec * 3 + actor.phase) * 0.14;
+        ctx.globalAlpha = 0.9;
+        ctx.font = `${Math.round(14 * pulse)}px ${EMOJI_FONT}`;
+        ctx.fillText('💕', actor.x, top - (reduced ? 0 : Math.sin(timeSec * 1.6 + actor.phase) * 2));
+        ctx.globalAlpha = 1;
+      }
+    }
     ctx.restore();
   }
 

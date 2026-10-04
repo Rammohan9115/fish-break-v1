@@ -5,6 +5,7 @@ import {
   ALGAE_MIN_SIZE,
   ALGAE_THRESHOLDS,
   BREEDING,
+  BREEDING_QUEST_REWARD,
   CLEANLINESS_DECAY_PER_FISH_PER_MIN,
   CLEANLINESS_DECAY_PER_MIN,
   CLEANLINESS_MAX,
@@ -56,7 +57,7 @@ import {
   TANK_WIDTH,
   XP,
 } from './constants';
-import { isBreedingCheckDue, runBreedingCheck } from './breeding';
+import { completeCourtships } from './breeding';
 import { applyXp, levelUpReward } from './levels';
 import { randomName } from './names';
 import { getSpecies, randomVariantKey } from './species';
@@ -70,8 +71,9 @@ export type SimEvent =
   | { type: 'drop'; tankId: string; fishId: string; value: number; pearl: boolean }
   | { type: 'autoCollect'; tankId: string; value: number; pearl: boolean }
   | { type: 'stageUp'; fishId: string; from: Stage; to: Stage }
-  | { type: 'hatched'; fishId: string; tankId: string; shiny: boolean; eggId: string }
+  | { type: 'hatched'; fishId: string; tankId: string; shiny: boolean; eggId: string; destination: 'tank' | 'nursery' }
   | { type: 'eggLaid'; tankId: string; eggId: string; parentIds: [string, string]; shiny: boolean }
+  | { type: 'questComplete'; shells: number; pearls: number }
   | { type: 'algaeSpawned'; tankId: string }
   | { type: 'pelletDissolved'; tankId: string }
   | { type: 'levelUp'; level: number; shells: number };
@@ -112,9 +114,9 @@ export function stageForGrowth(speciesId: SpeciesId, growth: number): Exclude<St
   return 'baby';
 }
 
-/** Fish + eggs in a tank. Eggs count toward capacity. */
+/** Hatched fish in a tank. Eggs (and Nursery babies) don't take up room. */
 export function tankOccupancy(state: GameState, tankId: string): number {
-  return state.fish.filter((f) => f.tankId === tankId).length + state.eggs.filter((e) => e.tankId === tankId).length;
+  return state.fish.filter((f) => f.tankId === tankId).length;
 }
 
 export function happinessTarget(hunger: number, tank: Tank, occupancy: number): number {
@@ -290,17 +292,28 @@ function hatchEggs(ctx: TickCtx): void {
       remaining.push(egg);
       continue;
     }
-    const fish = createFish(egg.speciesId, egg.tankId, egg.hatchAt, ctx.rng, {
+    const tank = state.tanks.find((t) => t.id === egg.tankId);
+    // A full tank never blocks a hatch: the baby naps in the Nursery until there's room.
+    const roomy = tank !== undefined && tankOccupancy(state, tank.id) < tank.capacity;
+    const fish = createFish(egg.speciesId, roomy ? egg.tankId : '', egg.hatchAt, ctx.rng, {
       id: ctx.newId('fish'),
       variant: egg.variant,
       shiny: egg.shiny,
-      takenNames: state.fish.map((f) => f.name),
+      takenNames: [...state.fish, ...state.nursery].map((f) => f.name),
     });
-    state.fish.push(fish);
+    if (roomy) state.fish.push(fish);
+    else state.nursery.push(fish);
     state.stats.hatched += 1;
     ctx.xpGained += XP.eggHatched;
     if (egg.shiny) state.pearls += BREEDING.shinyHatchPearls;
-    ctx.events.push({ type: 'hatched', fishId: fish.id, tankId: egg.tankId, shiny: egg.shiny, eggId: egg.id });
+    ctx.events.push({ type: 'hatched', fishId: fish.id, tankId: egg.tankId, shiny: egg.shiny, eggId: egg.id, destination: roomy ? 'tank' : 'nursery' });
+    // "Your first baby" quest: paid once, on the first hatch while it's running.
+    if (state.breedingQuest.status === 'active') {
+      state.breedingQuest = { ...state.breedingQuest, status: 'done' };
+      state.shells += BREEDING_QUEST_REWARD.shells;
+      state.pearls += BREEDING_QUEST_REWARD.pearls;
+      ctx.events.push({ type: 'questComplete', shells: BREEDING_QUEST_REWARD.shells, pearls: BREEDING_QUEST_REWARD.pearls });
+    }
   }
   state.eggs = remaining;
 }
@@ -338,14 +351,18 @@ export function tick(state: GameState, dtMs: number, rng: Rng): TickResult {
     }
   }
 
-  // Breeding checks run every 5 minutes of clock time (same live or offline).
-  if (isBreedingCheckDue(now, dtMs)) {
-    const bred = runBreedingCheck(next, now, rng, ctx.newId);
+  // Courtships that ended lay their (guaranteed) egg, live or offline. Hatching runs first in the
+  // next tick, so an egg laid and due within one long offline step still hatches on time.
+  const bred = completeCourtships(next, now, rng, ctx.newId);
+  if (bred.laid.length > 0) {
     next.fish = bred.state.fish;
     next.eggs = bred.state.eggs;
+    next.courtships = bred.state.courtships;
     for (const { egg, parentIds } of bred.laid) {
       ctx.events.push({ type: 'eggLaid', tankId: egg.tankId, eggId: egg.id, parentIds, shiny: egg.shiny });
     }
+  } else if (bred.state.courtships !== next.courtships) {
+    next.courtships = bred.state.courtships;
   }
 
   applyXpGain(ctx);
@@ -394,6 +411,11 @@ export interface OfflineSummary {
   shellValue: number;
   pearlsDropped: number;
   eggsHatched: number;
+  eggsLaid: number;
+  /** Babies that hatched into a full tank and went to the Nursery. */
+  toNursery: number;
+  /** The first-baby quest finished (and paid out) while away. */
+  questComplete: boolean;
   fishGrown: number;
   levelsGained: number[];
 }
@@ -428,6 +450,9 @@ export function simulateOffline(state: GameState, now: number, rng: Rng = Math.r
     shellValue: shellDrops.reduce((sum, d) => sum + d.value, 0),
     pearlsDropped: drops.filter((d) => d.pearl).length,
     eggsHatched: events.filter((e) => e.type === 'hatched').length,
+    eggsLaid: events.filter((e) => e.type === 'eggLaid').length,
+    toNursery: events.filter((e) => e.type === 'hatched' && e.destination === 'nursery').length,
+    questComplete: events.some((e) => e.type === 'questComplete'),
     fishGrown: events.filter((e) => e.type === 'stageUp').length,
     levelsGained: events.flatMap((e) => (e.type === 'levelUp' ? [e.level] : [])),
   };
@@ -465,12 +490,13 @@ export function createFish(speciesId: SpeciesId, tankId: string, now: number, rn
   };
 }
 
-export function createTank(id: string, name: string): Tank {
+export function createTank(id: string, name: string, capacity: number = STARTING.tankCapacity): Tank {
   return {
     id,
     name,
     theme: STARTING.tankTheme,
-    capacity: STARTING.tankCapacity,
+    capacity,
+    upgrades: 0,
     cleanliness: STARTING.tankCleanliness,
     algaeSpots: [],
     decor: [],
@@ -500,6 +526,9 @@ export function createInitialState(now: number = Date.now(), rng: Rng = Math.ran
     activeTankId: tank.id,
     fish,
     eggs: [],
+    courtships: [],
+    nursery: [],
+    breedingQuest: { guideSeen: false, status: 'off' },
     inventory: { premiumFood: STARTING.premiumFood },
     lastTickAt: now,
     lastDailyGift: null,

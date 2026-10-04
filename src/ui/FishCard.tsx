@@ -1,16 +1,16 @@
 // Info card for the clicked fish: editable name, species, stage, hunger/happiness, growth.
 import { useEffect, useState } from 'react';
 import { FISH_NAME_MAX_LENGTH, SECOND_MS } from '../game/constants';
-import { BREEDING, MINUTE_MS, THEMES } from '../game/constants';
-import { breedCooldownLeft, breedingUnlocked, canBreed, hasReadyPartner } from '../game/breeding';
+import { THEMES, UNLOCK_LEVEL } from '../game/constants';
+import { breedingChecklist, breedingUnlocked, courtshipOf, type CheckKey } from '../game/breeding';
 import { checkMoveFish, sellValue } from '../game/economy';
-import { tankOccupancy } from '../game/sim';
 import { stageProgress } from '../game/sim';
 import type { GameState } from '../game/types';
 import { getSpecies, getVariant } from '../game/species';
 import type { Fish, Stage } from '../game/types';
 import { useGameStore } from '../store/gameStore';
 import { Icon } from './Icon';
+import { clock, useNow, useQuestStep } from './useBreeding';
 
 const STAGE_LABEL: Record<Stage, string> = { egg: 'Egg', baby: 'Baby', juvenile: 'Juvenile', adult: 'Adult' };
 
@@ -88,29 +88,67 @@ function GrowthInfo({ fish }: { fish: Fish }) {
   );
 }
 
-/** Breeding status line (from Lv 5, adults only). */
-function BreedingStatus({ fish, game }: { fish: Fish; game: GameState }) {
-  if (!breedingUnlocked(game) || fish.stage !== 'adult') return null;
-  const now = Date.now();
-  if (canBreed(fish, now)) {
-    const tank = game.tanks.find((t) => t.id === fish.tankId);
-    let detail: string | null = null;
-    if (!hasReadyPartner(game, fish, now)) detail = `Needs a happy ${getSpecies(fish.speciesId).name} partner`;
-    else if (tank && tankOccupancy(game, tank.id) >= tank.capacity) detail = 'Needs a free spot in the tank';
+const CHECK_LABEL: Record<CheckKey, string> = { adult: 'Adult', happy: 'Happy', fed: 'Well fed', rested: 'Rested', partner: 'Partner' };
+
+/** Breeding: a live ✅/❌ checklist with fix hints, and Pair up (enabled only when everything is ✅). */
+function BreedingSection({ fish, game }: { fish: Fish; game: GameState }) {
+  const now = useNow(1000);
+  const startPairing = useGameStore((s) => s.startPairing);
+  const openPanel = useGameStore((s) => s.openPanel);
+  const quest = useQuestStep();
+  const [nudge, setNudge] = useState(0);
+
+  if (!breedingUnlocked(game)) {
+    return <div className="breed-teaser">💕 Breeding unlocks at Lv {UNLOCK_LEVEL.breeding}</div>;
+  }
+  const courtship = courtshipOf(game, fish.id);
+  if (courtship) {
+    const partnerId = courtship.fishIds.find((id) => id !== fish.id);
+    const partner = game.fish.find((f) => f.id === partnerId);
     return (
-      <div className="fishcard-breed fishcard-breed-ready">
-        Ready to breed 💕{detail && <small>{detail}</small>}
-      </div>
+      <section className="breed breed-love" aria-label="Breeding">
+        <div className="breed-title">
+          In love 💞 <span className="breed-clock">{clock(courtship.endsAt - now)}</span>
+        </div>
+        <small>{partner ? `Swimming with ${partner.name} — an egg is on its way!` : 'An egg is on its way!'}</small>
+      </section>
     );
   }
-  const cooldown = breedCooldownLeft(fish, now);
-  if (cooldown > 0) {
-    return <div className="fishcard-breed">💤 Resting after laying an egg · {Math.ceil(cooldown / MINUTE_MS)} min</div>;
-  }
-  const needs: string[] = [];
-  if (fish.happiness < BREEDING.minHappiness) needs.push('happier');
-  if (fish.hunger < BREEDING.minHunger) needs.push('well fed');
-  return <div className="fishcard-breed">To breed, needs to be {needs.join(' and ')}</div>;
+
+  const list = breedingChecklist(game, fish, now);
+  const firstMissing = list.lines.find((l) => !l.ok)?.key ?? null;
+  const pulse = quest?.step === 'pairUp' && list.canPair;
+  return (
+    <section className="breed" aria-label="Breeding">
+      <div className="breed-title">Breeding</div>
+      <ul className="breed-list">
+        {list.lines.map((l) => (
+          <li key={l.key} className={`breed-line${l.ok ? ' breed-ok' : ''}${nudge > 0 && l.key === firstMissing ? ' breed-flag' : ''}`}>
+            <span aria-hidden="true">{l.ok ? '✅' : '❌'}</span>
+            <span className="breed-label">{CHECK_LABEL[l.key]}</span>
+            <span className="breed-hint">{l.hint}</span>
+            {l.action === 'buy' && (
+              <button type="button" className="shop-small breed-buy" onClick={() => openPanel('shop', 'fish')}>
+                Buy one
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        key={nudge}
+        className={`breed-pair${list.canPair ? '' : ' breed-pair-off'}${nudge > 0 && !list.canPair ? ' breed-shake' : ''}${pulse ? ' quest-pulse' : ''}`}
+        aria-disabled={!list.canPair}
+        onClick={() => {
+          if (list.canPair) startPairing(fish.id);
+          else setNudge((n) => n + 1);
+        }}
+      >
+        Pair up 💕
+      </button>
+    </section>
+  );
 }
 
 /** Buttons to move the fish into another tank (needs room and a suitable theme). */
@@ -169,6 +207,7 @@ export function FishCard() {
   const selectFish = useGameStore((s) => s.selectFish);
 
   if (!fish) return null;
+  const courting = courtshipOf(game, fish.id) !== null;
   const species = getSpecies(fish.speciesId);
   const variant = getVariant(fish.speciesId, fish.variant);
 
@@ -191,9 +230,9 @@ export function FishCard() {
       <Meter label="Hunger" value={fish.hunger} color="linear-gradient(90deg, #ffd59e, #ffb26b)" />
       <Meter label="Happiness" value={fish.happiness} color="linear-gradient(90deg, #ffc2d6, #ff8fb1)" />
       <GrowthInfo fish={fish} />
-      <BreedingStatus fish={fish} game={game} />
-      <MoveTo fish={fish} game={game} />
-      <SellButton key={fish.id} fish={fish} />
+      <BreedingSection fish={fish} game={game} />
+      {!courting && <MoveTo fish={fish} game={game} />}
+      {!courting && <SellButton key={fish.id} fish={fish} />}
     </aside>
   );
 }

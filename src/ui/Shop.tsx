@@ -1,6 +1,6 @@
 // Shop overlay with Fish / Food / Decor / Tanks tabs. Locked items are greyed with "Unlocks at Lv X".
 import type { ReactNode } from 'react';
-import { DECOR, DECOR_LIST, MAX_DECOR_PER_TANK, PREMIUM_FOOD_PACK, THEMES, UNLOCK_LEVEL } from '../game/constants';
+import { CAPACITY_UPGRADE, DECOR, DECOR_LIST, MAX_DECOR_PER_TANK, PREMIUM_FOOD_PACK, THEMES, UNLOCK_LEVEL } from '../game/constants';
 import * as economy from '../game/economy';
 import { tankOccupancy } from '../game/sim';
 import { SPECIES_LIST } from '../game/species';
@@ -80,7 +80,7 @@ function FishTab({ game }: { game: GameState }) {
   return (
     <>
       <p className="shop-sub">
-        Buying for <strong>{tank.name}</strong> · {tankOccupancy(game, tank.id)}/{tank.capacity} spots used
+        Buying for <strong>{tank.name}</strong> · 🐟 {tankOccupancy(game, tank.id)}/{tank.capacity}
       </p>
       <div className="shop-grid">
         {SPECIES_LIST.map((s) => {
@@ -175,12 +175,12 @@ function TanksTab({ game }: { game: GameState }) {
     <>
       <div className="shop-grid">
         <ShopItem
-          title="Bigger tank (+2)"
+          title={`Bigger tank (+${CAPACITY_UPGRADE.slots})`}
           art={<span className="shop-emoji">📐</span>}
           price={upgradeCost}
           unlockLevel={UNLOCK_LEVEL.capacityUpgrade}
           error={economy.checkCapacityUpgrade(game)}
-          note={`${tank.name}: ${tank.capacity} spots · ${economy.capacityUpgradesBought(tank)}/3 upgrades`}
+          note={`${tank.name}: 🐟 ${tankOccupancy(game, tank.id)}/${tank.capacity} · ${economy.capacityUpgradesBought(tank)}/${CAPACITY_UPGRADE.maxPurchases} upgrades`}
           onBuy={store.buyCapacityUpgrade}
         />
         <ShopItem

@@ -119,6 +119,18 @@ export interface Egg {
   shiny: boolean;
   tankId: string;
   hatchAt: number;
+  /** Where it was laid on the sand (tank units); older eggs pick a stable spot from their id. */
+  x?: number;
+}
+
+/** Two fish swimming their heart loop; an egg is laid (guaranteed) at `x` when it ends. */
+export interface Courtship {
+  id: string;
+  tankId: string;
+  fishIds: [string, string];
+  startedAt: number;
+  endsAt: number;
+  x: number;
 }
 
 export interface AlgaeSpot {
@@ -154,7 +166,10 @@ export interface Tank {
   id: string;
   name: string;
   theme: ThemeId;
+  /** Base capacity (by purchase order) + CAPACITY_UPGRADE.slots per upgrade. */
   capacity: number;
+  /** Capacity upgrades bought for this tank. */
+  upgrades: number;
   cleanliness: number;
   algaeSpots: AlgaeSpot[];
   decor: PlacedDecor[];
@@ -185,6 +200,11 @@ export interface GameState {
   activeTankId: string;
   fish: Fish[];
   eggs: Egg[];
+  courtships: Courtship[];
+  /** Babies that hatched into a full tank. They nap here (no growth, no hunger); tankId is ''. */
+  nursery: Fish[];
+  /** The breeding guide (seen once) and the "Your first baby" quest. */
+  breedingQuest: { guideSeen: boolean; status: 'off' | 'active' | 'done' };
   inventory: { premiumFood: number };
   lastTickAt: number;
   /** 'YYYY-MM-DD' local date. */

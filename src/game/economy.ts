@@ -11,7 +11,8 @@ import {
   HOUR_MS,
   JUVENILE_SELL_FRACTION,
   MAX_DECOR_PER_TANK,
-  NEW_TANK_CAPACITY,
+  BREEDING,
+  TANK_BASE_CAPACITY,
   PREMIUM_FOOD_PACK,
   TANK_NAME_MAX_LENGTH,
   TANK_PURCHASES,
@@ -20,6 +21,7 @@ import {
   UNLOCK_LEVEL,
   XP,
 } from './constants';
+import { isCourting } from './breeding';
 import { grantXp } from './levels';
 import { createFish, createTank, tankOccupancy } from './sim';
 import { SPECIES } from './species';
@@ -34,7 +36,8 @@ export type PurchaseError =
   | 'owned'
   | 'notFound'
   | 'notSellable'
-  | 'claimed';
+  | 'claimed'
+  | 'courting';
 
 export type Result = { ok: true; state: GameState; levelsGained: number[] } | { ok: false; reason: PurchaseError };
 
@@ -109,6 +112,7 @@ export function sellValue(fish: Fish): number | null {
 export function sellFish(state: GameState, fishId: string): Result {
   const fish = state.fish.find((f) => f.id === fishId);
   if (!fish) return fail('notFound');
+  if (isCourting(state, fishId)) return fail('courting');
   const value = sellValue(fish);
   if (value === null) return fail('notSellable');
   return ok({ ...state, shells: state.shells + value, fish: state.fish.filter((f) => f.id !== fishId) });
@@ -197,14 +201,24 @@ export function sellDecor(state: GameState, tankId: string, placedId: string): R
 // ---------------------------------------------------------------------------
 
 export function capacityUpgradesBought(tank: Tank): number {
-  return Math.max(0, Math.round((tank.capacity - NEW_TANK_CAPACITY) / CAPACITY_UPGRADE.slots));
+  return tank.upgrades;
 }
 
-/** Cost of the next capacity upgrade for a tank, or null when maxed (3 per tank). */
+/** Starting capacity of the tank bought `index`-th (0 = the first tank). */
+export function baseCapacity(index: number): number {
+  return TANK_BASE_CAPACITY[Math.min(index, TANK_BASE_CAPACITY.length - 1)]!;
+}
+
+/** Cost of upgrade number `n` (0-based): 150 × 1.6ⁿ, rounded. */
+export function upgradeCostAt(n: number): number {
+  return Math.round(CAPACITY_UPGRADE.baseCost * CAPACITY_UPGRADE.costMultiplier ** n);
+}
+
+/** Cost of the next capacity upgrade for a tank, or null when maxed (5 per tank). */
 export function capacityUpgradeCost(tank: Tank): Price | null {
   const bought = capacityUpgradesBought(tank);
   if (bought >= CAPACITY_UPGRADE.maxPurchases) return null;
-  return { currency: 'shells', amount: CAPACITY_UPGRADE.baseCost * CAPACITY_UPGRADE.costMultiplier ** bought };
+  return { currency: 'shells', amount: upgradeCostAt(bought) };
 }
 
 export function checkCapacityUpgrade(state: GameState): PurchaseError | null {
@@ -222,7 +236,7 @@ export function buyCapacityUpgrade(state: GameState): Result {
   if (error) return fail(error);
   const tank = activeTank(state)!;
   const paid = pay(state, capacityUpgradeCost(tank)!);
-  return ok(mapTank(paid, tank.id, (t) => ({ ...t, capacity: t.capacity + CAPACITY_UPGRADE.slots })));
+  return ok(mapTank(paid, tank.id, (t) => ({ ...t, capacity: t.capacity + CAPACITY_UPGRADE.slots, upgrades: t.upgrades + 1 })));
 }
 
 /** The next tank available to buy (second, then third), or null if all are owned. */
@@ -242,7 +256,7 @@ export function checkBuyTank(state: GameState): PurchaseError | null {
 export function buyTank(state: GameState, now: number, rng: Rng): Result {
   const error = checkBuyTank(state);
   if (error) return fail(error);
-  const tank = createTank(newId('tank', now, rng), `Tank ${state.tanks.length + 1}`);
+  const tank = createTank(newId('tank', now, rng), `Tank ${state.tanks.length + 1}`, baseCapacity(state.tanks.length));
   const paid = pay(state, nextTankPurchase(state)!.price);
   return ok({ ...paid, tanks: [...paid.tanks, tank], activeTankId: tank.id });
 }
@@ -332,6 +346,7 @@ export function checkMoveFish(state: GameState, fishId: string, tankId: string):
   const fish = state.fish.find((f) => f.id === fishId);
   const tank = state.tanks.find((t) => t.id === tankId);
   if (!fish || !tank || fish.tankId === tankId) return 'notFound';
+  if (isCourting(state, fishId)) return 'courting';
   const need = SPECIES[fish.speciesId].themeOnly;
   if (need && tank.theme !== need) return 'theme';
   if (tankOccupancy(state, tankId) >= tank.capacity) return 'full';
@@ -342,6 +357,44 @@ export function moveFish(state: GameState, fishId: string, tankId: string): Resu
   const error = checkMoveFish(state, fishId, tankId);
   if (error) return fail(error);
   return ok({ ...state, fish: state.fish.map((f) => (f.id === fishId ? { ...f, tankId } : f)) });
+}
+
+// ---------------------------------------------------------------------------
+// Nursery (babies that hatched into a full tank nap here)
+// ---------------------------------------------------------------------------
+
+/** Why a Nursery baby can't move into `tankId` (null = it can): the tank needs room and the right theme. */
+export function checkMoveFromNursery(state: GameState, babyId: string, tankId: string): PurchaseError | null {
+  const baby = state.nursery.find((f) => f.id === babyId);
+  const tank = state.tanks.find((t) => t.id === tankId);
+  if (!baby || !tank) return 'notFound';
+  const need = SPECIES[baby.speciesId].themeOnly;
+  if (need && tank.theme !== need) return 'theme';
+  if (tankOccupancy(state, tankId) >= tank.capacity) return 'full';
+  return null;
+}
+
+/** Wakes a Nursery baby into a tank; it starts growing (and getting hungry) from now. */
+export function moveFromNursery(state: GameState, babyId: string, tankId: string, now: number): Result {
+  const error = checkMoveFromNursery(state, babyId, tankId);
+  if (error) return fail(error);
+  const baby = state.nursery.find((f) => f.id === babyId)!;
+  return ok({
+    ...state,
+    nursery: state.nursery.filter((f) => f.id !== babyId),
+    fish: [...state.fish, { ...baby, tankId, lastDropAt: now }],
+  });
+}
+
+/** Shells for rehoming a Nursery baby: 20% of the adult price (the only time a baby can be sold). */
+export function rehomeValue(baby: Fish): number {
+  return Math.round(SPECIES[baby.speciesId].sellPrice * BREEDING.rehomeFraction);
+}
+
+export function rehomeNurseryBaby(state: GameState, babyId: string): Result {
+  const baby = state.nursery.find((f) => f.id === babyId);
+  if (!baby) return fail('notFound');
+  return ok({ ...state, shells: state.shells + rehomeValue(baby), nursery: state.nursery.filter((f) => f.id !== babyId) });
 }
 
 export function renameTank(state: GameState, tankId: string, name: string): Result {

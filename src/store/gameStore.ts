@@ -17,8 +17,10 @@ import {
   SIM_TICK_MS,
   TANK_EDGE_MARGIN,
   TANK_WIDTH,
+  UNLOCK_LEVEL,
   XP,
 } from '../game/constants';
+import { breedingChecklist, compatiblePartners, startCourtship } from '../game/breeding';
 import * as economy from '../game/economy';
 import { grantXp } from '../game/levels';
 import { getSpecies } from '../game/species';
@@ -28,6 +30,7 @@ import {
   createInitialState,
   growthTotalSeconds,
   simulateOffline,
+  tankOccupancy,
   tick,
   type SimEvent,
 } from '../game/sim';
@@ -52,7 +55,8 @@ export interface Toast {
 export type ToolMode = 'look' | 'feed' | 'premium' | 'clean';
 
 /** Overlay panel currently open. */
-export type Panel = 'shop' | 'tanks' | 'break' | 'settings' | null;
+export type Panel = 'shop' | 'tanks' | 'break' | 'settings' | 'breeding' | null;
+export type BreedingTab = 'pairs' | 'nursery';
 
 /** An active Break Mode session (UI-only; not saved). */
 export interface BreakSession {
@@ -75,6 +79,7 @@ export const PURCHASE_ERROR_TEXT: Record<economy.PurchaseError, string> = {
   notFound: 'Not found',
   notSellable: "Babies can't be sold yet 🐣",
   claimed: 'Already opened today',
+  courting: 'In love — try again after the egg 💞',
 };
 
 /** Onboarding steps: 0 Feed → 1 Watch them grow → 2 Collect shells. null = finished/not shown. */
@@ -97,6 +102,13 @@ export interface GameStore {
   pendingLevelUps: number[];
   /** Transient (not saved): feed rate limit. */
   lastPelletAt: number;
+  /** Pairing mode: the fish looking for a partner (the tank dims, compatible fish glow). */
+  pairingFishId: string | null;
+  /** The confirm sheet for a chosen pair. */
+  pairSheet: { aId: string; bId: string } | null;
+  breedingTab: BreedingTab;
+  /** The 4-card breeding guide is showing. */
+  guideOpen: boolean;
 
   loadState: (game: GameState) => void;
   /** Runs fixed 1s sim ticks up to `now`; long gaps use offline catch-up. */
@@ -133,6 +145,19 @@ export interface GameStore {
   moveFish: (fishId: string, tankId: string) => boolean;
   /** Slides decor along the sand (active tank). */
   moveDecor: (placedId: string, x: number) => void;
+  /** Breeding: enter pairing mode for a ready fish (or go straight to the sheet with `partnerId`). */
+  startPairing: (fishId: string, partnerId?: string) => boolean;
+  /** In pairing mode: choose the partner (opens the confirm sheet if compatible). */
+  pickPartner: (fishId: string) => void;
+  cancelPairing: () => void;
+  /** From the confirm sheet: start the courtship (x = where the egg will be laid). */
+  confirmCourtship: (x?: number) => boolean;
+  moveFromNursery: (babyId: string, tankId: string) => boolean;
+  rehomeBaby: (babyId: string) => boolean;
+  openBreeding: (tab?: BreedingTab) => void;
+  openGuide: () => void;
+  /** Closing the guide marks it seen and starts the first-baby quest (once). */
+  closeGuide: () => void;
   selectDecor: (placedId: string | null) => void;
   startBreak: (minutes: number, breathing: boolean) => void;
   /** Called when the break timer reaches zero: +10 XP once per hour. */
@@ -156,6 +181,11 @@ export interface DevActions {
   clearFish: () => void;
   setMood: (mood: { hunger?: number; happiness?: number }) => void;
   setTheme: (theme: ThemeId) => void;
+  /** Breeding test helpers: make the tank's fish ready, end courtships now, hatch eggs now, fill the tank. */
+  makeReady: () => void;
+  finishCourtships: () => void;
+  hatchEggsNow: () => void;
+  fillTank: () => void;
 }
 
 /** Growth seconds that put a fish at the start of `stage`. */
@@ -185,21 +215,24 @@ export function subscribeSimEvents(listener: SimListener): () => void {
   return () => simListeners.delete(listener);
 }
 
-/** Friendly toasts for breeding events. */
+/** Friendly toasts for live breeding events (eggs laid, hatches, Nursery, the quest reward). */
 export function breedingToasts(events: SimEvent[], game: GameState): string[] {
-  const name = (id: string) => game.fish.find((f) => f.id === id)?.name ?? 'A fish';
+  const all = [...game.fish, ...game.nursery];
+  const name = (id: string) => all.find((f) => f.id === id)?.name ?? 'A fish';
   const texts: string[] = [];
   for (const e of events) {
     if (e.type === 'eggLaid') {
-      texts.push(`💕 ${name(e.parentIds[0])} & ${name(e.parentIds[1])} laid an egg!`);
+      const egg = game.eggs.find((g) => g.id === e.eggId);
+      const mins = egg ? Math.max(1, Math.round((egg.hatchAt - game.lastTickAt) / MINUTE_MS)) : null;
+      texts.push(`💕 ${name(e.parentIds[0])} & ${name(e.parentIds[1])} laid an egg!${mins ? ` It hatches in ${mins} min.` : ''}`);
     } else if (e.type === 'hatched') {
-      const fish = game.fish.find((f) => f.id === e.fishId);
+      const fish = all.find((f) => f.id === e.fishId);
       const species = fish ? getSpecies(fish.speciesId).name : 'baby';
-      texts.push(
-        e.shiny
-          ? `✨ A shiny ${species} hatched! Say hi to ${name(e.fishId)} (+${BREEDING.shinyHatchPearls} pearls)`
-          : `🐣 ${name(e.fishId)} the ${species} hatched!`,
-      );
+      if (e.shiny) texts.push(`✨ Shiny! ✨ Say hi to ${name(e.fishId)} the ${species} (+${BREEDING.shinyHatchPearls} ⚪)`);
+      else texts.push(`🐣 ${name(e.fishId)} the ${species} hatched!`);
+      if (e.destination === 'nursery') texts.push('🍼 Baby moved to the Nursery — make room or upgrade your tank.');
+    } else if (e.type === 'questComplete') {
+      texts.push(`🎉 Your first baby! +${e.shells} 🐚 +${e.pearls} ⚪`);
     }
   }
   return texts;
@@ -252,9 +285,24 @@ export const useGameStore = create<GameStore>()((set, get) => {
     toasts: [],
     pendingLevelUps: [],
     lastPelletAt: -Infinity,
+    pairingFishId: null,
+    pairSheet: null,
+    breedingTab: 'pairs',
+    guideOpen: false,
 
     loadState: (game) =>
-      set({ game, pendingLevelUps: [], lastPelletAt: -Infinity, selectedFishId: null, selectedDecorId: null, mode: 'look', panel: null }),
+      set({
+        game,
+        pendingLevelUps: [],
+        lastPelletAt: -Infinity,
+        selectedFishId: null,
+        selectedDecorId: null,
+        mode: 'look',
+        panel: null,
+        pairingFishId: null,
+        pairSheet: null,
+        guideOpen: false,
+      }),
 
     advanceTo: (now, rng = Math.random) => {
       let game = get().game;
@@ -377,7 +425,12 @@ export const useGameStore = create<GameStore>()((set, get) => {
 
     dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 
-    dismissLevelUp: () => set((s) => ({ pendingLevelUps: s.pendingLevelUps.slice(1) })),
+    dismissLevelUp: () => {
+      const level = get().pendingLevelUps[0];
+      set((s) => ({ pendingLevelUps: s.pendingLevelUps.slice(1) }));
+      // Reaching the breeding level opens the guide (once).
+      if (level === UNLOCK_LEVEL.breeding && !get().game.breedingQuest.guideSeen) set({ guideOpen: true });
+    },
 
     setMode: (mode) => {
       if (mode === 'premium' && get().game.inventory.premiumFood <= 0) {
@@ -475,6 +528,70 @@ export const useGameStore = create<GameStore>()((set, get) => {
       return moved;
     },
 
+    startPairing: (fishId, partnerId) => {
+      const { game } = get();
+      const fish = game.fish.find((f) => f.id === fishId);
+      if (!fish) return false;
+      const list = breedingChecklist(game, fish, Date.now());
+      if (!list.canPair) return false;
+      const base = { selectedFishId: null, selectedDecorId: null, mode: 'look' as const, panel: null };
+      if (partnerId && list.partners.some((p) => p.id === partnerId)) set({ ...base, pairingFishId: null, pairSheet: { aId: fishId, bId: partnerId } });
+      else set({ ...base, pairingFishId: fishId, pairSheet: null });
+      return true;
+    },
+
+    pickPartner: (fishId) => {
+      const { game, pairingFishId } = get();
+      if (!pairingFishId || fishId === pairingFishId) return;
+      const chooser = game.fish.find((f) => f.id === pairingFishId);
+      const partner = game.fish.find((f) => f.id === fishId);
+      if (!chooser || !partner) return;
+      if (compatiblePartners(game, chooser, Date.now()).some((p) => p.id === fishId)) {
+        set({ pairingFishId: null, pairSheet: { aId: pairingFishId, bId: fishId } });
+      } else {
+        get().addToast(partner.speciesId !== chooser.speciesId ? `${partner.name} is a different species — pick a glowing fish 💕` : `${partner.name} isn't ready — pick a glowing fish 💕`);
+      }
+    },
+
+    cancelPairing: () => set({ pairingFishId: null, pairSheet: null }),
+
+    confirmCourtship: (x) => {
+      const sheet = get().pairSheet;
+      if (!sheet) return false;
+      const result = startCourtship(get().game, sheet.aId, sheet.bId, Date.now(), x);
+      set({ pairSheet: null });
+      if (!result.ok) {
+        get().addToast(result.reason === 'notReady' ? 'One of them isn’t ready anymore — check the checklist 💕' : 'They can’t pair right now');
+        return false;
+      }
+      set({ game: result.state });
+      const [a, b] = result.courtship.fishIds.map((id) => result.state.fish.find((f) => f.id === id)?.name ?? 'A fish');
+      get().addToast(`💞 ${a} & ${b} are falling in love…`);
+      return true;
+    },
+
+    moveFromNursery: (babyId, tankId) => {
+      const baby = get().game.nursery.find((f) => f.id === babyId);
+      const tank = get().game.tanks.find((t) => t.id === tankId);
+      return commitResult(economy.moveFromNursery(get().game, babyId, tankId, Date.now()), baby && tank ? `🍼 ${baby.name} moved into ${tank.name}` : undefined);
+    },
+
+    rehomeBaby: (babyId) => {
+      const baby = get().game.nursery.find((f) => f.id === babyId);
+      return commitResult(economy.rehomeNurseryBaby(get().game, babyId), baby ? `🏡 ${baby.name} found a cozy new home (+${economy.rehomeValue(baby)} 🐚)` : undefined);
+    },
+
+    openBreeding: (tab) => set((s) => ({ panel: 'breeding', mode: 'look', breedingTab: tab ?? s.breedingTab, pairingFishId: null })),
+
+    openGuide: () => set({ guideOpen: true, panel: null }),
+
+    closeGuide: () =>
+      set((s) => {
+        const q = s.game.breedingQuest;
+        const start = q.status === 'off' && s.game.level >= UNLOCK_LEVEL.breeding;
+        return { guideOpen: false, game: { ...s.game, breedingQuest: { guideSeen: true, status: start ? 'active' : q.status } } };
+      }),
+
     moveDecor: (placedId, x) => {
       const result = economy.moveDecor(get().game, get().game.activeTankId, placedId, x);
       if (result.ok) set({ game: result.state });
@@ -539,6 +656,28 @@ export const useGameStore = create<GameStore>()((set, get) => {
         })),
       setTheme: (theme) =>
         set((s) => ({ game: { ...s.game, tanks: s.game.tanks.map((t) => (t.id === s.game.activeTankId ? { ...t, theme } : t)) } })),
+      makeReady: () =>
+        set((s) => ({
+          game: {
+            ...s.game,
+            fish: s.game.fish.map((f) => (f.tankId === s.game.activeTankId ? { ...f, hunger: 90, happiness: 90, lastBredAt: null } : f)),
+          },
+        })),
+      finishCourtships: () => {
+        const now = Date.now();
+        set((s) => ({ game: { ...s.game, courtships: s.game.courtships.map((c) => ({ ...c, endsAt: Math.min(c.endsAt, now) })) } }));
+      },
+      hatchEggsNow: () => {
+        const now = Date.now();
+        set((s) => ({ game: { ...s.game, eggs: s.game.eggs.map((e) => ({ ...e, hatchAt: Math.min(e.hatchAt, now) })) } }));
+      },
+      fillTank: () => {
+        const { game } = get();
+        const tank = game.tanks.find((t) => t.id === game.activeTankId);
+        if (!tank) return;
+        const room = tank.capacity - tankOccupancy(game, tank.id);
+        for (let i = 0; i < room; i++) get().dev.spawnFish({ speciesId: 'danio', stage: 'baby' });
+      },
     },
   };
 });
@@ -559,6 +698,9 @@ export function startGame(env: AutosaveEnv = browserEnv()): () => void {
     if (s.onboardingStep !== prev.onboardingStep) saveOnboarding(env.storage, s.onboardingStep);
   });
   if (corrupt) store.addToast("Your save couldn't be read, so we started a fresh tank. A backup was kept.");
+  // Players already past the breeding level when breeding changed (or who skipped it) see the guide once.
+  const loaded = useGameStore.getState().game;
+  if (loaded.level >= UNLOCK_LEVEL.breeding && !loaded.breedingQuest.guideSeen) useGameStore.setState({ guideOpen: true });
   if (summary) store.addToast(formatOfflineSummary(summary));
 
   const loop = env.setInterval(() => useGameStore.getState().advanceTo(Date.now()), SIM_TICK_MS);

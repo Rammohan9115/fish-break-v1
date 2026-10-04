@@ -1799,7 +1799,7 @@ body {
 .dock-tools {
   display: flex;
   gap: 6px;
-  max-width: 520px;
+  max-width: 600px;
   margin-right: 6px;
   overflow: hidden;
   /* Room for the badge and pressed-button shadow inside the clipped tray. */
@@ -2564,5 +2564,655 @@ span.hud-pearl-icon {
   .hud-bump-a,
   .hud-bump-b {
     animation: none;
+  }
+}
+
+/* =====================================================================
+   Breeding: checklist, pairing, confirm sheet, panel, guide, quest
+   ===================================================================== */
+
+/* ---- HUD capacity ---- */
+.hud-right {
+  justify-self: end;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.hud-cap {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(20, 10, 60, 0.35);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.hud-cap-full {
+  background: #ff6b8b;
+}
+
+.hud-upgrade {
+  pointer-events: auto;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 2px solid #6a4200;
+  background: linear-gradient(180deg, #fff6b0 0%, #ffd23a 55%, #f0a800 100%);
+  color: #5a3a00;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  box-shadow: 0 2px 0 #6a4200;
+  cursor: pointer;
+}
+
+/* ---- Toolbar: locked tool, quest highlight ---- */
+.app .tool-locked {
+  filter: grayscale(0.85) brightness(0.92);
+}
+
+.tool-lock {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  font-size: 13px;
+  text-shadow: none;
+}
+
+.quest-pulse {
+  position: relative;
+  animation: quest-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes quest-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 120, 180, 0.75);
+  }
+  50% {
+    box-shadow: 0 0 0 9px rgba(255, 120, 180, 0);
+  }
+}
+
+/* ---- FishCard: breeding checklist ---- */
+.breed-teaser {
+  font-size: 12px;
+  color: #8a6a9a;
+  text-align: center;
+}
+
+.breed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: #fff4fa;
+  border: 2px solid #ffd2e6;
+}
+
+.breed-title {
+  font-weight: 800;
+  color: #c2386f;
+}
+
+.breed-clock {
+  font-variant-numeric: tabular-nums;
+}
+
+.breed-love small {
+  color: #8a4a6a;
+}
+
+.breed-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.breed-line {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.breed-label {
+  font-weight: 800;
+  color: #3b4a5a;
+}
+
+.breed-hint {
+  color: #8a5a6a;
+}
+
+.breed-ok .breed-hint {
+  color: #3f8a5f;
+}
+
+.breed-flag {
+  background: #ffe0ea;
+  box-shadow: inset 0 0 0 2px #ff8fb1;
+}
+
+.breed-buy {
+  padding: 1px 8px;
+  font-size: 11px;
+}
+
+.breed-pair {
+  align-self: stretch;
+  padding: 8px 12px;
+  border-radius: 14px;
+  border: 3px solid #a8205a;
+  background: linear-gradient(180deg, #ffb8d4 0%, #ff6fa6 60%, #e8458a 100%);
+  color: #ffffff;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  text-shadow: 0 2px 0 rgba(120, 10, 60, 0.45);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.5), 0 3px 0 #a8205a;
+  cursor: pointer;
+}
+
+.breed-pair:active {
+  transform: translateY(2px);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.5), 0 1px 0 #a8205a;
+}
+
+.breed-pair-off {
+  filter: grayscale(0.7);
+  opacity: 0.7;
+}
+
+.breed-pair-small {
+  align-self: center;
+  padding: 5px 10px;
+  font-size: 13px;
+}
+
+.breed-shake {
+  animation: breed-shake 420ms ease-in-out;
+}
+
+@keyframes breed-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-5px);
+  }
+  40% {
+    transform: translateX(5px);
+  }
+  60% {
+    transform: translateX(-3px);
+  }
+  80% {
+    transform: translateX(3px);
+  }
+}
+
+/* ---- Pairing banner ---- */
+.pair-banner {
+  position: fixed;
+  top: calc(70px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 44px 8px 18px;
+  border-radius: 18px;
+  border: 3px solid #a8205a;
+  background: linear-gradient(180deg, #fff0f6 0%, #ffd6e7 100%);
+  color: #6a1a40;
+  font-size: 16px;
+  box-shadow: 0 4px 0 #a8205a, 0 10px 24px rgba(80, 10, 40, 0.3);
+  max-width: calc(100vw - 24px);
+  text-align: center;
+}
+
+.pair-banner small {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.pair-banner-x {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid #a8205a;
+  background: #ffffff;
+  color: #a8205a;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+/* ---- Confirm sheet ---- */
+.pair-sheet {
+  width: min(420px, calc(100vw - 20px));
+}
+
+.pair-duo {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  gap: 28px;
+}
+
+.pair-fish {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.pair-fish small {
+  color: #7a8a99;
+}
+
+.pair-heart {
+  position: absolute;
+  top: 26px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 22px;
+  animation: pair-heart 1.6s ease-in-out infinite;
+}
+
+@keyframes pair-heart {
+  0%,
+  100% {
+    transform: translateX(-50%) scale(1);
+  }
+  50% {
+    transform: translateX(-50%) scale(1.2);
+  }
+}
+
+.pair-label {
+  margin-top: 10px;
+  font-weight: 800;
+  font-size: 13px;
+  color: #3b4a5a;
+}
+
+.pair-odds {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 4px 10px;
+  font-size: 13px;
+}
+
+.pair-odds li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pair-odds strong {
+  margin-left: auto;
+}
+
+.pair-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid;
+}
+
+.pair-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 10px 0 4px;
+  font-size: 12px;
+  color: #5a6a7a;
+}
+
+.pair-warn {
+  margin: 6px 0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: #fff4d6;
+  border: 2px solid #ffd36e;
+  font-size: 12px;
+  color: #7a5200;
+}
+
+.pair-go {
+  margin-top: 8px;
+  width: 100%;
+}
+
+/* ---- Breeding panel ---- */
+.breed-panel {
+  width: min(460px, calc(100vw - 20px));
+}
+
+.breed-h {
+  margin: 10px 0 4px;
+  font-size: 14px;
+  color: #c2386f;
+}
+
+.breed-h:first-child {
+  margin-top: 0;
+}
+
+.breed-empty {
+  margin: 4px 0;
+  font-size: 13px;
+  color: #7a8a99;
+}
+
+.breed-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.breed-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: #fff4fa;
+  border: 2px solid #ffd2e6;
+  font-size: 13px;
+}
+
+.breed-row-soft {
+  background: #f6fbff;
+  border-color: #dcebf5;
+}
+
+.breed-row-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.breed-row-main small {
+  color: #7a8a99;
+}
+
+.breed-names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+
+.breed-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  vertical-align: middle;
+}
+
+.breed-link {
+  margin-top: 12px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: #2a6ab0;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.nursery-row {
+  flex-wrap: wrap;
+}
+
+.nursery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* ---- Guide ---- */
+.guide {
+  width: min(400px, calc(100vw - 20px));
+}
+
+.guide-track {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.guide-track::-webkit-scrollbar {
+  display: none;
+}
+
+.guide-card {
+  flex: 0 0 100%;
+  scroll-snap-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 20px 6px;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.guide-card h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #3b2a6a;
+}
+
+.guide-card p {
+  margin: 0;
+  font-size: 13px;
+  color: #5a6a7a;
+}
+
+.guide-step {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #c2386f;
+}
+
+.guide-art {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 110px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #bff0ff 0%, #6ec8f0 100%);
+  border: 3px solid #2a6ab0;
+  font-size: 44px;
+}
+
+.guide-art .preview {
+  max-width: 40%;
+}
+
+.guide-plus {
+  font-size: 28px;
+  font-weight: 800;
+  color: #ffffff;
+  text-shadow: 0 2px 0 #2a6ab0;
+}
+
+.guide-float {
+  position: absolute;
+  top: 6px;
+  font-size: 26px;
+  animation: guide-float 1.8s ease-in-out infinite;
+}
+
+.guide-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.guide-chips span {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #3b4a5a;
+  font-weight: 700;
+}
+
+.guide-button {
+  padding: 8px 16px;
+  border-radius: 14px;
+  border: 3px solid #a8205a;
+  background: linear-gradient(180deg, #ffb8d4 0%, #ff6fa6 60%, #e8458a 100%);
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 800;
+  box-shadow: 0 3px 0 #a8205a;
+}
+
+.guide-finger {
+  position: absolute;
+  right: 26%;
+  bottom: 8px;
+  font-size: 34px;
+  animation: guide-tap 1.4s ease-in-out infinite;
+}
+
+.guide-arrow {
+  font-size: 28px;
+  color: #ffffff;
+}
+
+.guide-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 14px 14px;
+}
+
+.guide-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.guide-dot {
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid #6a48d0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.guide-dot-on {
+  background: #6a48d0;
+}
+
+.guide-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+@keyframes guide-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes guide-tap {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(-8px, -10px);
+  }
+}
+
+/* ---- First-baby quest ---- */
+.quest-banner {
+  position: fixed;
+  left: 50%;
+  top: calc(52px + env(safe-area-inset-top));
+  transform: translateX(-50%);
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  max-width: min(420px, calc(100vw - 24px));
+  padding: 6px 14px;
+  border-radius: 14px;
+  border: 2px solid #ffb8d4;
+  background: rgba(255, 255, 255, 0.92);
+  color: #3b4a5a;
+  font-size: 13px;
+  text-align: center;
+  box-shadow: 0 6px 16px rgba(40, 20, 80, 0.18);
+  pointer-events: none;
+}
+
+.quest-title {
+  font-weight: 800;
+  color: #c2386f;
+}
+
+.quest-banner small {
+  color: #8a7a99;
+  font-size: 11px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quest-pulse,
+  .breed-shake,
+  .pair-heart,
+  .guide-float,
+  .guide-finger {
+    animation: none;
+  }
+  .quest-pulse {
+    box-shadow: 0 0 0 3px rgba(255, 120, 180, 0.7);
+  }
+  .guide-track {
+    scroll-behavior: auto;
   }
 }

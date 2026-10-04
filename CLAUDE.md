@@ -79,13 +79,16 @@ interface Fish {
   tankId: string;
 }
 
-interface Egg { id: string; speciesId: SpeciesId; variant: string; shiny: boolean; tankId: string; hatchAt: number; }
+interface Egg { id: string; speciesId: SpeciesId; variant: string; shiny: boolean; tankId: string; hatchAt: number; x?: number; } // x: where it was laid
+
+interface Courtship { id: string; tankId: string; fishIds: [string, string]; startedAt: number; endsAt: number; x: number; }
 
 interface Tank {
   id: string;
   name: string;
   theme: 'classic' | 'night' | 'coral' | 'pond';
-  capacity: number;
+  capacity: number;       // base (10 / 12 / 15 by purchase order) + 3 per upgrade
+  upgrades: number;       // capacity upgrades bought (0..5)
   cleanliness: number;    // 0..100
   algaeSpots: { id: string; x: number; y: number; size: number }[];
   decor: { id: string; decorId: string; x: number }[];
@@ -103,6 +106,9 @@ interface GameState {
   activeTankId: string;
   fish: Fish[];
   eggs: Egg[];
+  courtships: Courtship[];
+  nursery: Fish[];        // napping babies that hatched into a full tank (tankId '')
+  breedingQuest: { guideSeen: boolean; status: 'off' | 'active' | 'done' };
   inventory: { premiumFood: number };
   lastTickAt: number;
   lastDailyGift: string | null; // 'YYYY-MM-DD' local date
@@ -126,7 +132,7 @@ The sim runs on a 1-second fixed tick. Rendering is separate at 60fps.
 - +20 if hunger ≥ 40; -20 if hunger < 20
 - +15 if cleanliness ≥ 60; -15 if cleanliness < 30
 - +3 per decor item (max +15)
-- -10 if tank is over 90% capacity
+- -10 if the tank holds more than 90% of its capacity in hatched fish (eggs don't count)
 - Clamp 0..100
 
 **Growth**
@@ -177,21 +183,57 @@ Selling a juvenile gives 40% of the adult price. Babies cannot be sold.
 Unlocks beyond species:
 - L2: Premium food in shop (10 shells for 3)
 - L3: Decor shop (plants, rocks)
-- L5: Breeding
-- L7: Tank capacity upgrade (+2 slots, 200 shells, repeatable 3×, cost ×2 each time)
-- L8: Second tank (500 shells)
+- L4: Tank capacity upgrade (+3 slots, 150 shells, up to 5× per tank, cost ×1.6 each time: 150 / 240 / 384 / 614 / 983)
+- L5: Breeding (guide + "Your first baby" quest)
+- L8: Second tank (500 shells, capacity 12)
 - L10: Night Glow theme (8 pearls)
 - L12: Coral Reef theme (12 pearls)
-- L14: Third tank (2000 shells)
+- L14: Third tank (2000 shells, capacity 15)
 - L20: Pond theme (20 pearls)
 
-## Breeding (unlocks L5)
-- Every 5 minutes, check each pair in the same tank: same species, both adults, both happiness ≥ 80, both hunger ≥ 50, both off cooldown (60 min since `lastBredAt`), tank has a free slot.
-- 25% chance per eligible pair per check. Only one egg per pair per check.
-- Egg hatches in `max(10, growMinutes / 4)` minutes. Eggs count toward capacity.
+## Breeding (unlocks L5): player-driven, never random
+No hidden rolls decide whether breeding works. The player picks two ready fish and the egg is guaranteed;
+randomness only affects the baby's color and shiny chance.
+
+**Readiness** (both fish): adult, same species, same tank, happiness ≥ 70, hunger ≥ 40, not on cooldown
+(30 min after breeding), not already courting.
+- Ready fish show a small pulsing 💕 above them in the tank.
+- The FishCard has a **Breeding** checklist, each line ✅ or ❌ with a fix hint:
+  - Adult: "Grows up in 12 min"
+  - Happy: "Happiness 55/70 — clean the tank or add decor"
+  - Well fed: "Feed a few pellets"
+  - Rested: "Ready again in 18 min" (live)
+  - Partner: "Needs another adult Goldfish" with a "Buy one" shortcut
+- **Pair up 💕** is enabled only when every line is ✅. Tapping it while disabled shakes it gently and highlights the first ❌.
+
+**Pairing flow**
+- Pair up enters pairing mode: the tank dims slightly, compatible ready fish glow and bob, other fish fade, and a banner reads "Pick a partner for Bubbles 💕". Tap a glowing fish to choose it; tap empty water or ✕ to cancel.
+- A confirm sheet shows both fish, the possible baby colors with % chances, the shiny chance and the hatch time, and warns (without blocking) if the tank is full. The button is **Start courtship 💕**.
+- Courtship lasts 60s: the pair swims a slow heart-shaped loop with floating hearts and synced body waves. Both FishCards show "In love 💞 0:42", and courting fish can't be sold or moved.
+- At the end, one egg is laid on the sand at their spot (soft chime) and both parents start the 30-min cooldown. Courtship continues offline.
+
+**Eggs**
+- Hatch in `max(5, growMinutes / 6)` minutes. Eggs don't count toward capacity.
+- The egg wobbles faster in its last minute, then cracks with a sparkle, and the baby does a tiny happy spin.
 - Offspring variant: 45% parent A, 45% parent B, 10% random variant of that species.
-- Shiny chance 3% (10% if a parent is shiny). Hatching a shiny gives +2 pearls.
-- A little heart floats between the pair when an egg is laid.
+- Shiny chance 3% (10% if a parent is shiny). A shiny hatch gives +2 pearls, a golden burst and a "✨ Shiny! ✨" toast.
+
+**Nursery** (breeding is never blocked by a full tank)
+- If the tank is full when an egg hatches, the baby goes to the Nursery with a toast: "Baby moved to the Nursery — make room or upgrade your tank."
+- Nursery babies nap: no growth, no hunger. From the Nursery, move a baby to any tank with room (theme-only species need their theme), or rehome it for 20% of the adult price (the only time a baby can be sold).
+
+**Breeding panel** (💕 toolbar button, locked with "Unlocks at Lv 5" before then)
+- "Ready to pair", grouped by species, with one-tap Pair up.
+- "Almost ready", showing what each fish is missing.
+- Active courtships and eggs with countdowns, the Nursery tab, and a "How breeding works" link.
+
+**Guide + quest:** at Lv 5 (or once after updating, for players already past it):
+- A 4-card swipeable guide:
+  1. Raise two adults of the same species
+  2. Keep them happy and fed (look for the 💕)
+  3. Tap a fish → Pair up → pick its partner
+  4. Wait for the egg to hatch into a baby!
+- Then the "Your first baby" quest highlights the next action at each step, and rewards 50 shells + 1 pearl on the first hatch.
 
 ## Decor
 | decorId | name | unlock | cost |
@@ -208,7 +250,7 @@ Decor sits on the sand and is placed by dragging horizontally. Max 8 decor items
 Once per local calendar day, on first open: 20 shells + 3 premium food, with a 15% chance of +1 pearl. A gift box bobs in the tank and pops open on click. No streaks.
 
 ## Starting state
-- 1 classic tank, capacity 6, cleanliness 100
+- 1 classic tank, capacity 10, cleanliness 100
 - 2 baby danios with random variants and names
 - 30 shells, 0 pearls, level 1
 - Short onboarding: 3 tooltip bubbles (Feed → Watch them grow → Collect shells)
@@ -216,10 +258,11 @@ Once per local calendar day, on first open: 20 shells + 3 premium food, with a 1
 ## UI
 - The tank fills the viewport (max aspect ~16:10, letterboxed with a soft gradient).
 - **Top HUD:** level badge + XP bar, shells, pearls, mute toggle
-- **Bottom toolbar (big rounded buttons with emoji icons):** Feed 🍤, Premium 🌟 (shows count), Clean 🧽, Shop 🛒, My Fish 🐟, Tanks 🏠, Break ☕
+- **Bottom toolbar (big rounded buttons with emoji icons):** Feed 🍤, Premium 🌟 (shows count), Clean 🧽, Shop 🛒, Breeding 💕, My Fish 🐟, Tanks 🏠, Break ☕
+- **Capacity** shows as "🐟 7/10" on the HUD tank tag and in the tank switcher, with an "Upgrade" shortcut once a tank is 80%+ full.
 - **Feed mode:** clicking in the water drops 1 pellet at that x position (max 1 pellet per 150ms).
 - **Clean mode:** the cursor becomes a sponge; drag across algae to wipe.
-- **Clicking a fish** opens a FishCard: name (editable), species, stage, hunger bar, happiness bar, growth progress, sell button.
+- **Clicking a fish** opens a FishCard: name (editable), species, stage, hunger bar, happiness bar, growth progress, breeding checklist + Pair up, sell button.
 - **Shop tabs:** Fish / Food / Decor / Tanks. Locked items are shown greyed out with "Unlocks at Lv X".
 - **Toasts** appear bottom-center and auto-dismiss after 3s.
 - Responsive down to 360px wide (toolbar wraps to 2 rows on mobile).

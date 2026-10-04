@@ -18,6 +18,11 @@ import { TankSwitcher } from './ui/TankSwitcher';
 import { TankView } from './ui/TankView';
 import { Toasts } from './ui/Toasts';
 import { Toolbar } from './ui/Toolbar';
+import { BreedingGuide } from './ui/BreedingGuide';
+import { BreedingPanel } from './ui/BreedingPanel';
+import { PairingBanner } from './ui/PairingBanner';
+import { PairSheet } from './ui/PairSheet';
+import { QuestBanner } from './ui/QuestBanner';
 import { enterFullscreen, isTouchLandscape } from './ui/fullscreen';
 
 // Dev/art-preview panel: always in dev; in production only while DEV_TOOLS_IN_PRODUCTION is true
@@ -81,6 +86,10 @@ export function App() {
         store.exitBreak();
         return;
       }
+      if (store.pairingFishId || store.pairSheet) {
+        store.cancelPairing();
+        return;
+      }
       store.selectFish(null);
       store.selectDecor(null);
       store.setMode('look');
@@ -107,6 +116,11 @@ export function App() {
           <Toolbar />
           <Shop />
           <TankSwitcher />
+          <BreedingPanel />
+          <PairingBanner />
+          <PairSheet />
+          <QuestBanner />
+          <BreedingGuide />
           <LevelUpModal />
           <Settings />
           {DevPanel && (

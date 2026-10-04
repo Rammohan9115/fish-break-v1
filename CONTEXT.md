@@ -111,17 +111,23 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
 - Magic links use the implicit flow (`detectSessionInUrl`), so a link opened in another browser still works; `#error_description` → toast.
 
 ## Departures from the spec (data model)
-- **Save version is 3.** Migrations in `src/store/save.ts`, keyed by the version they upgrade from:
+- **Save version is 4.** Migrations in `src/store/save.ts`, keyed by the version they upgrade from:
   - **1→2:** adds `feedXp`, adds `ownedThemes` (built from the themes the tanks use), and defaults `boostUntil` to null.
   - **2→3:** adds `lastBreakXpAt`.
+  - **3→4 (breeding overhaul):** each tank gets `upgrades` (old `round((capacity − 6) / 2)`, max 3) and `capacity = base[i] + 3 × upgrades`
+    (base 10 / 12 / 15 by tank order). Adds `courtships: []`, `nursery: []`, and `breedingQuest` (`status: 'active'` for Lv5+, so they
+    see the guide and quest once). Fish and eggs pass through untouched.
 - **`Fish.boostUntil: number|null`:** the premium 2× growth boost ends at this ms timestamp.
 - **`GameState.feedXp {windowStart, earned}`:** the hourly 30-XP feeding cap. It's saved so reloads can't reset it.
 - **`GameState.ownedThemes: ThemeId[]`:** a theme is bought once and can be applied to any tank.
 - **`GameState.lastBreakXpAt: number|null`:** enforces Break XP at most once per hour.
+- **v4 breeding fields (also in CLAUDE.md):** `Tank.upgrades`, `Egg.x` (where it was laid, so offline laying survives a reload),
+  `GameState.courtships` (`{ fishIds, startedAt, endsAt, x }`), `GameState.nursery` (napping babies, `tankId: ''`, the sim never
+  touches them), and `GameState.breedingQuest` (`{ guideSeen, status: 'off' | 'active' | 'done' }`).
 - **`GameState.xp`** counts progress *within* the current level and resets to 0 on level-up. It is not lifetime XP.
 - **Kept outside GameState:**
   - Onboarding progress lives in localStorage `fishbowl-onboarding`, as `"0"|"1"|"2"|"done"`. **Reset game must clear it.**
-  - An egg's x on the sand is renderer-only. After a reload it uses a stable position derived from the egg id.
+  - Eggs laid before v4 have no `x`; the renderer derives a stable spot from the egg id.
 
 ## Architecture map
 **`src/game/`** is pure TypeScript: no DOM, deterministic given (state, dt, rng). Tests sit next to the code.
@@ -134,14 +140,22 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
   - `tick(state, dtMs, rng)` returns `{state, events: SimEvent[]}`. It uses structuredClone and sets now = `lastTickAt + dtMs`.
     Each tick hatches eggs, moves pellets (sink, land, dissolve after 60s with −3 cleanliness and an algae spot),
     decays cleanliness (algae at the 80/60/40/20 crossings, max 12), updates each fish (hunger, happiness drift, growth, stage, drops),
-    runs a breeding check when crossing a 5-minute *clock* boundary, then applies XP.
+    completes courtships whose 60s ended (guaranteed egg), then applies XP.
   - `simulateOffline(state, now, rng?)` runs 60s steps capped at 8h and returns `{state, summary, events}`.
   - Also exported: `eatPellet` (pure), `createInitialState`, `createFish`, `createTank`, `stageProgress` (FishCard ETA),
     `algaeTouchedBySponge` (segment hit test), and the helpers `happinessTarget`, `driftHappiness`, `growthMultiplier`,
-    `stageForGrowth`, `tankOccupancy` (eggs count).
-- **`SimEvent` types:** `drop`, `autoCollect`, `stageUp`, `hatched{eggId}`, `eggLaid{parentIds}`, `algaeSpawned`, `pelletDissolved`, `levelUp`.
-- **`breeding.ts`:** `canBreed`, `eligiblePairs`, `hasReadyPartner`, `runBreedingCheck` (25% per pair, parents' cooldowns start,
-  needs a free slot), `offspringVariant` (45/45/10), `offspringShiny` (3% or 10%), `hatchMinutes`, `isBreedingCheckDue`.
+    `stageForGrowth`, `tankOccupancy` (hatched fish only).
+- **`SimEvent` types:** `drop`, `autoCollect`, `stageUp`, `hatched{eggId, destination: 'tank'|'nursery'}`, `eggLaid{parentIds}`,
+  `questComplete`, `algaeSpawned`, `pelletDissolved`, `levelUp`.
+- **`breeding.ts` (player-driven, no dice for *whether*):**
+  - Readiness: `canBreed` (adult, happiness ≥ 70, hunger ≥ 40, 30-min cooldown), `isReadyToPair` (+ not courting), `compatiblePartners`.
+  - `breedingChecklist` → the FishCard's 5 ✅/❌ lines with hints; `notReadyReasons` for the panel.
+  - `checkCourtship` / `startCourtship` (60s); `completeCourtships` runs inside `tick` (so it also completes offline) and lays a
+    guaranteed egg at the courtship's `x` with `hatchAt = endsAt + hatchMinutes` (max(5, growMinutes/6)).
+  - `offspringVariant` (45/45/10), `shinyChance`/`offspringShiny` (3% / 10%), `babyColorOdds` for the confirm sheet.
+  - `breedingQuestStep(state, ui)` drives the "Your first baby" highlights. The reward itself is paid in `sim.hatchEggs`.
+- **Capacity:** `tankOccupancy` counts hatched fish only (eggs and the Nursery don't take room). `hatchEggs` sends the baby to
+  `state.nursery` when the tank is full. Upgrades: +3, max 5, `round(150 × 1.6ⁿ)`, unlock L4 (`economy.upgradeCostAt`, `baseCapacity`).
 - **`economy.ts`:**
   - Purchases return `Result = {ok,state,levelsGained} | {ok:false, reason: PurchaseError}`.
   - Buy/sell: `checkBuyFish`/`buyFish` (+5 XP), `sellValue`/`sellFish` (juvenile 40%, babies can't be sold), `buyPremiumFood`, `feedingXp`.
@@ -201,7 +215,23 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
 - Muted by default, and no AudioContext is created until unmuted. Repeats are rate-limited.
 - Ambience plays only during Break Mode. The engine accepts a fake audio context for tests.
 
+## Breeding UI map (v4)
+- Store UI state: `pairingFishId` (pairing mode), `pairSheet` (confirm), `breedingTab`, `guideOpen`; actions `startPairing`,
+  `pickPartner`, `cancelPairing`, `confirmCourtship(x)`, `moveFromNursery`, `rehomeBaby`, `openBreeding`, `openGuide`/`closeGuide`.
+  The guide opens after the Lv5 modal (`dismissLevelUp`) or on load for Lv5+ players with `guideSeen: false`.
+- UI: `FishCard` Breeding section, `PairingBanner`, `PairSheet`, `BreedingPanel` (Pairs/Nursery), `BreedingGuide`, `QuestBanner`,
+  shared hooks in `ui/useBreeding.ts`; toolbar 💕 Breed (locked before Lv5); HUD "🐟 7/10" + Upgrade at ≥80%.
+- Renderer: `getBreedingView` (from TankView) → 💕 markers, pairing dim/fade/glow, courtship heart loop (`behavior.heartPoint`,
+  mirror halves, shared wave phase, floating hearts), 👇 quest arrow, egg at `egg.x`, newborn spin, shiny gold burst.
+- Dev panel → Breeding: Make ready, Finish courtship, Hatch eggs now, Fill tank.
+
 ## Lessons learned (don't repeat these)
+- **Breeding checks are no longer clock-based** (the old "shift Date.now" trick is obsolete): use the dev buttons, or set
+  `courtships[].endsAt` / `eggs[].hatchAt` to now and call `advanceTo`.
+- **Vite HMR can leave two copies of a module in the page** (edited files reload under `?t=` URLs). A dev-console `import()` may then talk
+  to a stale copy: reach live state through `window.__renderer` / its deps, or reload after edits.
+- **Synthetic browser checks:** in a background tab, rAF only fires around screenshots, so run `renderer.update/draw` by hand
+  for animation checks. Resizing clears the canvas while the loop is stopped.
 - **React StrictMode runs `startGame` twice in dev.** The first cleanup saves the game, so on the second run `isNew` is false.
   That's why onboarding step 0 is saved to storage the moment a new player is detected.
 - **The store starts with a placeholder `createInitialState()` before the save loads.** UI that depends on saved state must wait for `loaded` (the gift box does).
@@ -213,7 +243,6 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
   non-running state, prime iOS with a silent buffer once, and set `navigator.audioSession.type='playback'` so iPhones play even
   with the silent switch on. Unmuting plays a coin pop as confirmation. Check what actually reaches the speakers by wrapping
   `AudioContext` in puppeteer (an AnalyserNode on destination) and clicking through the real UI.
-- **Breeding checks are tied to the clock** (5-minute boundaries of absolute time). To test them live in a browser, shift `Date.now`.
 - **A theme purchase can't always be applied** when a theme-only species lives in the tank. The toast says why, and the theme stays owned.
 - **The toolbar must never cover the sand.** `.app` reserves `--toolbar-h` below the tank (92px, or 156px at ≤560px wide).
 - **A fish flipping direction never shrinks below `MIN_FLIP_SCALE`;** otherwise it vanishes mid-turn.

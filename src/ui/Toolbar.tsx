@@ -2,7 +2,10 @@
 // tap the handle (or swipe left/up on it) to slide the tools out, and picking a tool tucks them away again.
 // Unbuilt features show a "coming soon" toast.
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { breedingUnlocked } from '../game/breeding';
+import { UNLOCK_LEVEL } from '../game/constants';
 import { useGameStore, type ToolMode } from '../store/gameStore';
+import { useQuestStep } from './useBreeding';
 
 /** How far (px) a drag must travel to count as a swipe. */
 const SWIPE_PX = 30;
@@ -19,15 +22,19 @@ interface ToolButtonProps {
   active?: boolean;
   badge?: number;
   hidden?: boolean;
+  /** Shown as locked (still tappable, to say when it unlocks). */
+  locked?: boolean;
+  /** The first-baby quest points here. */
+  pulse?: boolean;
   onClick: () => void;
   onboarding?: string;
 }
 
-function ToolButton({ icon, label, active = false, badge, hidden = false, onClick, onboarding }: ToolButtonProps) {
+function ToolButton({ icon, label, active = false, badge, hidden = false, locked = false, pulse = false, onClick, onboarding }: ToolButtonProps) {
   return (
     <button
       type="button"
-      className={`tool${active ? ' tool-active' : ''}`}
+      className={`tool${active ? ' tool-active' : ''}${locked ? ' tool-locked' : ''}${pulse ? ' quest-pulse' : ''}`}
       aria-pressed={active}
       tabIndex={hidden ? -1 : undefined}
       onClick={onClick}
@@ -38,6 +45,11 @@ function ToolButton({ icon, label, active = false, badge, hidden = false, onClic
       </span>
       <span className="tool-label">{label}</span>
       {badge !== undefined && <span className="tool-badge">{badge}</span>}
+      {locked && (
+        <span className="tool-lock" aria-label="locked">
+          🔒
+        </span>
+      )}
     </button>
   );
 }
@@ -50,6 +62,11 @@ export function Toolbar() {
   const panel = useGameStore((s) => s.panel);
   const openPanel = useGameStore((s) => s.openPanel);
   const onboardingStep = useGameStore((s) => s.onboardingStep);
+  const breedingOpen = useGameStore((s) => breedingUnlocked(s.game));
+  const nurseryCount = useGameStore((s) => s.game.nursery.length);
+  const openBreeding = useGameStore((s) => s.openBreeding);
+  const quest = useQuestStep();
+  const questTool = quest?.step === 'getPair' ? 'shop' : quest?.step === 'makeReady' ? 'feed' : null;
   const [open, setOpen] = useState(onboardingStep === 0);
   const swipeStart = useRef<{ x: number; y: number } | null>(null);
   const swiped = useRef(false);
@@ -104,17 +121,28 @@ export function Toolbar() {
       onClickCapture={onClickCapture}
     >
       <div className="dock-tools" id="dock-tools" aria-hidden={!open}>
-        <ToolButton icon="🍤" label="Feed" active={mode === 'feed'} hidden={!open} onClick={() => toggle('feed')} onboarding="feed" />
+        <ToolButton icon="🍤" label="Feed" active={mode === 'feed'} hidden={!open} pulse={questTool === 'feed'} onClick={() => toggle('feed')} onboarding="feed" />
         <ToolButton icon="🌟" label="Premium" active={mode === 'premium'} badge={premiumFood} hidden={!open} onClick={() => toggle('premium')} />
         <ToolButton icon="🧽" label="Clean" active={mode === 'clean'} hidden={!open} onClick={() => toggle('clean')} />
-        <ToolButton icon="🛒" label="Shop" active={panel === 'shop'} hidden={!open} onClick={() => togglePanel('shop')} />
+        <ToolButton icon="🛒" label="Shop" active={panel === 'shop'} hidden={!open} pulse={questTool === 'shop'} onClick={() => togglePanel('shop')} />
+        <ToolButton
+          icon="💕"
+          label="Breed"
+          active={panel === 'breeding'}
+          badge={nurseryCount > 0 ? nurseryCount : undefined}
+          hidden={!open}
+          locked={!breedingOpen}
+          onClick={() =>
+            pick(() => (breedingOpen ? (panel === 'breeding' ? openPanel(null) : openBreeding()) : addToast(`💕 Breeding unlocks at Lv ${UNLOCK_LEVEL.breeding}`)))
+          }
+        />
         <ToolButton icon="🐟" label="My Fish" hidden={!open} onClick={() => soon('🐟', 'My Fish')} />
         <ToolButton icon="🏠" label="Tanks" active={panel === 'tanks'} hidden={!open} onClick={() => togglePanel('tanks')} />
         <ToolButton icon="☕" label="Break" active={panel === 'break'} hidden={!open} onClick={() => togglePanel('break')} />
       </div>
       <button
         type="button"
-        className={`tool dock-handle${!open && activeMode ? ' tool-active' : ''}`}
+        className={`tool dock-handle${!open && activeMode ? ' tool-active' : ''}${!open && questTool ? ' quest-pulse' : ''}`}
         aria-expanded={open}
         aria-controls="dock-tools"
         aria-label={open ? 'Hide tools' : 'Show tools'}

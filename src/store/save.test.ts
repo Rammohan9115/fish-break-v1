@@ -118,11 +118,17 @@ describe('migrations', () => {
 });
 
 describe('formatOfflineSummary', () => {
-  const base: OfflineSummary = { elapsedMs: 2 * HOUR_MS + 15 * MINUTE_MS, shellsDropped: 0, shellValue: 0, pearlsDropped: 0, eggsHatched: 0, fishGrown: 0, levelsGained: [] };
+  const base: OfflineSummary = { elapsedMs: 2 * HOUR_MS + 15 * MINUTE_MS, shellsDropped: 0, shellValue: 0, pearlsDropped: 0, eggsHatched: 0, eggsLaid: 0, toNursery: 0, questComplete: false, fishGrown: 0, levelsGained: [] };
 
   it('lists what happened', () => {
     const text = formatOfflineSummary({ ...base, shellsDropped: 6, shellValue: 12, pearlsDropped: 1, eggsHatched: 2, fishGrown: 3 });
     expect(text).toBe('While you were away (2h 15m): 🐚 12 shells dropped, ⚪ 1 pearl, 🥚 2 eggs hatched, 🐟 3 grew up a stage');
+  });
+
+  it('mentions eggs laid and babies sent to the Nursery', () => {
+    expect(formatOfflineSummary({ ...base, eggsLaid: 1, eggsHatched: 1, toNursery: 2 })).toBe(
+      'While you were away (2h 15m): 💕 1 egg laid, 🥚 1 egg hatched, 🍼 2 babies napping in the Nursery',
+    );
   });
 
   it('has a friendly fallback when nothing happened', () => {
@@ -227,7 +233,55 @@ describe('v2 → v3 migration', () => {
     storage.setItem(SAVE_KEY, JSON.stringify(v2));
     const { state, corrupt } = loadGame(storage, T0, { rng: rng() });
     expect(corrupt).toBe(false);
-    expect(state.version).toBe(3);
+    expect(state.version).toBe(SAVE_VERSION);
     expect(state.lastBreakXpAt).toBeNull();
+  });
+});
+
+describe('v3 → v4 migration (breeding overhaul, bigger tanks)', () => {
+  /** A v3-shaped save: old capacities (6 + 2 per upgrade), no upgrades/courtships/nursery/quest fields. */
+  function v3Save(level: number) {
+    const s = makeState({ overrides: { level } });
+    const { courtships: _c, nursery: _n, breedingQuest: _q, ...rest } = s;
+    const tank = (id: string, capacity: number) => {
+      const { upgrades: _u, ...t } = { ...s.tanks[0]!, id, capacity };
+      return t;
+    };
+    const fish = [makeFish({ tankId: 'tank-1' }), makeFish({ tankId: 'tank-1', stage: 'adult', growth: 1200, lastBredAt: T0 - 1000 }), makeFish({ tankId: 'tank-2' })];
+    const eggs = [{ id: 'egg-1', speciesId: 'danio', variant: 'zebra', shiny: false, tankId: 'tank-1', hatchAt: T0 + HOUR_MS }];
+    return { ...rest, version: 3, tanks: [tank('tank-1', 10), tank('tank-2', 6), tank('tank-3', 12)], fish, eggs };
+  }
+
+  it('raises capacities, keeps bought upgrades as +3 steps, and never loses fish or eggs', () => {
+    const old = v3Save(9);
+    const migrated = migrate(old as unknown as Record<string, unknown>);
+    expect(isValidGameState(migrated)).toBe(true);
+    const state = migrated as unknown as ReturnType<typeof makeState>;
+    // tank-1: 10 = 6 + 2 upgrades → base 10 + 2×3; tank-2: none → 12; tank-3: 3 upgrades (max) → 15 + 9.
+    expect(state.tanks.map((t) => [t.capacity, t.upgrades])).toEqual([
+      [16, 2],
+      [12, 0],
+      [24, 3],
+    ]);
+    expect(state.fish).toEqual(old.fish);
+    expect(state.eggs).toEqual(old.eggs);
+    expect(state.courtships).toEqual([]);
+    expect(state.nursery).toEqual([]);
+  });
+
+  it('starts the guide and quest for players already at the breeding level, not before', () => {
+    const atFive = migrate(v3Save(5) as unknown as Record<string, unknown>) as unknown as ReturnType<typeof makeState>;
+    expect(atFive.breedingQuest).toEqual({ guideSeen: false, status: 'active' });
+    const early = migrate(v3Save(3) as unknown as Record<string, unknown>) as unknown as ReturnType<typeof makeState>;
+    expect(early.breedingQuest).toEqual({ guideSeen: false, status: 'off' });
+  });
+
+  it('loads through loadGame without being treated as corrupt', () => {
+    const storage = new MemoryStorage();
+    storage.setItem(SAVE_KEY, JSON.stringify(v3Save(6)));
+    const { state, corrupt } = loadGame(storage, T0, { rng: rng() });
+    expect(corrupt).toBe(false);
+    expect(state.version).toBe(SAVE_VERSION);
+    expect(state.fish).toHaveLength(3);
   });
 });

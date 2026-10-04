@@ -400,21 +400,59 @@ describe('daily gift (store)', () => {
 });
 
 describe('breeding events (store)', () => {
-  it('formats lay and hatch toasts, including shiny hatches', () => {
+  it('formats lay and hatch toasts, including shiny and Nursery hatches and the quest reward', () => {
     const a = makeFish({ name: 'Mochi' });
     const b = makeFish({ name: 'Bean' });
     const baby = makeFish({ name: 'Pip', speciesId: 'guppy' });
-    const game = makeState({ fish: [a, b, baby] });
+    const napper = makeFish({ name: 'Dot', speciesId: 'guppy', tankId: '' });
+    const game = { ...makeState({ fish: [a, b, baby] }), nursery: [napper] };
     expect(
       breedingToasts(
         [
           { type: 'eggLaid', tankId: 'tank-1', eggId: 'e1', parentIds: [a.id, b.id], shiny: false },
-          { type: 'hatched', fishId: baby.id, tankId: 'tank-1', shiny: false, eggId: 'e1' },
-          { type: 'hatched', fishId: baby.id, tankId: 'tank-1', shiny: true, eggId: 'e2' },
+          { type: 'hatched', fishId: baby.id, tankId: 'tank-1', shiny: false, eggId: 'e1', destination: 'tank' },
+          { type: 'hatched', fishId: baby.id, tankId: 'tank-1', shiny: true, eggId: 'e2', destination: 'tank' },
+          { type: 'hatched', fishId: napper.id, tankId: 'tank-1', shiny: false, eggId: 'e3', destination: 'nursery' },
+          { type: 'questComplete', shells: 50, pearls: 1 },
         ],
         game,
       ),
-    ).toEqual(['💕 Mochi & Bean laid an egg!', '🐣 Pip the Guppy hatched!', '✨ A shiny Guppy hatched! Say hi to Pip (+2 pearls)']);
+    ).toEqual([
+      '💕 Mochi & Bean laid an egg!',
+      '🐣 Pip the Guppy hatched!',
+      '✨ Shiny! ✨ Say hi to Pip the Guppy (+2 ⚪)',
+      '🐣 Dot the Guppy hatched!',
+      '🍼 Baby moved to the Nursery — make room or upgrade your tank.',
+      '🎉 Your first baby! +50 🐚 +1 ⚪',
+    ]);
+  });
+
+  it('pairing: Pair up → pick partner → confirm starts a courtship; a wrong pick just toasts', () => {
+    const a = makeFish({ name: 'Mochi', stage: 'adult', growth: 1200, hunger: 90, happiness: 90 });
+    const b = makeFish({ name: 'Bean', stage: 'adult', growth: 1200, hunger: 90, happiness: 90 });
+    const g = makeFish({ name: 'Gil', speciesId: 'guppy', stage: 'adult', growth: 1500, hunger: 90, happiness: 90 });
+    vi.setSystemTime(T0);
+    load(makeState({ fish: [a, b, g], overrides: { level: 5 } }));
+    expect(store().startPairing(a.id)).toBe(true);
+    expect(store().pairingFishId).toBe(a.id);
+    store().pickPartner(g.id);
+    expect(store().pairSheet).toBeNull();
+    expect(store().toasts[store().toasts.length - 1]?.text).toMatch(/different species/);
+    store().pickPartner(b.id);
+    expect(store().pairSheet).toEqual({ aId: a.id, bId: b.id });
+    expect(store().confirmCourtship(300)).toBe(true);
+    expect(store().game.courtships).toHaveLength(1);
+    expect(store().game.courtships[0]).toMatchObject({ fishIds: [a.id, b.id], x: 300 });
+  });
+
+  it('closing the guide marks it seen and starts the quest once', () => {
+    load(makeState({ overrides: { level: 5, breedingQuest: { guideSeen: false, status: 'off' } } }));
+    store().openGuide();
+    store().closeGuide();
+    expect(store().game.breedingQuest).toEqual({ guideSeen: true, status: 'active' });
+    load(makeState({ overrides: { level: 5, breedingQuest: { guideSeen: true, status: 'done' } } }));
+    store().closeGuide();
+    expect(store().game.breedingQuest.status).toBe('done');
   });
 
   it('notifies subscribers and toasts when an egg hatches during live ticks', () => {

@@ -126,6 +126,21 @@ export default function DevPanel() {
           🍤 Hungry
         </button>
       </div>
+      <div className="dev-label">Breeding</div>
+      <div className="dev-buttons">
+        <button type="button" onClick={dev.makeReady}>
+          💕 Make ready
+        </button>
+        <button type="button" onClick={dev.finishCourtships}>
+          ⏩ Finish courtship
+        </button>
+        <button type="button" onClick={dev.hatchEggsNow}>
+          🐣 Hatch eggs now
+        </button>
+        <button type="button" onClick={dev.fillTank}>
+          🐟 Fill tank
+        </button>
+      </div>
       <div className="dev-label">Theme</div>
       <div className="dev-buttons">
         {THEMES.map((t) => (

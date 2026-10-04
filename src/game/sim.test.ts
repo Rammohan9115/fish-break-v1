@@ -117,11 +117,12 @@ describe('happiness target', () => {
     expect(happinessTarget(30, tank({ capacity: 6 }), 5)).toBe(50);
   });
 
-  it('counts eggs toward capacity crowding', () => {
+  it('only hatched fish count toward crowding, not eggs', () => {
     const fish = Array.from({ length: 5 }, () => makeFish({ hunger: 30, happiness: 50 }));
-    const base = makeState({ fish, tank: { cleanliness: 45 } });
-    const crowded = { ...base, eggs: [egg({ hatchAt: T0 + 10 * HOUR_MS })] };
-    expect(fishOf(tick(base, MINUTE_MS, rng()).state).happiness).toBeCloseTo(50);
+    const base = makeState({ fish, tank: { cleanliness: 45, capacity: 6 } });
+    const withEgg = { ...base, eggs: [egg({ hatchAt: T0 + 10 * HOUR_MS })] };
+    expect(fishOf(tick(withEgg, MINUTE_MS, rng()).state).happiness).toBeCloseTo(50);
+    const crowded = { ...base, fish: [...fish, makeFish({ hunger: 30, happiness: 50 })] };
     expect(fishOf(tick(crowded, MINUTE_MS, rng()).state).happiness).toBeCloseTo(48);
   });
 
@@ -414,6 +415,25 @@ describe('egg hatching', () => {
     expect(events.some((e) => e.type === 'hatched')).toBe(true);
   });
 
+  it('a full tank never blocks a hatch: the baby goes to the Nursery', () => {
+    const residents = Array.from({ length: 2 }, () => makeFish());
+    const state = { ...makeState({ fish: residents, tank: { capacity: 2 } }), eggs: [egg()] };
+    const { state: next, events } = tick(state, SECOND_MS, rng());
+    expect(next.eggs).toHaveLength(0);
+    expect(next.fish).toHaveLength(2);
+    expect(next.nursery).toHaveLength(1);
+    expect(next.nursery[0]).toMatchObject({ speciesId: 'guppy', stage: 'baby', tankId: '' });
+    expect(next.stats.hatched).toBe(1);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'hatched', destination: 'nursery' }));
+  });
+
+  it('Nursery babies nap: no growth, no hunger', () => {
+    const napper = makeFish({ tankId: '', hunger: 60, growth: 10 });
+    const state = { ...makeState(), nursery: [napper] };
+    const next = simulateOffline(state, T0 + HOUR_MS, rng()).state;
+    expect(next.nursery[0]).toMatchObject({ hunger: 60, growth: 10, stage: 'baby' });
+  });
+
   it('shiny hatch gives +2 pearls', () => {
     const state = { ...makeState(), eggs: [egg({ shiny: true })] };
     const next = tick(state, SECOND_MS, rng()).state;
@@ -541,9 +561,9 @@ describe('createInitialState', () => {
     expect(state.stats).toEqual({ fed: 0, hatched: 0, cleaned: 0 });
   });
 
-  it('has one classic tank with capacity 6 and cleanliness 100', () => {
+  it('has one classic tank with capacity 10 and cleanliness 100', () => {
     expect(state.tanks).toHaveLength(1);
-    expect(tankOf(state)).toMatchObject({ theme: 'classic', capacity: 6, cleanliness: 100, algaeSpots: [], decor: [], pellets: [], shells: [] });
+    expect(tankOf(state)).toMatchObject({ theme: 'classic', capacity: 10, upgrades: 0, cleanliness: 100, algaeSpots: [], decor: [], pellets: [], shells: [] });
     expect(state.activeTankId).toBe(tankOf(state).id);
   });
 

@@ -1,7 +1,7 @@
 // All balance numbers live here. Logic must not contain magic numbers.
 import type { DecorDef, DecorId, Price, ThemeId } from './types';
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 // ---------------------------------------------------------------------------
 // Time
@@ -141,7 +141,7 @@ export const UNLOCK_LEVEL = {
   premiumFood: 2,
   decorShop: 3,
   breeding: 5,
-  capacityUpgrade: 7,
+  capacityUpgrade: 4,
   secondTank: 8,
   thirdTank: 14,
 } as const;
@@ -153,19 +153,23 @@ export const PREMIUM_FOOD_PACK = { count: 3, price: { currency: 'shells', amount
 /** Juveniles sell for this fraction of the adult price. Babies cannot be sold. */
 export const JUVENILE_SELL_FRACTION = 0.4;
 
+/** Each tank's capacity upgrade ladder: +3 slots per step, up to 5 steps, 150 shells growing ×1.6. */
 export const CAPACITY_UPGRADE = {
-  slots: 2,
-  baseCost: 200,
-  maxPurchases: 3,
-  costMultiplier: 2,
+  slots: 3,
+  baseCost: 150,
+  maxPurchases: 5,
+  costMultiplier: 1.6,
 } as const;
+/** Starting capacity of the first, second and third tank (by purchase order). */
+export const TANK_BASE_CAPACITY = [10, 12, 15] as const;
+/** The HUD offers an "Upgrade" shortcut once a tank is this full. */
+export const CAPACITY_WARN_FRACTION = 0.8;
 
 export const TANK_PURCHASES: { unlockLevel: number; price: Price }[] = [
   { unlockLevel: UNLOCK_LEVEL.secondTank, price: { currency: 'shells', amount: 500 } },
   { unlockLevel: UNLOCK_LEVEL.thirdTank, price: { currency: 'shells', amount: 2000 } },
 ];
 export const MAX_TANKS = 1 + TANK_PURCHASES.length;
-export const NEW_TANK_CAPACITY = 6;
 /** Decor is placed on the sand at least this far from the glass and the bubbler. */
 export const DECOR_EDGE_MARGIN = 70;
 export const DECOR_PLACEMENT_TRIES = 12;
@@ -205,22 +209,37 @@ export const CHEST_BUBBLE_INTERVAL_MS = 30 * SECOND_MS;
 // ---------------------------------------------------------------------------
 // Breeding
 // ---------------------------------------------------------------------------
+/** Player-driven breeding: two ready fish → a guaranteed egg after the courtship. */
 export const BREEDING = {
-  checkIntervalMs: 5 * MINUTE_MS,
-  minHappiness: 80,
-  minHunger: 50,
-  cooldownMs: 60 * MINUTE_MS,
-  chancePerPair: 0.25,
+  minHappiness: 70,
+  minHunger: 40,
+  cooldownMs: 30 * MINUTE_MS,
+  courtshipMs: 60 * SECOND_MS,
   /** Egg hatches in max(eggMinMinutes, growMinutes / eggGrowDivisor) minutes. */
-  eggMinMinutes: 10,
-  eggGrowDivisor: 4,
+  eggMinMinutes: 5,
+  eggGrowDivisor: 6,
   variantParentAChance: 0.45,
   variantParentBChance: 0.45,
   // remaining 0.10 → random variant of the species
   shinyChance: 0.03,
   shinyChanceShinyParent: 0.1,
   shinyHatchPearls: 2,
+  /** Rehoming a napping Nursery baby pays this share of the adult sell price. */
+  rehomeFraction: 0.2,
 } as const;
+/** "Your first baby" quest reward (paid once, on the first hatch while the quest is active). */
+export const BREEDING_QUEST_REWARD = { shells: 50, pearls: 1 } as const;
+/** Courtship loop (renderer): heart size (tank units), how high above the sand it floats, seconds per loop. */
+export const COURTSHIP_LOOP_W = 60;
+export const COURTSHIP_LOOP_H = 52;
+export const COURTSHIP_HEIGHT = 170;
+export const COURTSHIP_LOOP_S = 9;
+export const COURTSHIP_HEART_GAP_S = 0.7;
+/** Courting fish swim at this share of their cruise speed. */
+export const COURTSHIP_SPEED = 0.75;
+/** The newborn's happy spin (ms) and the egg's faster wobble in its last stretch (ms before hatching). */
+export const HATCH_SPIN_MS = 800;
+export const EGG_EAGER_MS = 60 * SECOND_MS;
 
 // ---------------------------------------------------------------------------
 // Daily gift
@@ -609,7 +628,7 @@ export const STARTING = {
   premiumFood: 0,
   tankName: 'My Tank',
   tankTheme: 'classic' as ThemeId,
-  tankCapacity: 6,
+  tankCapacity: TANK_BASE_CAPACITY[0],
   tankCleanliness: 100,
   fishSpecies: 'danio' as const,
   fishCount: 2,

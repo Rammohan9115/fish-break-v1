@@ -4,7 +4,8 @@ import { useEffect, useRef } from 'react';
 import { DRAG_THRESHOLD_PX, PAN_TIP_KEY, SAND_Y, XP } from '../game/constants';
 import { algaeTouchedBySponge } from '../game/sim';
 import { sound } from '../audio/sound';
-import { Renderer } from '../render/renderer';
+import { breedingQuestStep, breedingUnlocked, compatiblePartners, isReadyToPair } from '../game/breeding';
+import { Renderer, type BreedingView } from '../render/renderer';
 import { subscribeSimEvents, useGameStore } from '../store/gameStore';
 import { DailyGift } from './DailyGift';
 import { HUD_BUMP_EVENT } from './Hud';
@@ -31,6 +32,25 @@ function sponge(renderer: Renderer, from: Point, to: Point): void {
   }
 }
 
+/** What the tank shows for breeding: ready fish (💕), pairing mode, courtships, and the quest's target fish. */
+function getBreedingView(): BreedingView {
+  const s = useGameStore.getState();
+  const { game } = s;
+  const now = Date.now();
+  const inTank = game.fish.filter((f) => f.tankId === game.activeTankId);
+  const unlocked = breedingUnlocked(game);
+  const readyIds = new Set<string>();
+  if (unlocked) for (const f of inTank) if (isReadyToPair(game, f, now) && compatiblePartners(game, f, now).length > 0) readyIds.add(f.id);
+  const chooser = s.pairingFishId ? inTank.find((f) => f.id === s.pairingFishId) : undefined;
+  const quest = breedingQuestStep(game, { selectedFishId: s.selectedFishId, pairingFishId: s.pairingFishId, sheetOpen: s.pairSheet !== null }, now);
+  return {
+    readyIds,
+    pairing: chooser ? { fishId: chooser.id, compatibleIds: new Set(compatiblePartners(game, chooser, now).map((f) => f.id)) } : null,
+    courtships: game.courtships.filter((c) => c.tankId === game.activeTankId),
+    questFishId: quest && (quest.step === 'tapFish' || quest.step === 'pickPartner') ? quest.fishId : null,
+  };
+}
+
 function handleTankPress(renderer: Renderer, clientX: number, clientY: number): Gesture {
   // Any point on the canvas is in view (the view may extend beyond the 1000×625 world on wide/tall screens).
   const { x, y } = renderer.toTank(clientX, clientY);
@@ -43,6 +63,14 @@ function handleTankPress(renderer: Renderer, clientX: number, clientY: number): 
       renderer.poke(fishId);
       sound.play('bubble');
     }
+    return null;
+  }
+
+  // Pairing mode: tap a glowing fish to choose it, anything else cancels.
+  if (store.pairingFishId) {
+    const fishId = renderer.fishAt(x, y);
+    if (fishId && fishId !== store.pairingFishId) store.pickPartner(fishId);
+    else if (!fishId) store.cancelPairing();
     return null;
   }
 
@@ -122,6 +150,7 @@ export function TankView() {
         return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null;
       },
       onHudArrive: (icon) => window.dispatchEvent(new CustomEvent(HUD_BUMP_EVENT, { detail: icon })),
+      getBreedingView,
     });
     rendererRef.current = renderer;
     // Dev-only handle for debugging/tests (stripped from production builds).
@@ -146,7 +175,8 @@ export function TankView() {
     }
     const unsubscribe = subscribeSimEvents((events) => {
       renderer.handleEvents(events);
-      if (events.some((e) => e.type === 'hatched' || e.type === 'eggLaid')) sound.play('bubble');
+      if (events.some((e) => e.type === 'eggLaid')) sound.play('chime');
+      if (events.some((e) => e.type === 'hatched')) sound.play('bubble');
     });
     return () => {
       unsubscribe();

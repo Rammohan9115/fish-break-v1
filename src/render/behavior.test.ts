@@ -3,7 +3,7 @@ import { EAT_RADIUS_PX, MAX_PITCH, SAND_Y, SWIM_SIDE_MARGIN, TANK_WIDTH, TURN_MS
 import { SPECIES } from '../game/species';
 import { makeFish, seededRng } from '../game/testUtils';
 import type { Fish } from '../game/types';
-import { createActor, edgeAvoidance, maxSpeedFor, swimBounds, updateActor, type FishActor, type FoodTarget } from './behavior';
+import { createActor, edgeAvoidance, heartPoint, maxSpeedFor, swimBounds, updateActor, type FishActor, type FoodTarget } from './behavior';
 
 const DT = 1 / 60;
 
@@ -266,5 +266,41 @@ describe('sad look', () => {
       updateActor(actor, { fish: sad, now: (now += 16.7), dt: 1 / 60, rng, food: [], schoolmates: [] });
       expect(actor.targetY).toBeGreaterThanOrEqual(floor);
     }
+  });
+});
+
+describe('courtship heart loop', () => {
+  it('fits its box, is left/right symmetric, and passes through the bottom point', () => {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (let u = 0; u < Math.PI * 2; u += 0.01) {
+      const p = heartPoint(u, 120, 100);
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y);
+      maxY = Math.max(maxY, p.y);
+      const mirror = heartPoint(-u, 120, 100);
+      expect(mirror.x).toBeCloseTo(-p.x);
+      expect(mirror.y).toBeCloseTo(p.y);
+    }
+    expect(maxX).toBeCloseTo(60, 0);
+    expect(minX).toBeCloseTo(-60, 0);
+    expect(maxY - minY).toBeLessThanOrEqual(101);
+    // u = π is the heart's point (bottom, center).
+    expect(heartPoint(Math.PI, 120, 100).x).toBeCloseTo(0);
+    expect(heartPoint(Math.PI, 120, 100).y).toBeCloseTo(maxY);
+  });
+
+  it('a courting fish heads for its loop point even when food is around', () => {
+    const rng = seededRng(5);
+    const fish = makeFish({ stage: 'adult', growth: 1200, hunger: 10, happiness: 90 });
+    const actor = createActor(fish, rng, 0, { x: 300, y: 300 });
+    actor.heading = 0;
+    const food: FoodTarget[] = [{ id: 'p', x: 100, y: 300 }];
+    let now = 0;
+    for (let i = 0; i < 120; i++) updateActor(actor, { fish, now: (now += 16.7), dt: 1 / 60, rng, food, schoolmates: [], courtship: { x: 500, y: 300 } });
+    expect(actor.x).toBeGreaterThan(300);
   });
 });
