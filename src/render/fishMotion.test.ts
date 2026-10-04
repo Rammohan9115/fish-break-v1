@@ -143,7 +143,12 @@ describe('species sprite settings', () => {
   it('places every eye inside its sprite', () => {
     for (const s of Object.values(SPECIES)) {
       for (const eye of [s.eye.adult, s.eye.baby]) {
-        expect(eye.x).toBeGreaterThan(0.5);
+        // Side-on fish have their eye toward the nose; a front-facing face (jelly) has two, one each side.
+        if (eye.twinX !== undefined) {
+          expect(eye.x).toBeLessThan(0.5);
+          expect(eye.twinX).toBeGreaterThan(0.5);
+          expect(eye.twinX).toBeLessThan(1);
+        } else expect(eye.x).toBeGreaterThan(0.5);
         expect(eye.x).toBeLessThan(1);
         expect(eye.y).toBeGreaterThan(0);
         expect(eye.y).toBeLessThan(1);

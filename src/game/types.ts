@@ -10,6 +10,7 @@ export type SpeciesId =
   | 'tetra'
   | 'betta'
   | 'angelfish'
+  | 'jellyfish'
   | 'clownfish'
   | 'puffer'
   | 'axolotl'
@@ -37,12 +38,14 @@ export interface FishVariant {
   fin: string;
   accent: string;
   outline: string;
+  /** Sprite species drawn from one master sprite (jellyfish): hue rotation in degrees for this variant. */
+  hue?: number;
 }
 
-export type SpeciesTrait = 'darts' | 'flowyTail' | 'chubby' | 'glowStripe' | 'schools' | 'bigFins' | 'tall' | 'inflates' | 'walksOnSand' | 'smiles';
+export type SpeciesTrait = 'darts' | 'flowyTail' | 'chubby' | 'glowStripe' | 'schools' | 'bigFins' | 'tall' | 'inflates' | 'walksOnSand' | 'smiles' | 'jelly';
 
 /** How a sprite fish moves its body (renderer only). */
-export type Gait = 'swim' | 'bob' | 'walk';
+export type Gait = 'swim' | 'bob' | 'walk' | 'pulse';
 
 /** Per-species procedural animation for the PNG sprites. Multipliers are relative to the global tuning in constants.ts. */
 export interface SpriteMotion {
@@ -50,7 +53,10 @@ export interface SpriteMotion {
   waveAmp: number;
   /** Body-wave speed multiplier (strokes per second). */
   waveSpeed: number;
-  /** 'swim' = body wave only; 'bob' = gentle whole-body bob (puffer); 'walk' = stepping bob and rock (axolotl). */
+  /**
+   * 'swim' = body wave only; 'bob' = gentle whole-body bob (puffer); 'walk' = stepping bob and rock (axolotl);
+   * 'pulse' = jellyfish bell pulse + tentacle sway (render/jellyMotion.ts, waveAmp/waveSpeed scale the sway).
+   */
   gait: Gait;
 }
 
@@ -59,6 +65,8 @@ export interface SpriteEye {
   x: number;
   y: number;
   size: number;
+  /** A second, identical eye at this x (a front-facing face, e.g. the jellyfish). */
+  twinX?: number;
 }
 
 export interface SpeciesDef {
@@ -82,6 +90,8 @@ export interface SpeciesDef {
   motion: SpriteMotion;
   /** Eye placement on the adult sprite (also used for juveniles) and on the baby sprite. */
   eye: { adult: SpriteEye; baby: SpriteEye };
+  /** Jellyfish: where the bell ends and the tentacles start, as a fraction of the trimmed sprite height (from the top). */
+  bellSplitY?: { adult: number; baby: number };
 }
 
 export interface DecorDef {

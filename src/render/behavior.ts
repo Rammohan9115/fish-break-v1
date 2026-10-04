@@ -47,11 +47,41 @@ import {
   TURN_RATE,
   WANDER_MAX_MS,
   WANDER_MIN_MS,
+  BABY_WAVE_SPEED,
+  JELLY_AVOID_MARGIN,
+  JELLY_AVOID_WEIGHT,
+  JELLY_BABY_GAP,
+  JELLY_BABY_PULSE,
+  JELLY_CURRENT_ACCEL,
+  JELLY_CURRENT_LEAN,
+  JELLY_DRAG,
+  JELLY_FOOD_ACCEL,
+  JELLY_FOOD_RANGE,
+  JELLY_HAPPY_GAP_MS,
+  JELLY_HAPPY_PULSES,
+  JELLY_MAX_Y_FRAC,
+  JELLY_PULSE_GAP_MAX_MS,
+  JELLY_PULSE_GAP_MIN_MS,
+  JELLY_PULSE_SIDE,
+  JELLY_PULSE_UP,
+  JELLY_REDUCED_GAP,
+  JELLY_REDUCED_PULSE,
+  JELLY_RISE_SPEED,
+  JELLY_SINK_ACCEL,
+  JELLY_SINK_MAX,
+  JELLY_SWAY_FREQ,
+  JELLY_TENTACLE_SMOOTHING,
+  JELLY_TRAIL_LEAN,
+  JELLY_WOBBLE,
+  JELLY_WOBBLE_FREQ,
+  JELLY_CONTRACT_MS,
+  JELLY_EXPAND_MS,
 } from '../game/constants';
 import { getSpecies } from '../game/species';
 import type { Fish, Rng, SpeciesId } from '../game/types';
 import { mouthOffset } from './drawFish';
 import { speedFraction, turnFacing, turnSpeedFactor, waveFrequency } from './fishMotion';
+import { bellSplitY, inBox, isContracting, jellySize, tentacleBox, type Box } from './jellyMotion';
 
 export type IndicatorKind = 'sad' | 'hungry';
 
@@ -93,6 +123,43 @@ export interface FishActor {
   inflateUntil: number;
   /** 0..1, eases toward 1 while the fish is sad (drives the sad face, droop and sinking). */
   gloom: number;
+  /** Jellyfish-only motion state (pulse propulsion instead of steering), else null. */
+  jelly: JellyActor | null;
+}
+
+/** A jelly moves by pulsing: velocity, pulse timing, tentacle shape, and the pellet it's eating. */
+export interface JellyActor {
+  vx: number;
+  vy: number;
+  /** When the current/last pulse started (renderer ms), its visual strength, thrust and tempo (duration multiplier). */
+  pulseAt: number;
+  pulseStrength: number;
+  pulseThrust: number;
+  pulseTempo: number;
+  /** Sideways part of the pulse's push (−1..1). */
+  pulseDirX: number;
+  nextPulseAt: number;
+  /** Quick happy pulses still queued after a tap. */
+  happyLeft: number;
+  /** Smoothed −1 (drifting down) .. 1 (rising): tentacle stretch. */
+  rise: number;
+  /** Smoothed tentacle lean at the tips (fraction of width). */
+  lean: number;
+  /** Tap glow flash start (renderer ms). */
+  flashAt: number;
+  /** A caught pellet sliding up into the bell: when, where it was caught (relative to the center), and its kind. */
+  caught: { at: number; dx: number; dy: number; premium: boolean } | null;
+  /** Dance Mode: the last beat this jelly pulsed on. */
+  lastBeat: number;
+  /** Per-jelly offset so wobbles don't sync. */
+  seed: number;
+}
+
+/** A jelly's tentacle area that fish steer around (tank units). */
+export type JellyZone = Box;
+
+export function isJelly(speciesId: SpeciesId): boolean {
+  return getSpecies(speciesId).traits.includes('jelly');
 }
 
 export interface Bounds {
@@ -106,6 +173,7 @@ export interface FoodTarget {
   id: string;
   x: number;
   y: number;
+  premium?: boolean;
 }
 
 export interface BehaviorInput {
@@ -120,6 +188,15 @@ export interface BehaviorInput {
   schoolmates: FishActor[];
   /** Courting: swim toward this point on the pair's heart loop instead of wandering or chasing food. */
   courtship?: { x: number; y: number };
+  /** The global water current (−1..1-ish, + = toward +x); jellies drift with it. */
+  current?: number;
+  /** Dance Mode beat index (jellies pulse on each new beat), or null/undefined when not dancing. */
+  beat?: number | null;
+  /** Tempo multiplier of a dance pulse (beat length / normal pulse length). */
+  beatTempo?: number;
+  reduced?: boolean;
+  /** Jelly tentacle areas fish keep out of. */
+  jellies?: JellyZone[];
 }
 
 /**
@@ -155,10 +232,22 @@ export function setSwimExtent(x0: number, x1: number, y0: number): void {
 
 export function swimBounds(speciesId: SpeciesId): Bounds {
   const base = { minX: swimExtent.minX, maxX: swimExtent.maxX };
+  if (isJelly(speciesId)) {
+    // Upper part of the water column only: the tentacles never reach the sand.
+    return { ...base, minY: swimExtent.minY + JELLY_TOP_MARGIN, maxY: SAND_Y * JELLY_MAX_Y_FRAC };
+  }
   if (getSpecies(speciesId).traits.includes('walksOnSand')) {
     return { ...base, minY: SAND_Y - AXOLOTL_SAND_CLEARANCE - AXOLOTL_BAND, maxY: SAND_Y - AXOLOTL_SAND_CLEARANCE };
   }
   return { ...base, minY: swimExtent.minY, maxY: SAND_Y - SWIM_SAND_CLEARANCE };
+}
+
+/** Keeps a jelly's bell under the surface. */
+const JELLY_TOP_MARGIN = 20;
+
+/** Lowest a jelly's center may ever go (courting or hatching near the floor): the tentacle tips stay off the sand. */
+export function jellyFloorY(stage: Fish['stage']): number {
+  return SAND_Y - jellySize(stage).h / 2 - SWIM_SAND_CLEARANCE;
 }
 
 function pickWanderTarget(actor: FishActor, rng: Rng, now: number): void {
@@ -200,7 +289,31 @@ export function createActor(fish: Fish, rng: Rng, now: number, at?: { x: number;
     nextIndicatorAt: now + rand(rng, INDICATOR_GAP_MIN_MS / 2, INDICATOR_GAP_MAX_MS / 2),
     inflateUntil: 0,
     gloom: isSad(fish) ? 1 : 0,
+    jelly: null,
   };
+  if (isJelly(fish.speciesId)) {
+    actor.facing = 1;
+    actor.turnFrom = 1;
+    actor.heading = -Math.PI / 2;
+    actor.y = Math.min(actor.y, jellyFloorY(fish.stage));
+    actor.jelly = {
+      vx: 0,
+      vy: 0,
+      pulseAt: -Infinity,
+      pulseStrength: 1,
+      pulseThrust: 1,
+      pulseTempo: 1,
+      pulseDirX: 0,
+      nextPulseAt: now + rand(rng, 0, JELLY_PULSE_GAP_MAX_MS),
+      happyLeft: 0,
+      rise: 0,
+      lean: 0,
+      flashAt: -Infinity,
+      caught: null,
+      lastBeat: -1,
+      seed: rng() * Math.PI * 2,
+    };
+  }
   pickWanderTarget(actor, rng, now);
   actor.gazeX = actor.x + facing * 100;
   actor.gazeY = actor.y;
@@ -288,21 +401,56 @@ export function pitchOf(actor: FishActor): number {
   return clamp(Math.atan2(vy, Math.abs(vx)), -MAX_PITCH, MAX_PITCH);
 }
 
+function blink(actor: FishActor, now: number, rng: Rng): void {
+  if (now >= actor.blinkAt) {
+    actor.blinkUntil = now + BLINK_DURATION_MS;
+    actor.blinkAt = now + rand(rng, BLINK_MIN_MS, BLINK_MAX_MS);
+  }
+}
+
+/** Sad / hungry thought bubbles, now and then. */
+function updateIndicator(actor: FishActor, fish: Fish, now: number, rng: Rng): void {
+  if (actor.indicator && now >= actor.indicator.until) actor.indicator = null;
+  if (!actor.indicator && now >= actor.nextIndicatorAt) {
+    const sad = isSad(fish);
+    const hungry = isHungry(fish);
+    if (sad || hungry) {
+      const kind: IndicatorKind = sad && hungry ? (rng() < 0.5 ? 'sad' : 'hungry') : sad ? 'sad' : 'hungry';
+      actor.indicator = { kind, start: now, until: now + INDICATOR_DURATION_MS };
+    }
+    actor.nextIndicatorAt = now + rand(rng, INDICATOR_GAP_MIN_MS, INDICATOR_GAP_MAX_MS);
+  }
+}
+
+/** Push (per axis) away from any jelly's tentacles the point is in or near. */
+export function jellyAvoidance(x: number, y: number, zones: JellyZone[] | undefined): { x: number; y: number } {
+  let ax = 0;
+  let ay = 0;
+  if (!zones) return { x: 0, y: 0 };
+  for (const z of zones) {
+    if (!inBox(x, y, z, JELLY_AVOID_MARGIN)) continue;
+    const cx = (z.x0 + z.x1) / 2;
+    const half = (z.x1 - z.x0) / 2 + JELLY_AVOID_MARGIN;
+    const closeness = 1 - Math.min(1, Math.abs(x - cx) / half);
+    ax += (x >= cx ? 1 : -1) * (0.5 + closeness);
+    // Slip out over the bell end or under the tips, whichever is nearer.
+    ay += y - z.y0 < z.y1 - y ? -0.4 : 0.4;
+  }
+  return { x: ax * JELLY_AVOID_WEIGHT, y: ay * JELLY_AVOID_WEIGHT };
+}
+
 /**
  * Advances one actor by `dt` seconds. Mutates the actor (renderer-only state).
- * Returns the id of a pellet the fish's mouth reached, or null.
+ * Returns the id of a pellet the fish's mouth reached (or a jelly's tentacles caught), or null.
  */
 export function updateActor(actor: FishActor, input: BehaviorInput): string | null {
+  if (actor.jelly) return updateJelly(actor, actor.jelly, input);
   const { fish, now, dt, rng } = input;
   const species = getSpecies(fish.speciesId);
   const swim = swimBounds(fish.speciesId);
   actor.gloom += ((isSad(fish) ? 1 : 0) - actor.gloom) * Math.min(1, dt * GLOOM_SMOOTHING);
 
-  // Blink
-  if (now >= actor.blinkAt) {
-    actor.blinkUntil = now + BLINK_DURATION_MS;
-    actor.blinkAt = now + rand(rng, BLINK_MIN_MS, BLINK_MAX_MS);
-  }
+  blink(actor, now, rng);
 
   // Darting species occasionally burst forward
   const darts = species.traits.includes('darts');
@@ -344,6 +492,11 @@ export function updateActor(actor: FishActor, input: BehaviorInput): string | nu
   const avoid = edgeAvoidance(actor.x, actor.y, bounds);
   sx += avoid.x * EDGE_AVOID_WEIGHT;
   sy += avoid.y * EDGE_AVOID_WEIGHT;
+  if (!courting) {
+    const avoidJelly = jellyAvoidance(actor.x, actor.y, input.jellies);
+    sx += avoidJelly.x;
+    sy += avoidJelly.y;
+  }
   if (species.traits.includes('schools') && !food) {
     const school = schoolingForce(actor, input.schoolmates);
     sx += school.x;
@@ -397,17 +550,7 @@ export function updateActor(actor: FishActor, input: BehaviorInput): string | nu
   // The body wave runs faster when swimming faster (per-species rhythm, quicker for babies).
   actor.phase += dt * waveFrequency(species.motion, speedFraction(actor.speed, species.speed), fish.stage === 'baby');
 
-  // Sad / hungry indicators
-  if (actor.indicator && now >= actor.indicator.until) actor.indicator = null;
-  if (!actor.indicator && now >= actor.nextIndicatorAt) {
-    const sad = isSad(fish);
-    const hungry = isHungry(fish);
-    if (sad || hungry) {
-      const kind: IndicatorKind = sad && hungry ? (rng() < 0.5 ? 'sad' : 'hungry') : sad ? 'sad' : 'hungry';
-      actor.indicator = { kind, start: now, until: now + INDICATOR_DURATION_MS };
-    }
-    actor.nextIndicatorAt = now + rand(rng, INDICATOR_GAP_MIN_MS, INDICATOR_GAP_MAX_MS);
-  }
+  updateIndicator(actor, fish, now, rng);
 
   // Eating
   if (food) {
@@ -420,3 +563,148 @@ export function updateActor(actor: FishActor, input: BehaviorInput): string | nu
   }
   return null;
 }
+
+const tmpBox: Box = { x0: 0, x1: 0, y0: 0, y1: 0 };
+
+/** The tentacle area of a jelly actor right now (written into `out`). */
+export function jellyTentacles(actor: FishActor, fish: Fish, out: Box): Box {
+  const { w, h } = jellySize(fish.stage);
+  return tentacleBox(actor.x, actor.y, w, h, bellSplitY(fish.speciesId, fish.stage), out);
+}
+
+/** A tap: a few quick happy pulses and a glow flash. */
+export function jellyHappy(j: JellyActor, now: number): void {
+  j.happyLeft = JELLY_HAPPY_PULSES;
+  j.nextPulseAt = now;
+  j.flashAt = now;
+}
+
+/**
+ * Jellyfish movement: no steering, flipping or tilting toward the velocity. Every 1.5–3s the bell
+ * contracts and the jelly is pushed up (and a little toward where it wants to go); between pulses it
+ * slows, drifts with the current and sinks gently. It keeps to the upper part of the tank, drifts
+ * slowly toward nearby pellets and eats any pellet that touches its tentacles.
+ */
+function updateJelly(actor: FishActor, j: JellyActor, input: BehaviorInput): string | null {
+  const { fish, now, dt, rng } = input;
+  const species = getSpecies(fish.speciesId);
+  const baby = fish.stage === 'baby';
+  const sad = isSad(fish);
+  const reduced = input.reduced ?? false;
+  const bounds = swimBounds(fish.speciesId);
+  const floor = jellyFloorY(fish.stage);
+  actor.gloom += ((sad ? 1 : 0) - actor.gloom) * Math.min(1, dt * GLOOM_SMOOTHING);
+  blink(actor, now, rng);
+
+  // Where it wants to be: the courtship loop, a nearby pellet (tentacles under it), or a wander point.
+  const courting = input.courtship;
+  let food: FoodTarget | null = null;
+  if (!courting && fish.hunger < FULL_HUNGER) {
+    const near = nearestFood(actor, input.food);
+    if (near && Math.hypot(near.x - actor.x, near.y - actor.y) < JELLY_FOOD_RANGE) food = near;
+  }
+  let tx: number;
+  let ty: number;
+  if (courting) {
+    tx = courting.x;
+    ty = Math.min(courting.y, floor);
+    actor.nextWanderAt = now + WANDER_MIN_MS;
+  } else if (food) {
+    tx = food.x;
+    ty = Math.min(food.y - jellySize(fish.stage).h * 0.2, bounds.maxY);
+  } else {
+    if (Math.abs(actor.targetX - actor.x) < ARRIVE_DIST * 2 || now >= actor.nextWanderAt) pickWanderTarget(actor, rng, now);
+    tx = actor.targetX;
+    ty = actor.targetY;
+  }
+
+  // Pulses: on the dance beat, queued happy pulses, or on its own rhythm (skipped while it is above
+  // where it wants to be, so it sinks there instead).
+  const gapK = (baby ? JELLY_BABY_GAP : 1) * (reduced ? JELLY_REDUCED_GAP : 1);
+  const strength = (baby ? JELLY_BABY_PULSE : 1) * (reduced ? JELLY_REDUCED_PULSE : 1);
+  const tempo = baby ? 0.75 : reduced ? 1.3 : 1;
+  const happyTempo = JELLY_HAPPY_GAP_MS / (JELLY_CONTRACT_MS + JELLY_EXPAND_MS);
+  let pulse: { strength: number; thrust: number; tempo: number } | null = null;
+  if (input.beat !== undefined && input.beat !== null && j.happyLeft === 0) {
+    if (input.beat !== j.lastBeat) {
+      j.lastBeat = input.beat;
+      // Small pushes on the beat (it would rocket up otherwise), but full-size pulses.
+      pulse = { strength, thrust: actor.y > ty ? 0.35 : 0.1, tempo: input.beatTempo ?? 1 };
+    }
+  } else if (j.happyLeft > 0 && now >= j.nextPulseAt) {
+    j.happyLeft -= 1;
+    pulse = { strength: strength * 0.8, thrust: 0.25, tempo: happyTempo };
+    j.nextPulseAt = now + (j.happyLeft > 0 ? JELLY_HAPPY_GAP_MS : rand(rng, JELLY_PULSE_GAP_MIN_MS, JELLY_PULSE_GAP_MAX_MS) * gapK);
+  } else if (now >= j.nextPulseAt) {
+    const wantsUp = courting !== undefined || actor.y > ty - 12 || actor.y > bounds.maxY;
+    if (wantsUp) pulse = { strength, thrust: sad ? SAD_SPEED_MULTIPLIER : 1, tempo };
+    j.nextPulseAt = now + rand(rng, JELLY_PULSE_GAP_MIN_MS, JELLY_PULSE_GAP_MAX_MS) * gapK;
+  }
+  // Sinking below its zone: pulse again soon.
+  if (!courting && actor.y > bounds.maxY && j.happyLeft === 0) j.nextPulseAt = Math.min(j.nextPulseAt, now + 300);
+  if (pulse) {
+    j.pulseAt = now;
+    j.pulseStrength = pulse.strength;
+    j.pulseThrust = pulse.thrust * (baby ? 0.8 : 1);
+    j.pulseTempo = pulse.tempo;
+    j.pulseDirX = clamp((tx - actor.x) / 150, -1, 1);
+  }
+
+  // The push happens while the bell contracts.
+  const since = now - j.pulseAt;
+  if (isContracting(since, j.pulseTempo)) {
+    const k = (dt * 1000) / (JELLY_CONTRACT_MS * j.pulseTempo);
+    j.vy -= JELLY_PULSE_UP * j.pulseThrust * k;
+    j.vx += JELLY_PULSE_SIDE * j.pulseDirX * j.pulseThrust * k;
+  }
+
+  // Drift: drag, gentle sinking, the current, and a slow pull toward food or the courtship loop.
+  const drag = Math.exp(-JELLY_DRAG * dt);
+  j.vx *= drag;
+  j.vy *= drag;
+  j.vy = Math.min(JELLY_SINK_MAX, j.vy + JELLY_SINK_ACCEL * dt);
+  j.vx += (input.current ?? 0) * JELLY_CURRENT_ACCEL * dt;
+  if (food || courting) j.vx += clamp((tx - actor.x) / 80, -1, 1) * JELLY_FOOD_ACCEL * dt;
+  if (courting) j.vy += clamp((ty - actor.y) / 60, -1, 1) * JELLY_FOOD_ACCEL * dt;
+  // Soft side walls and surface.
+  const avoid = edgeAvoidance(actor.x, actor.y, bounds);
+  j.vx += avoid.x * JELLY_FOOD_ACCEL * 2 * dt;
+  if (actor.y < bounds.minY) j.vy = Math.max(j.vy, 0);
+
+  actor.x = clamp(actor.x + j.vx * dt, bounds.minX, bounds.maxX);
+  actor.y = clamp(actor.y + j.vy * dt, bounds.minY, floor);
+  if (actor.y >= floor) j.vy = Math.min(j.vy, 0);
+  actor.speed = Math.hypot(j.vx, j.vy);
+  actor.heading = Math.atan2(j.vy, j.vx);
+  actor.facing = 1;
+  actor.turnStart = null;
+
+  // A gentle wobble (±5°), leaning a touch into sideways drift; never a tilt toward the velocity.
+  const wobble = JELLY_WOBBLE * (reduced ? 0.5 : 1) * Math.sin((now / 1000) * JELLY_WOBBLE_FREQ + j.seed);
+  actor.tilt = wobble + clamp(j.vx * 0.003, -0.04, 0.04);
+
+  // Tentacles: stretch while rising, relax while sinking; lean with the current and trail the motion.
+  const smooth = Math.min(1, dt * JELLY_TENTACLE_SMOOTHING);
+  j.rise += (clamp(-j.vy / JELLY_RISE_SPEED, -1, 1) - j.rise) * smooth;
+  j.lean += ((input.current ?? 0) * JELLY_CURRENT_LEAN - j.vx * JELLY_TRAIL_LEAN - j.lean) * smooth;
+  actor.phase += dt * JELLY_SWAY_FREQ * species.motion.waveSpeed * (baby ? BABY_WAVE_SPEED : 1);
+
+  updateIndicator(actor, fish, now, rng);
+
+  // Passive feeding: any pellet touching the tentacles is caught (it slides up and is eaten).
+  if (fish.hunger < FULL_HUNGER && j.caught === null) {
+    const box = jellyTentacles(actor, fish, tmpBox);
+    for (const p of input.food) {
+      if (!inBox(p.x, p.y, box)) continue;
+      j.caught = { at: now, dx: p.x - actor.x, dy: p.y - actor.y, premium: p.premium ?? false };
+      return p.id;
+    }
+  }
+  return null;
+}
+
+/** Whether a jelly is done showing its last catch (the pellet has slid up into the bell). */
+export function jellyCatchDone(j: JellyActor, now: number, slideMs: number): boolean {
+  return j.caught !== null && now - j.caught.at >= slideMs;
+}
+

@@ -45,7 +45,7 @@ describe('unlocks', () => {
     expect(ids(7)).toEqual([]);
     expect(ids(8)).toEqual(['angelfish', 'tank2']);
     expect(ids(9)).toEqual(['chest']);
-    expect(ids(10)).toEqual(['night']);
+    expect(ids(10)).toEqual(['jellyfish', 'night']);
     expect(ids(12)).toEqual(['clownfish', 'coral']);
     expect(ids(13)).toEqual(['shipwreck']);
     expect(ids(14)).toEqual(['tank3']);

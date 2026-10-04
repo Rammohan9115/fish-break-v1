@@ -67,6 +67,15 @@ describe('buying fish', () => {
     expect(next.pearls).toBe(2);
   });
 
+  it('unlocks the jellyfish at level 10 for 400 shells', () => {
+    const state = makeState({ overrides: { shells: 400, level: 9 } });
+    expect(checkBuyFish(state, 'jellyfish')).toBe('locked');
+    const next = okState(buyFish({ ...state, level: 10 }, 'jellyfish', T0, seededRng(1)));
+    expect(next.shells).toBe(0);
+    expect(next.fish[0]).toMatchObject({ speciesId: 'jellyfish', stage: 'baby' });
+    expect(SPECIES.jellyfish.variants.map((v) => v.key)).toContain(next.fish[0]!.variant);
+  });
+
   it('is locked below the unlock level', () => {
     const state = makeState({ overrides: { shells: 1000, level: 2 } });
     expect(checkBuyFish(state, 'goldfish')).toBe('locked');

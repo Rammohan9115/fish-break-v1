@@ -167,6 +167,7 @@ The sim runs on a 1-second fixed tick. Rendering is separate at 60fps.
 | tetra | Neon Tetra | 6 | 60 shells | 40 | 1.6 | 110 | 10 | 6 | glowing stripe, schools with other tetras |
 | betta | Betta | 5 | 80 shells | 60 | 1.2 | 150 | 12 | 8 | big flowing fins |
 | angelfish | Angelfish | 8 | 150 shells | 90 | 1.0 | 300 | 15 | 14 | tall triangular body |
+| jellyfish | Jelly | 10 | 400 shells | 100 | 0.9 | 700 | 18 | 25 | pulses through the water, catches food with its tentacles |
 | clownfish | Clownfish | 12 | 300 shells | 120 | 1.0 | 550 | 15 | 22 | coral theme only |
 | puffer | Puffy | 15 | 5 pearls | 180 | 0.8 | 900 | 20 | 35 | inflates when clicked |
 | axolotl | Axolotl | 18 | 10 pearls | 240 | 0.6 | 1500 | 25 | 50 | walks on the sand, smiles |
@@ -174,6 +175,14 @@ The sim runs on a 1-second fixed tick. Rendering is separate at 60fps.
 
 Each species has 3–4 color variants (pastel palettes defined in `species.ts`) plus a rare shiny variant (sparkle overlay + golden outline).
 Selling a juvenile gives 40% of the adult price. Babies cannot be sold.
+
+**Jellyfish (Jelly)** has 5 variants (pink, sky blue, lavender, peach, mint), all made in code by hue-rotating one pink
+sprite (`variant.hue`). Its shiny is a slow rainbow shimmer instead of the gold outline. It breeds like every other species.
+Movement is unlike fish: no horizontal flip and no tilt toward the velocity. Every 1.5–3s the bell contracts, which
+pushes it up (and a little toward its goal). Between pulses it drifts slowly, sinks gently and is carried by the current. It stays in the upper ~2/3 of the
+tank, never touches the sand, and wobbles ±5°. It's a passive feeder: it drifts toward nearby pellets, and any pellet touching
+its tentacles (below `bellSplitY`) is caught, slides up and is eaten. Fish steer around its tentacles. Tap it for 3 happy pulses,
+a glow flash, bubbles and a heart. On the night theme it glows (brighter on each pulse) with a faint halo.
 
 ## Levels & XP
 - XP to next level: `round(40 * level^1.5)`

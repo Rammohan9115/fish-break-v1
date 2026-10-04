@@ -60,6 +60,21 @@ describe('readiness', () => {
     expect(breedCooldownLeft(bred, T0 + 12 * MINUTE_MS)).toBe(18 * MINUTE_MS);
   });
 
+  it('jellies breed like every other species', () => {
+    const a = ready({ speciesId: 'jellyfish', growth: 100 * 60 });
+    const b = ready({ speciesId: 'jellyfish', growth: 100 * 60 });
+    const goldfish = ready({ speciesId: 'goldfish' });
+    const s = breedState([a, b, goldfish]);
+    expect(canBreed(a, T0)).toBe(true);
+    expect(compatiblePartners(s, a, T0).map((f) => f.id)).toEqual([b.id]);
+    expect(compatiblePartners(s, goldfish, T0)).toEqual([]);
+    expect(checkCourtship(s, a.id, goldfish.id, T0)).not.toBeNull();
+    const started = startCourtship(s, a.id, b.id, T0);
+    expect(started.ok).toBe(true);
+    // The egg's baby is a jelly in one of the jelly variants.
+    expect(babyColorOdds(a, b).every((o) => SPECIES.jellyfish.variants.some((v) => v.key === o.variant))).toBe(true);
+  });
+
   it('partners must be ready, same species, same tank, and not courting', () => {
     const a = ready();
     const twin = ready();

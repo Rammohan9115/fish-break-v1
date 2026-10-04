@@ -639,3 +639,85 @@ export const STARTING = {
 /** Initial stats for any newly bought or hatched fish. */
 export const NEW_FISH_HUNGER = 80;
 export const NEW_FISH_HAPPINESS = 70;
+
+// Jellyfish (render/jellyMotion.ts, behavior.ts updateJelly, drawJelly.ts)
+/** Bell pulse: contraction length, then the expansion (with a slight overshoot) back to rest. */
+export const JELLY_CONTRACT_MS = 250;
+export const JELLY_EXPAND_MS = 750;
+/** Bell scale at full contraction (narrower and taller). */
+export const JELLY_CONTRACT_SX = 0.85;
+export const JELLY_CONTRACT_SY = 1.1;
+/** Seconds between propulsion pulses (random in this range). */
+export const JELLY_PULSE_GAP_MIN_MS = 1500;
+export const JELLY_PULSE_GAP_MAX_MS = 3000;
+/** Speed (tank units/s) one pulse adds, upward and at most sideways, spread over the contraction. */
+export const JELLY_PULSE_UP = 46;
+export const JELLY_PULSE_SIDE = 22;
+/** Water drag (per second) and the gentle sinking between pulses (acceleration, max speed). */
+export const JELLY_DRAG = 1.1;
+export const JELLY_SINK_ACCEL = 6;
+export const JELLY_SINK_MAX = 9;
+/** Sideways acceleration from the global current (tank units/s² at current 1). */
+export const JELLY_CURRENT_ACCEL = 9;
+/** The jelly's center stays in the upper part of the water column (fraction of SAND_Y). */
+export const JELLY_MAX_Y_FRAC = 0.62;
+/** Gentle wobble rotation (radians, ±5°) and its rate (radians/s). */
+export const JELLY_WOBBLE = 0.087;
+export const JELLY_WOBBLE_FREQ = 0.8;
+/** Babies pulse more often, smaller, and bob; reduced motion pulses slower and smaller. */
+export const JELLY_BABY_GAP = 0.65;
+export const JELLY_BABY_PULSE = 0.6;
+export const JELLY_REDUCED_GAP = 1.5;
+export const JELLY_REDUCED_PULSE = 0.5;
+/** Tentacles: horizontal strips below the bell split, sway amplitude at the tips (fraction of sprite width), sway speed (rad/s). */
+export const JELLY_TENTACLE_STRIPS = 18;
+export const JELLY_SWAY_AMP = 0.045;
+export const JELLY_SWAY_FREQ = 1.6;
+/** Phase step per strip, so the sway travels down toward the tips. */
+export const JELLY_SWAY_STRIP_PHASE = 0.32;
+/** Envelope exponent: the tips sway most, the tops stay attached. */
+export const JELLY_SWAY_FALLOFF = 1.4;
+/** After-pulse ripple: amplitude (fraction of width), how long it takes to reach the tips, how long it lasts, wiggle rate. */
+export const JELLY_RIPPLE_AMP = 0.05;
+export const JELLY_RIPPLE_TRAVEL_MS = 420;
+export const JELLY_RIPPLE_MS = 900;
+export const JELLY_RIPPLE_FREQ = 14;
+/** Tentacles stretch (y) and narrow (x) when rising, relax and spread when drifting down. */
+export const JELLY_RISE_STRETCH_Y = 0.08;
+export const JELLY_RISE_NARROW_X = 0.1;
+export const JELLY_DRIFT_SPREAD_X = 0.08;
+export const JELLY_DRIFT_RELAX_Y = 0.03;
+/** Vertical speed (tank units/s) that counts as fully rising/sinking, and how fast the tentacles follow (per second). */
+export const JELLY_RISE_SPEED = 18;
+export const JELLY_TENTACLE_SMOOTHING = 3;
+/** Tentacle lean (fraction of width at the tips) per unit of current, and per tank unit/s of sideways speed (trailing). */
+export const JELLY_CURRENT_LEAN = 0.08;
+export const JELLY_TRAIL_LEAN = 0.004;
+/** The pellet-catching area under the bell: this fraction of the sprite width, centered. */
+export const JELLY_CATCH_WIDTH = 0.7;
+/** A caught pellet slides up the tentacles into the bell over this long. */
+export const JELLY_CATCH_SLIDE_MS = 650;
+/** Pellets this close (tank units) draw the jelly toward them, slowly. */
+export const JELLY_FOOD_RANGE = 260;
+export const JELLY_FOOD_ACCEL = 10;
+/** Tap: this many quick happy pulses, this far apart. Plus a glow flash of this length. */
+export const JELLY_HAPPY_PULSES = 3;
+export const JELLY_HAPPY_GAP_MS = 330;
+export const JELLY_FLASH_MS = 900;
+/** Look: overall opacity, baked inner glow strength, night glow blur (CSS px) and halo size (× width). */
+export const JELLY_ALPHA = 0.88;
+export const JELLY_INNER_GLOW = 0.28;
+export const JELLY_NIGHT_GLOW_PX = 18;
+export const JELLY_HALO_SCALE = 1.5;
+export const JELLY_HALO_ALPHA = 0.26;
+/** Shiny: rainbow shimmer strength and speed (cycles per second). */
+export const JELLY_SHIMMER_ALPHA = 0.32;
+export const JELLY_SHIMMER_SPEED = 0.12;
+/** Faint, large, blurry shadow on the sand. */
+export const JELLY_SHADOW_ALPHA = 0.07;
+export const JELLY_SHADOW_SCALE = 1.6;
+/** Fish keep out of the tentacles: repulsion strength and the extra margin around the catch area (tank units). */
+export const JELLY_AVOID_WEIGHT = 1.4;
+export const JELLY_AVOID_MARGIN = 14;
+/** Dance Mode: beats per minute (jellies pulse on every beat). */
+export const DANCE_BPM = 112;

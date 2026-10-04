@@ -11,7 +11,7 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
   empty states, a **Settings menu with Reset game (confirm) and a reduced-motion toggle** (`settings.reducedMotion`
   exists, but nothing in the UI changes it), and `scripts/balance.ts` pacing sim. Targets: Lv5 by end of day 1, Lv8 by day 3.
 - **Toolbar "My Fish 🐟"** still shows "coming soon". The spec lists it, but no phase prompt covers it.
-- **Checks:** `npm test` passes 267 tests (`cloudSave.test.ts` fails to load under Node 20 when `.env.local` has Supabase keys: no native WebSocket), and `npm run build` passes. Local Node is 20.4, so Vite is pinned to 5 and Vitest to 2.
+- **Checks:** `npm test` passes 343 tests (as of 2026-10-04) (`cloudSave.test.ts` fails to load under Node 20 when `.env.local` has Supabase keys: no native WebSocket), and `npm run build` passes. Local Node is 20.4, so Vite is pinned to 5 and Vitest to 2.
 - **Repo:** https://github.com/Rammohan9115/fish-break-v1 (branch `main`).
 - **Live:** https://fishbowl-break.vercel.app. Deploy with `npx vercel --prod --yes`; the CLI is already logged in and linked (`.vercel/`, which is gitignored).
   GitHub auto-deploy isn't connected (`npx vercel git connect`). The `.vercel` line in `.gitignore` may still be uncommitted.
@@ -46,6 +46,26 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
     the nearest pellet, else the mouse (`renderer.setPointer`, from TankView), else straight ahead.
   - Dev panel → "Sprite eye" (`ui/EyeEditor.tsx`): click the sprite to place the eye; it applies live and copies to the clipboard. Theme backgrounds: `public/assets/backgrounds/background<theme>.png`
   replace the baked back layer if present (drawn sand stays on top).
+
+## Jellyfish (2026-10-04)
+- **Species `jellyfish` ("Jelly", L10, 400 shells)**, trait `jelly`, gait `pulse`. Sprites are `public/assets/fish/jellyfish.png` / `jellyfish_baby.png`
+  (lowercase `.png`). Variants are hue rotations of the pink sprite (`FishVariant.hue`, `sprites.huedSprite`/`hueRotatePixels`, cached per hue).
+- **Config:** `SpeciesDef.bellSplitY {adult, baby}` (fraction of the trimmed sprite height). `SpriteEye.twinX` draws a second eye for front-facing faces (`drawSpriteEyes`).
+  Live overrides: `jellyMotion.setBellSplitY`. Dev panel → "Bell split" (`ui/BellSplitEditor.tsx`). In the eye editor, shift-click places the twin eye.
+- **Math:** `render/jellyMotion.ts` (pure, tested): `bellPulse` (contract to 0.85×1.1, expand with overshoot, `tempo` scales the duration),
+  `tentacleOffset` (sway + after-pulse ripple travelling down + lean, envelope 0 at the split), `tentacleShape` (rise stretch / drift spread),
+  `tentacleBox`/`inBox` (the catch area), `jellySize` (`JELLY_DESIGN_W` × `JELLY_ASPECT`; behavior can't read sprites).
+- **Drawing:** `render/drawJelly.ts`. Per scaled copy (cached, with a baked inner glow), the tentacles are drawn first as `JELLY_TENTACLE_STRIPS`
+  horizontal strips into one reused scratch canvas, then the bell (squash about its center; the tentacle tops follow its bottom edge). The result is blitted at
+  `JELLY_ALPHA` with the night glow, the halo (cached sprite, `lighter`) and the shiny rainbow band (`source-atop`). Code-art fallback: `drawCodeJelly`.
+  `drawFish` dispatches `speciesId === 'jellyfish'` there; `SPECIES_DRAW` excludes it.
+- **Movement:** `behavior.updateJelly` (`actor.jelly` state: velocity, pulse timing, happy pulses, rise/lean, caught pellet, dance beat).
+  `swimBounds` for jellies = upper `JELLY_MAX_Y_FRAC` of the water. `jellyFloorY` hard-clamps the center so the tips stay off the sand.
+  Fish get `jellyAvoidance` from `BehaviorInput.jellies` (pooled zones in the renderer).
+- **Renderer:** passes `current` (last frame's `currents.state.total`), `beat`/`beatTempo` (Dance Mode), and `reduced`. A catch calls `onEat` at once;
+  the pellet slide-up is visual only (`JELLY_CATCH_SLIDE_MS`, and the gulp squash happens at the end). `poke` → `jellyHappy` + bubbles + heart.
+- **Dance Mode** didn't exist before this. It is only a renderer flag for now (`renderer.setDance`, dev panel "💃 Dance Mode", `DANCE_BPM`), with no player-facing UI yet.
+- **Perf:** 6 jellies + 20 fish at 60fps in headful Chrome at DPR 2; about 0.6ms CPU per frame for update+draw either way.
 
 ## Previous art direction (BotW; partly superseded: the drawFish structure and paint helpers remain)
 - **The user changed the direction to Breath-of-the-Wild-inspired painterly cel shading.** Fish, tank, decor, scenery and sprites are done. Still in the old pastel style: the UI chrome (HUD, toolbar, cards, shop), eggs, and the page background around the tank.

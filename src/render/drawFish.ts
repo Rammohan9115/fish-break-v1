@@ -23,6 +23,7 @@ import { getSpecies, SHINY_OUTLINE, SHINY_SPARKLE } from '../game/species';
 import type { FishVariant, SpeciesId, SpriteEye, Stage } from '../game/types';
 import { bodyBob, pupilOffset, squashStretch, stripOffset, waveAmplitude } from './fishMotion';
 import { fishSprite, samplePixels, type Sprite } from './sprites';
+import { drawJelly, type JellyDrawState } from './drawJelly';
 import { COOL_SHADOW, glossHighlight, GLOSS_SATURATION, hashSeq, mix, RIM_LIGHT, rgba, saturate, WARM_LIGHT } from './paint';
 
 /** Eye size multipliers (big, expressive cartoon eyes). */
@@ -67,6 +68,8 @@ export interface FishDrawParams {
   wobbleAmp: number;
   /** Seconds, for twinkles. */
   time: number;
+  /** Jellyfish pulse/tentacle state (rest pose when absent). */
+  jelly?: JellyDrawState;
 }
 
 /**
@@ -80,6 +83,8 @@ export const FISH_ART: Record<SpeciesId, { mouthX: number; halfHeight: number; s
   tetra: { mouthX: 18, halfHeight: 9, spriteLen: 44 },
   betta: { mouthX: 20, halfHeight: 22, spriteLen: 56 },
   angelfish: { mouthX: 18, halfHeight: 36, spriteLen: 62 },
+  // Jelly: spriteLen is the width (it faces the viewer), mouthX half of it; see jellyMotion.jellySize.
+  jellyfish: { mouthX: 24, halfHeight: 33, spriteLen: 48 },
   clownfish: { mouthX: 22, halfHeight: 13, spriteLen: 50 },
   puffer: { mouthX: 19, halfHeight: 19, spriteLen: 46 },
   axolotl: { mouthX: 31, halfHeight: 16, spriteLen: 72 },
@@ -1113,7 +1118,8 @@ function drawKoi(c: Paint): void {
   mouth(c, 34, 1, 1.6);
 }
 
-const SPECIES_DRAW: Record<SpeciesId, (c: Paint) => void> = {
+/** Code-drawn art per species (the jellyfish has its own module, drawJelly.ts). */
+const SPECIES_DRAW: Record<Exclude<SpeciesId, 'jellyfish'>, (c: Paint) => void> = {
   danio: drawDanio,
   guppy: drawGuppy,
   goldfish: drawGoldfish,
@@ -1161,6 +1167,10 @@ export function drawStar(ctx: Ctx, x: number, y: number, r: number, fill: string
 
 /** Draws a fish centered at (x, y) in tank units: the PNG sprite if loaded, else the code-drawn art. */
 export function drawFish(ctx: Ctx, x: number, y: number, p: FishDrawParams): void {
+  if (p.speciesId === 'jellyfish') {
+    drawJelly(ctx, x, y, p);
+    return;
+  }
   const sprite = fishSprite(p.speciesId, p.stage);
   if (sprite) {
     drawSpriteFish(ctx, x, y, p, sprite);
@@ -1218,7 +1228,7 @@ export function setSpriteEye(speciesId: SpeciesId, art: SpriteArt, eye: SpriteEy
 
 /** Every eye currently in use (overrides applied), as `species.ts` source lines, for the dev panel's copy button. */
 export function spriteEyeSource(): string {
-  const fmt = (e: SpriteEye) => `{ x: ${e.x}, y: ${e.y}, size: ${e.size} }`;
+  const fmt = (e: SpriteEye) => `{ x: ${e.x}, y: ${e.y}, size: ${e.size}${e.twinX !== undefined ? `, twinX: ${e.twinX}` : ''} }`;
   return (Object.keys(FISH_ART) as SpeciesId[])
     .map((id) => `${id}: eye: { adult: ${fmt(spriteEye(id, 'adult'))}, baby: ${fmt(spriteEye(id, 'baby'))} },`)
     .join('\n');
@@ -1352,7 +1362,7 @@ function drawSpriteFish(ctx: Ctx, x: number, y: number, p: FishDrawParams, s: Sp
   } else {
     ctx.drawImage(s.canvas, left, -ht / 2, len, ht);
   }
-  drawSpriteEye(ctx, p, s, { left, len, ht, x, y, tilt, flipX }, gloom);
+  drawSpriteEyes(ctx, p, s, { left, len, ht, x, y, tilt, flipX }, gloom);
   if (p.shiny) drawSpriteGlints(ctx, left, len, ht, scale, p);
   ctx.restore();
 }
@@ -1390,19 +1400,21 @@ const EYE_LINE = 'rgba(34, 22, 40, 0.9)';
 const EYE_IRIS_LIGHT = '#8a5426';
 const EYE_IRIS_DARK = '#3a1d0c';
 
+type EyeFrame = { left: number; len: number; ht: number; x: number; y: number; tilt: number; flipX: number };
+
+/** The sprite's living eye(s): one for side-on fish, two for a front-facing face (`twinX`). */
+export function drawSpriteEyes(ctx: Ctx, p: FishDrawParams, s: Sprite, f: EyeFrame, gloom: number): void {
+  const eye = spriteEye(p.speciesId, p.stage);
+  drawSpriteEye(ctx, p, s, f, gloom, eye, eye.x);
+  if (eye.twinX !== undefined) drawSpriteEye(ctx, p, s, f, gloom, eye, eye.twinX);
+}
+
 /**
- * A living cartoon eye drawn over the sprite's own: it blinks and its pupil follows `p.gaze`.
+ * A living cartoon eye drawn over the sprite's own at `eyeX`: it blinks and its pupil follows `p.gaze`.
  * Called inside the fish transform (local space, art facing +x).
  */
-function drawSpriteEye(
-  ctx: Ctx,
-  p: FishDrawParams,
-  s: Sprite,
-  f: { left: number; len: number; ht: number; x: number; y: number; tilt: number; flipX: number },
-  gloom: number,
-): void {
-  const eye = spriteEye(p.speciesId, p.stage);
-  const ex = f.left + eye.x * f.len;
+function drawSpriteEye(ctx: Ctx, p: FishDrawParams, s: Sprite, f: EyeFrame, gloom: number, eye: SpriteEye, eyeX: number): void {
+  const ex = f.left + eyeX * f.len;
   const ey = (eye.y - 0.5) * f.ht;
   const r = (eye.size * f.ht) / 2;
   const side = f.flipX >= 0 ? 1 : -1;

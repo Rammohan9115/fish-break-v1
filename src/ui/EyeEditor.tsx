@@ -7,7 +7,8 @@ import { fishSprite } from '../render/sprites';
 
 const W = 196;
 const round3 = (v: number) => Math.round(v * 1000) / 1000;
-const eyeLine = (id: SpeciesId, art: SpriteArt, e: SpriteEye) => `${id} ${art}: { x: ${e.x}, y: ${e.y}, size: ${e.size} }`;
+const eyeLine = (id: SpeciesId, art: SpriteArt, e: SpriteEye) =>
+  `${id} ${art}: { x: ${e.x}, y: ${e.y}, size: ${e.size}${e.twinX !== undefined ? `, twinX: ${e.twinX}` : ''} }`;
 
 async function copy(text: string): Promise<boolean> {
   try {
@@ -41,13 +42,15 @@ export function EyeEditor({ speciesId, art }: { speciesId: SpeciesId; art: Sprit
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, h);
     ctx.drawImage(sprite.canvas, 0, 0, W, h);
-    ctx.beginPath();
-    ctx.arc(eye.x * W, eye.y * h, (eye.size * h) / 2, 0, Math.PI * 2);
-    ctx.strokeStyle = '#ff2a6a';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-    ctx.fillStyle = '#ff2a6a';
-    ctx.fillRect(eye.x * W - 1, eye.y * h - 1, 2, 2);
+    for (const ex of eye.twinX !== undefined ? [eye.x, eye.twinX] : [eye.x]) {
+      ctx.beginPath();
+      ctx.arc(ex * W, eye.y * h, (eye.size * h) / 2, 0, Math.PI * 2);
+      ctx.strokeStyle = '#ff2a6a';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = '#ff2a6a';
+      ctx.fillRect(ex * W - 1, eye.y * h - 1, 2, 2);
+    }
   }, [sprite, eye, h]);
 
   if (!sprite) return <div className="dev-label">No sprite loaded for this fish.</div>;
@@ -61,7 +64,10 @@ export function EyeEditor({ speciesId, art }: { speciesId: SpeciesId; art: Sprit
 
   const onClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    void apply({ ...eye, x: round3((e.clientX - rect.left) / rect.width), y: round3((e.clientY - rect.top) / rect.height) });
+    const x = round3((e.clientX - rect.left) / rect.width);
+    // Two-eyed faces (jelly): shift-click places the second eye.
+    if (e.shiftKey && eye.twinX !== undefined) void apply({ ...eye, twinX: x });
+    else void apply({ ...eye, x, y: round3((e.clientY - rect.top) / rect.height) });
   };
 
   return (
@@ -84,6 +90,7 @@ export function EyeEditor({ speciesId, art }: { speciesId: SpeciesId; art: Sprit
         </button>
         <span className="dev-label">{note}</span>
       </div>
+      {eye.twinX !== undefined && <div className="dev-label">Two eyes: click = first eye (sets height), shift-click = second eye.</div>}
     </div>
   );
 }

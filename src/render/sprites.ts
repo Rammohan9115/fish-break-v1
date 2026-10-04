@@ -22,7 +22,7 @@ const BASE = `${import.meta.env.BASE_URL}assets/`;
 /**
  * Fish file names (case-sensitive on the server). Adults are also used for juveniles, scaled down.
  * Several files use short names (angel, axo, clown); tetrababy.PNG is a copy of the adult, so the
- * real baby art is tetrababy1.PNG.
+ * real baby art is tetrababy1.PNG. The jellyfish has one pink sprite per stage; its variants are hue rotations.
  */
 const FISH_FILES: Record<SpeciesId, { adult: string; baby: string }> = {
   danio: { adult: 'danio.PNG', baby: 'daniobaby.PNG' },
@@ -31,6 +31,7 @@ const FISH_FILES: Record<SpeciesId, { adult: string; baby: string }> = {
   tetra: { adult: 'tetra.PNG', baby: 'tetrababy1.PNG' },
   betta: { adult: 'betta.PNG', baby: 'bettababy.PNG' },
   angelfish: { adult: 'angel.PNG', baby: 'angelbaby.PNG' },
+  jellyfish: { adult: 'jellyfish.png', baby: 'jellyfish_baby.png' },
   clownfish: { adult: 'clownfish.PNG', baby: 'clownbaby.PNG' },
   puffer: { adult: 'puffer.PNG', baby: 'pufferbaby.PNG' },
   axolotl: { adult: 'axo.PNG', baby: 'axobaby.PNG' },
@@ -117,6 +118,56 @@ export function alphaBounds(data: Uint8ClampedArray, w: number, h: number): { x:
     }
   }
   return x1 < 0 ? null : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+}
+
+/**
+ * Rotates the hue of RGBA pixels in place by `deg` degrees (the same matrix as CSS `hue-rotate()`,
+ * so it keeps lightness roughly the same). Used to recolor one master sprite into its variants.
+ */
+export function hueRotatePixels(data: Uint8ClampedArray, deg: number): void {
+  const a = (deg * Math.PI) / 180;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  const m = [
+    0.213 + c * 0.787 - s * 0.213, 0.715 - c * 0.715 - s * 0.715, 0.072 - c * 0.072 + s * 0.928,
+    0.213 - c * 0.213 + s * 0.143, 0.715 + c * 0.285 + s * 0.14, 0.072 - c * 0.072 - s * 0.283,
+    0.213 - c * 0.213 - s * 0.787, 0.715 - c * 0.715 + s * 0.715, 0.072 + c * 0.928 + s * 0.072,
+  ] as const;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] === 0) continue;
+    const r = data[i]!;
+    const g = data[i + 1]!;
+    const b = data[i + 2]!;
+    data[i] = m[0] * r + m[1] * g + m[2] * b;
+    data[i + 1] = m[3] * r + m[4] * g + m[5] * b;
+    data[i + 2] = m[6] * r + m[7] * g + m[8] * b;
+  }
+}
+
+/** Hue-rotated copies of a sprite (one per variant), made once and cached. */
+const huedCache = new WeakMap<Sprite, Map<number, Sprite>>();
+
+/** The sprite recolored by `deg` degrees of hue (the sprite itself for 0). */
+export function huedSprite(s: Sprite, deg: number): Sprite {
+  const hue = ((Math.round(deg) % 360) + 360) % 360;
+  if (hue === 0) return s;
+  let byHue = huedCache.get(s);
+  if (!byHue) {
+    byHue = new Map();
+    huedCache.set(s, byHue);
+  }
+  const hit = byHue.get(hue);
+  if (hit) return hit;
+  const canvas = makeCanvas(s.w, s.h);
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return s;
+  ctx.drawImage(s.canvas, 0, 0);
+  const pixels = ctx.getImageData(0, 0, s.w, s.h);
+  hueRotatePixels(pixels.data, hue);
+  ctx.putImageData(pixels, 0, 0);
+  const out: Sprite = { canvas, w: s.w, h: s.h };
+  byHue.set(hue, out);
+  return out;
 }
 
 // ---------------------------------------------------------------------------

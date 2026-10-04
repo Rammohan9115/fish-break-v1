@@ -8,6 +8,7 @@ import { sandLineY, setSandLineY } from '../render/artConfig';
 import { QUALITY_LEVELS } from '../render/ambient/quality';
 import { currentRenderer } from '../render/renderer';
 import { LidEditor } from './LidEditor';
+import { BellSplitEditor } from './BellSplitEditor';
 
 type SpawnStage = 'baby' | 'juvenile' | 'adult';
 const STAGES: SpawnStage[] = ['baby', 'juvenile', 'adult'];
@@ -171,7 +172,13 @@ export default function DevPanel() {
       <LidEditor />
       <div className="dev-label">Sprite eye ({stage === 'baby' ? 'baby' : 'adult/juvenile'}): click the eye</div>
       <EyeEditor speciesId={speciesId} art={stage === 'baby' ? 'baby' : 'adult'} />
-      <div className="dev-label">Tip: click a fish to make it bounce (Puffy inflates).</div>
+      {species.bellSplitY && (
+        <>
+          <div className="dev-label">Bell split ({stage === 'baby' ? 'baby' : 'adult/juvenile'}): click where the bell ends</div>
+          <BellSplitEditor speciesId={speciesId} art={stage === 'baby' ? 'baby' : 'adult'} />
+        </>
+      )}
+      <div className="dev-label">Tip: click a fish to make it bounce (Puffy inflates, Jelly does happy pulses).</div>
     </aside>
   );
 }
@@ -231,6 +238,15 @@ function LivingTankControls() {
         </button>
         <button type="button" onClick={() => renderer?.forceSchool()}>
           🐟 Far school
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            renderer?.setDance(!renderer.dancing);
+            refresh();
+          }}
+        >
+          {renderer?.dancing ? '⏹ Stop dance' : '💃 Dance Mode'}
         </button>
       </div>
       <div className="dev-label">

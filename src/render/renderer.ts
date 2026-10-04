@@ -32,10 +32,29 @@ import {
   SHINY_SPARKLES_PER_SEC,
   TANK_HEIGHT,
   TANK_WIDTH,
+  DANCE_BPM,
+  JELLY_CATCH_SLIDE_MS,
+  JELLY_SHADOW_ALPHA,
+  JELLY_SHADOW_SCALE,
+  JELLY_CONTRACT_MS,
+  JELLY_EXPAND_MS,
 } from '../game/constants';
 import { getSpecies, getVariant, SHINY_OUTLINE, SHINY_SPARKLE } from '../game/species';
 import type { Fish, GameState, Tank, ThemeId } from '../game/types';
-import { createActor, heartPoint, isSad, setSwimExtent, updateActor, type FishActor, type FoodTarget } from './behavior';
+import {
+  createActor,
+  heartPoint,
+  isSad,
+  jellyHappy,
+  jellyTentacles,
+  setSwimExtent,
+  updateActor,
+  type FishActor,
+  type FoodTarget,
+  type JellyZone,
+} from './behavior';
+import type { JellyDrawState } from './drawJelly';
+import { jellySize } from './jellyMotion';
 import { drawFish, drawStar, fishHalfHeight, FISH_ART, fishScale, mouthOffset } from './drawFish';
 import { eatSquash, pokeBounce, speedFraction } from './fishMotion';
 import { dropShadow } from './paint';
@@ -164,6 +183,11 @@ export class Renderer {
   private breeding: BreedingView = NO_BREEDING;
   /** When each newborn arrived (it does a little happy spin). */
   private readonly spinAt = new Map<string, number>();
+  /** Jelly tentacle areas this frame (fish steer around them), pooled; and per-jelly draw state. */
+  private readonly jellyZones: JellyZone[] = [];
+  private readonly jellyDraw = new Map<string, JellyDrawState>();
+  /** Dance Mode: beat length in ms (jellies pulse on the beat), or null. */
+  private beatMs: number | null = null;
   /** Seconds until the next floating heart, per courtship. */
   private readonly heartTimers = new Map<string, number>();
   private raf = 0;
@@ -421,6 +445,23 @@ export class Renderer {
     const now = performance.now();
     actor.pokeAt = now;
     if (getSpecies(actor.speciesId).traits.includes('inflates')) actor.inflateUntil = now + PUFF_DURATION_MS;
+    if (actor.jelly) {
+      // Three quick happy pulses, a glow flash, bubbles and a heart.
+      jellyHappy(actor.jelly, now);
+      const f = this.deps.getGame().fish.find((ff) => ff.id === fishId);
+      const { w, h } = jellySize(f?.stage ?? 'adult');
+      for (let i = 0; i < 5; i++) this.particles.spawnBubble(actor.x + (Math.random() - 0.5) * w * 0.6, actor.y + h * 0.1 + Math.random() * h * 0.3, 1.5 + Math.random() * 2.5);
+      this.particles.spawnHeart(actor.x, actor.y - h / 2 - 8);
+    }
+  }
+
+  /** Dance Mode: jellies pulse on the beat (null/false stops). */
+  setDance(on: boolean): void {
+    this.beatMs = on ? 60_000 / DANCE_BPM : null;
+  }
+
+  get dancing(): boolean {
+    return this.beatMs !== null;
   }
 
   /** Dev: a gust of current now. */
@@ -459,8 +500,9 @@ export class Renderer {
 
   /** Eases a fish's gaze toward the nearest pellet, else a nearby cursor, else straight ahead. */
   private updateGaze(actor: FishActor, food: FoodTarget[], dt: number): void {
-    let tx = actor.x + (actor.facing >= 0 ? 1 : -1) * 100;
-    let ty = actor.y + Math.sin(actor.heading) * 60;
+    // Jellies face the viewer: they look a little down and toward where they drift.
+    let tx = actor.jelly ? actor.x + actor.jelly.vx * 4 : actor.x + (actor.facing >= 0 ? 1 : -1) * 100;
+    let ty = actor.jelly ? actor.y + 120 : actor.y + Math.sin(actor.heading) * 60;
     let best = Infinity;
     for (const p of food) {
       const d = Math.hypot(p.x - actor.x, p.y - actor.y);
@@ -489,6 +531,7 @@ export class Renderer {
       if (!ids.has(id)) {
         this.actors.delete(id);
         this.sparkleAcc.delete(id);
+        this.jellyDraw.delete(id);
       }
     }
     for (const f of fish) {
@@ -518,19 +561,39 @@ export class Renderer {
     this.syncActors(fish, now);
     const reduced = this.reducedMotion(game);
 
-    let food: FoodTarget[] = tank.pellets.map((p) => ({ id: p.id, x: p.x, y: Math.min(pelletY(p, game), SAND_Y - FOOD_SAND_OFFSET) }));
+    let food: FoodTarget[] = tank.pellets.map((p) => ({ id: p.id, x: p.x, y: Math.min(pelletY(p, game), SAND_Y - FOOD_SAND_OFFSET), premium: p.premium }));
     const loops = this.courtshipTargets(reduced);
+    const zones = this.updateJellyZones(fish);
+    const current = this.currents.state.total;
+    const beat = this.beatMs !== null ? Math.floor(now / this.beatMs) : null;
+    const beatTempo = this.beatMs !== null ? this.beatMs / (JELLY_CONTRACT_MS + JELLY_EXPAND_MS) : 1;
     for (const f of fish) {
       const actor = this.actors.get(f.id)!;
       const mates = getSpecies(f.speciesId).traits.includes('schools')
         ? fish.filter((o) => o.speciesId === f.speciesId).map((o) => this.actors.get(o.id)!)
         : [];
-      const eaten = updateActor(actor, { fish: f, now, dt, rng: Math.random, food, schoolmates: mates, courtship: loops.get(f.id) });
+      const eaten = updateActor(actor, {
+        fish: f,
+        now,
+        dt,
+        rng: Math.random,
+        food,
+        schoolmates: mates,
+        courtship: loops.get(f.id),
+        current,
+        beat,
+        beatTempo,
+        reduced,
+        jellies: zones,
+      });
       this.updateGaze(actor, food, dt);
       if (eaten) {
         food = food.filter((p) => p.id !== eaten);
         this.deps.onEat(f.id, eaten);
+        // A jelly gulps once the pellet has slid up into its bell.
+        if (actor.jelly) actor.eatAt = now + JELLY_CATCH_SLIDE_MS;
       }
+      if (actor.jelly?.caught && now - actor.jelly.caught.at >= JELLY_CATCH_SLIDE_MS) actor.jelly.caught = null;
       if (f.shiny) {
         const acc = (this.sparkleAcc.get(f.id) ?? 0) + dt * SHINY_SPARKLES_PER_SEC * (reduced ? 0.4 : 1);
         const spawn = Math.floor(acc);
@@ -573,11 +636,11 @@ export class Renderer {
       lift.v += (lift.target - lift.v) * Math.min(1, dt * DECOR_LIFT_SMOOTHING);
       if (lift.target === 0 && lift.v < 0.002) this.decorLift.delete(id);
     }
-    const current = this.currents.update(dt);
+    const currentNow = this.currents.update(dt);
     this.day = dayLight(currentHour());
     this.fx.update(this.fxFrame(dt, now / SECOND_MS, reduced, tank));
     this.behaviors.update(dt, tank.decor, {
-      current,
+      current: currentNow,
       fish: fish.map((f) => this.actors.get(f.id)!).map((a) => ({ x: a.x, y: a.y })),
       particles: this.particles,
       reduced,
@@ -587,7 +650,48 @@ export class Renderer {
     const ids = new Set(tank.pellets.map((p) => p.id));
     if (this.seenPellets) for (const p of tank.pellets) if (!this.seenPellets.has(p.id)) this.fx.ripple(p.x);
     this.seenPellets = ids;
-    this.particles.update(dt, reduced, current.total);
+    this.particles.update(dt, reduced, currentNow.total);
+  }
+
+  /** Fills the pooled tentacle zones for this tank's jellies (fish keep out of them). */
+  private updateJellyZones(fish: Fish[]): JellyZone[] {
+    let n = 0;
+    for (const f of fish) {
+      const actor = this.actors.get(f.id);
+      if (!actor?.jelly) continue;
+      const zone = this.jellyZones[n] ?? { x0: 0, x1: 0, y0: 0, y1: 0 };
+      this.jellyZones[n] = jellyTentacles(actor, f, zone);
+      n += 1;
+    }
+    this.jellyZones.length = n;
+    return this.jellyZones;
+  }
+
+  /** The jelly's per-frame draw state (pooled per jelly). */
+  private jellyState(actor: FishActor, now: number): JellyDrawState | undefined {
+    const j = actor.jelly;
+    if (!j) return undefined;
+    let st = this.jellyDraw.get(actor.id);
+    if (!st) {
+      st = { sincePulse: Infinity, pulseStrength: 0, pulseTempo: 1, rise: 0, lean: 0, sinceFlash: Infinity, catch: null };
+      this.jellyDraw.set(actor.id, st);
+    }
+    st.sincePulse = now - j.pulseAt;
+    st.pulseStrength = j.pulseStrength;
+    st.pulseTempo = j.pulseTempo;
+    st.rise = j.rise;
+    st.lean = j.lean;
+    st.sinceFlash = now - j.flashAt;
+    if (j.caught) {
+      st.catch ??= { t: 0, dx: 0, dy: 0, premium: false };
+      st.catch.t = Math.min(1, (now - j.caught.at) / JELLY_CATCH_SLIDE_MS);
+      st.catch.dx = j.caught.dx;
+      st.catch.dy = j.caught.dy;
+      st.catch.premium = j.caught.premium;
+    } else {
+      st.catch = null;
+    }
+    return st;
   }
 
   /**
@@ -691,6 +795,12 @@ export class Renderer {
       if (!actor) continue;
       const height = Math.max(0, SAND_Y - actor.y);
       const closeness = 1 - Math.min(1, height / 420);
+      if (actor.jelly) {
+        // A jelly's shadow: very faint, large and blurry (it floats high and lets light through).
+        const size = jellySize(f.stage).w * JELLY_SHADOW_SCALE * (1 + (1 - closeness) * 0.4);
+        dropShadow(ctx, actor.x, SAND_Y + 8, size, size * 0.2, JELLY_SHADOW_ALPHA * (0.6 + 0.4 * closeness));
+        continue;
+      }
       const size = mouthOffset(f.speciesId, f.stage) * (1.1 + (1 - closeness) * 0.6);
       dropShadow(ctx, actor.x, SAND_Y + 8, size, size * 0.22, 0.12 + 0.28 * closeness);
     }
@@ -744,6 +854,7 @@ export class Renderer {
         dpr,
         wobbleAmp: reduced ? REDUCED_WAVE : 1,
         time: timeSec,
+        jelly: this.jellyState(actor, now),
       });
       ctx.restore();
     }
