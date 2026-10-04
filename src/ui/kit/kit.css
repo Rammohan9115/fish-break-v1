@@ -726,7 +726,7 @@
 }
 
 .coachmark-sand {
-  bottom: calc(var(--dock-h, 80px) + 70px + env(safe-area-inset-bottom));
+  bottom: calc(var(--dock-h, 80px) + 96px + env(safe-area-inset-bottom));
 }
 
 .coachmark-step {

@@ -6,6 +6,7 @@ import {
   THEMES,
   CLEANLINESS_MAX,
   FEED_COOLDOWN_MS,
+  TOAST_QUEUE_MAX,
   FISH_NAME_MAX_LENGTH,
   JUVENILE_AT_FRACTION,
   MINUTE_MS,
@@ -49,6 +50,30 @@ import {
 export interface Toast {
   id: number;
   text: string;
+  /** Bumped when a duplicate merges in, so a visible toast restarts its timer. */
+  rev: number;
+}
+
+/** "+5 🐚" → { amount: 5, unit: "🐚" } (merged by adding amounts). */
+const AMOUNT_TOAST = /^\+(\d+) (.+)$/u;
+
+/**
+ * Notification budget: an identical toast already waiting or showing is refreshed instead of repeated,
+ * and "+N thing" toasts add up ("+3 🐚" ×4 → "+12 🐚"). The queue keeps at most TOAST_QUEUE_MAX.
+ */
+export function mergeToast(toasts: Toast[], text: string, id: number): Toast[] {
+  const m = AMOUNT_TOAST.exec(text);
+  if (m) {
+    const unit = m[2];
+    const match = toasts.find((t) => AMOUNT_TOAST.exec(t.text)?.[2] === unit);
+    if (match) {
+      const total = Number(AMOUNT_TOAST.exec(match.text)?.[1] ?? 0) + Number(m[1]);
+      return toasts.map((t) => (t === match ? { ...t, text: `+${total} ${unit}`, rev: t.rev + 1 } : t));
+    }
+  }
+  const same = toasts.find((t) => t.text === text);
+  if (same) return toasts.map((t) => (t === same ? { ...t, rev: t.rev + 1 } : t));
+  return [...toasts, { id, text, rev: 0 }].slice(-TOAST_QUEUE_MAX);
 }
 
 /** What a click in the tank does. 'look' = select fish / collect shells; 'clean' = sponge algae. */
@@ -109,6 +134,10 @@ export interface GameStore {
   breedingTab: BreedingTab;
   /** The 4-card breeding guide is showing. */
   guideOpen: boolean;
+  /** The fish whose quick actions (Feed · Pair · Info) float next to it. */
+  quickFishId: string | null;
+  /** Last tap in the tank while a tool mode is on (modes exit after MODE_IDLE_EXIT_MS idle). */
+  modeTouchedAt: number;
 
   loadState: (game: GameState) => void;
   /** Runs fixed 1s sim ticks up to `now`; long gaps use offline catch-up. */
@@ -126,6 +155,13 @@ export interface GameStore {
   /** Switches tool. Premium with no food left shows a toast and stays put. */
   setMode: (mode: ToolMode) => void;
   selectFish: (fishId: string | null) => void;
+  /** Shows (or hides, with null) the quick actions for a tapped fish. */
+  showQuickActions: (fishId: string | null) => void;
+  /** Marks activity in the current tool mode (resets the idle exit). */
+  touchMode: () => void;
+  setReducedMotion: (on: boolean) => void;
+  /** Shows the three first-time tips again. */
+  replayTips: () => void;
   /** Completes `step` if it is the current one (no-op otherwise). */
   completeOnboardingStep: (step: number) => void;
   skipOnboarding: () => void;
@@ -289,6 +325,8 @@ export const useGameStore = create<GameStore>()((set, get) => {
     pairSheet: null,
     breedingTab: 'pairs',
     guideOpen: false,
+    quickFishId: null,
+    modeTouchedAt: 0,
 
     loadState: (game) =>
       set({
@@ -302,6 +340,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
         pairingFishId: null,
         pairSheet: null,
         guideOpen: false,
+        quickFishId: null,
       }),
 
     advanceTo: (now, rng = Math.random) => {
@@ -420,7 +459,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
     addToast: (text) => {
       toastSeq += 1;
       const toast = { id: toastSeq, text };
-      set((s) => ({ toasts: [...s.toasts, toast] }));
+      set((s) => ({ toasts: mergeToast(s.toasts, toast.text, toast.id) }));
     },
 
     dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
@@ -437,18 +476,33 @@ export const useGameStore = create<GameStore>()((set, get) => {
         get().addToast('Out of premium food 🌟');
         return;
       }
-      set({ mode });
       if (mode === 'clean') {
         const { game } = get();
         const tank = game.tanks.find((t) => t.id === game.activeTankId);
-        if (tank && tank.algaeSpots.length === 0) get().addToast('✨ Sparkling clean! Nothing to wipe right now.');
+        // Nothing to wipe: say so and stay in look mode instead of entering an empty mode.
+        if (tank && tank.algaeSpots.length === 0) {
+          get().addToast('✨ Sparkling clean! Nothing to wipe right now.');
+          return;
+        }
       }
+      set({ mode, modeTouchedAt: Date.now(), quickFishId: null });
     },
 
     selectFish: (fishId) => {
-      set(fishId ? { selectedFishId: fishId, selectedDecorId: null } : { selectedFishId: null });
+      set(fishId ? { selectedFishId: fishId, selectedDecorId: null, quickFishId: null } : { selectedFishId: null });
       if (fishId) get().completeOnboardingStep(1);
     },
+
+    showQuickActions: (fishId) => {
+      set(fishId ? { quickFishId: fishId, selectedFishId: null, selectedDecorId: null } : { quickFishId: null });
+      if (fishId) get().completeOnboardingStep(1);
+    },
+
+    touchMode: () => set({ modeTouchedAt: Date.now() }),
+
+    setReducedMotion: (on) => set((s) => ({ game: { ...s.game, settings: { ...s.game.settings, reducedMotion: on } } })),
+
+    replayTips: () => set({ onboardingStep: 0, panel: null }),
 
     completeOnboardingStep: (step) => {
       if (get().onboardingStep !== step) return;
@@ -597,7 +651,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
       if (result.ok) set({ game: result.state });
     },
 
-    selectDecor: (placedId) => set(placedId ? { selectedDecorId: placedId, selectedFishId: null } : { selectedDecorId: null }),
+    selectDecor: (placedId) => set(placedId ? { selectedDecorId: placedId, selectedFishId: null, quickFishId: null } : { selectedDecorId: null }),
 
     startBreak: (minutes, breathing) =>
       set({

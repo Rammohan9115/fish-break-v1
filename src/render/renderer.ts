@@ -288,6 +288,19 @@ export class Renderer {
     };
   }
 
+  /** A fish's position in client (viewport) pixels, plus its half height on screen; null if it isn't drawn. */
+  fishScreenPoint(fishId: string): { x: number; y: number; halfHeight: number } | null {
+    const actor = this.actors.get(fishId);
+    const f = this.deps.getGame().fish.find((ff) => ff.id === fishId);
+    if (!actor || !f) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    return {
+      x: rect.left + (actor.x - this.camX) * this.scale,
+      y: rect.top + (actor.y - this.camY) * this.scale,
+      halfHeight: fishHalfHeight(f.speciesId, f.stage) * this.scale,
+    };
+  }
+
   /** Topmost fish under a tank-space point, or null. */
   fishAt(x: number, y: number): string | null {
     const ids = [...this.actors.keys()].reverse();

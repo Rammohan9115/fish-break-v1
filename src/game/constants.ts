@@ -593,7 +593,13 @@ export const IOS_INSTALL_HINT_KEY = 'fishbowl-ios-install-hint-dismissed';
 /** Click radius for collecting a shell/pearl on the sand (tank units). */
 export const DROP_HIT_RADIUS = 16;
 export const POP_TEXT_DURATION_MS = 900;
-export const MAX_VISIBLE_TOASTS = 3;
+/** Notification budget: one toast at a time; the rest wait in a short queue (oldest dropped beyond it). */
+export const MAX_VISIBLE_TOASTS = 1;
+export const TOAST_QUEUE_MAX = 4;
+/** Feed / Premium / Clean switch back to looking after this long without a tap in the tank. */
+export const MODE_IDLE_EXIT_MS = 20 * SECOND_MS;
+/** localStorage: the level whose "What's next" goal chip the player dismissed. */
+export const GOAL_DISMISSED_KEY = 'fishbowl-goal-dismissed';
 /** Eggs rest on the sand at least this far from the glass. */
 export const EGG_EDGE_MARGIN = 60;
 /** After laying an egg, the pair swims together for this long. */

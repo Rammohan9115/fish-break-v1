@@ -42,7 +42,7 @@ function getBreedingView(): BreedingView {
   const readyIds = new Set<string>();
   if (unlocked) for (const f of inTank) if (isReadyToPair(game, f, now) && compatiblePartners(game, f, now).length > 0) readyIds.add(f.id);
   const chooser = s.pairingFishId ? inTank.find((f) => f.id === s.pairingFishId) : undefined;
-  const quest = breedingQuestStep(game, { selectedFishId: s.selectedFishId, pairingFishId: s.pairingFishId, sheetOpen: s.pairSheet !== null }, now);
+  const quest = breedingQuestStep(game, { selectedFishId: s.quickFishId ?? s.selectedFishId, pairingFishId: s.pairingFishId, sheetOpen: s.pairSheet !== null }, now);
   return {
     readyIds,
     pairing: chooser ? { fishId: chooser.id, compatibleIds: new Set(compatiblePartners(game, chooser, now).map((f) => f.id)) } : null,
@@ -82,6 +82,8 @@ function handleTankPress(renderer: Renderer, clientX: number, clientY: number): 
     return null;
   }
 
+  if (store.mode !== 'look') store.touchMode();
+
   if (store.mode === 'clean') {
     sponge(renderer, { x, y }, { x, y });
     return { kind: 'sponge', last: { x, y } };
@@ -110,7 +112,9 @@ function handleTankPress(renderer: Renderer, clientX: number, clientY: number): 
   if (fishId) {
     renderer.poke(fishId);
     sound.play('bubble');
-    store.selectFish(fishId);
+    // Tapping the same fish again opens its full card; the first tap shows quick actions next to it.
+    if (store.quickFishId === fishId) store.selectFish(fishId);
+    else store.showQuickActions(fishId);
     return null;
   }
 
@@ -123,6 +127,7 @@ function handleTankPress(renderer: Renderer, clientX: number, clientY: number): 
 
   store.selectFish(null);
   store.selectDecor(null);
+  store.showQuickActions(null);
   // Empty water: on tall screens, dragging pans the view.
   return renderer.canPan ? { kind: 'pan', lastClientX: clientX } : null;
 }
@@ -142,7 +147,10 @@ export function TankView() {
     const renderer = new Renderer(canvas, {
       getGame: () => useGameStore.getState().game,
       onEat: (fishId, pelletId) => useGameStore.getState().eatPellet(fishId, pelletId),
-      getSelectedFishId: () => useGameStore.getState().selectedFishId,
+      getSelectedFishId: () => {
+        const s = useGameStore.getState();
+        return s.quickFishId ?? s.selectedFishId;
+      },
       getSelectedDecorId: () => useGameStore.getState().selectedDecorId,
       getHudTarget: (icon) => {
         const el = document.querySelector(icon === 'pearl' ? '.hud-pearls .icon, .hud-pearls .hud-pearl' : '.hud-coins .icon, .hud-coins .hud-bar-icon');

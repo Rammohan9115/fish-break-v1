@@ -933,3 +933,66 @@
 .theme-night { background: linear-gradient(180deg, #3d4f94, #1f2a64 45%, #0e1440 74%, #4f5280 75%, #393b62); }
 .theme-coral { background: linear-gradient(180deg, #aef2e4, #3cbcbe 45%, #13789a 74%, #f6e8c6 75%, #e1c79a); }
 .theme-pond { background: linear-gradient(180deg, #bcd9a2, #6d9c69 45%, #2b5442 74%, #b9a37b 75%, #958160); }
+
+/* ---- Quick actions next to a tapped fish ---- */
+.quick {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: var(--z-card);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2) var(--space-2);
+  background: var(--color-float);
+  border: 3px solid var(--color-brand-edge);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 0 var(--color-brand-edge), var(--shadow-float);
+  animation: fade-in var(--motion-base) var(--ease);
+  will-change: transform;
+}
+
+.quick-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-body);
+}
+
+.quick-row {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.quick-row .btn {
+  padding: 0 var(--space-3);
+}
+
+.settings-prefs {
+  align-items: stretch;
+}
+
+.settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.levelup-next {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-body);
+  color: var(--color-text-muted);
+}
+
+/* The first tip points at the tool dock (bottom-right on wider screens). */
+@media (min-width: 641px) {
+  .coachmark-toolbar {
+    left: auto;
+    right: calc(var(--space-4) + env(safe-area-inset-right));
+    transform: none;
+  }
+  .coachmark-toolbar::after {
+    left: auto;
+    right: 48px;
+  }
+}

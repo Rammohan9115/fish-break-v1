@@ -9,11 +9,12 @@ import {
   SAVE_KEY,
   SECOND_MS,
   TANK_WIDTH,
+  TOAST_QUEUE_MAX,
   XP,
 } from '../game/constants';
 import { makeFish, makeState, seededRng, T0 } from '../game/testUtils';
 import type { GameState, Pellet } from '../game/types';
-import { breedingToasts, startGame, subscribeSimEvents, useGameStore } from './gameStore';
+import { breedingToasts, mergeToast, startGame, subscribeSimEvents, useGameStore, type Toast } from './gameStore';
 import { saveGame } from './save';
 import { fakeEnv } from './testEnv';
 
@@ -358,10 +359,10 @@ describe('onboarding', () => {
 });
 
 describe('clean mode', () => {
-  it('enters clean mode and hints when there is nothing to wipe', () => {
+  it('stays in look mode and hints when there is nothing to wipe', () => {
     load(makeState());
     store().setMode('clean');
-    expect(store().mode).toBe('clean');
+    expect(store().mode).toBe('look');
     expect(store().toasts.some((t) => t.text.includes('Sparkling clean'))).toBe(true);
   });
 
@@ -592,5 +593,28 @@ describe('mute setting', () => {
     expect(JSON.parse(storage.getItem(SAVE_KEY)!).settings.muted).toBe(false);
     startGame(env)();
     expect(game().settings.muted).toBe(false);
+  });
+});
+
+describe('notification budget', () => {
+  it('refreshes identical toasts instead of repeating them', () => {
+    const t = mergeToast(mergeToast([], 'Hello', 1), 'Hello', 2);
+    expect(t).toHaveLength(1);
+    expect(t[0]!.rev).toBe(1);
+  });
+
+  it('adds up "+N thing" toasts', () => {
+    let t: Toast[] = [];
+    for (let i = 0; i < 4; i++) t = mergeToast(t, '+3 🐚', i);
+    expect(t.map((x) => x.text)).toEqual(['+12 🐚']);
+    t = mergeToast(t, '+1 ⚪', 9);
+    expect(t.map((x) => x.text)).toEqual(['+12 🐚', '+1 ⚪']);
+  });
+
+  it('keeps a short queue', () => {
+    let t: Toast[] = [];
+    for (let i = 0; i < 10; i++) t = mergeToast(t, `msg ${i}`, i);
+    expect(t).toHaveLength(TOAST_QUEUE_MAX);
+    expect(t[t.length - 1]!.text).toBe('msg 9');
   });
 });

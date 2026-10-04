@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyXp, grantXp, levelUpReward, unlocksAtLevel, UNLOCKS, xpToNext } from './levels';
+import { applyXp, grantXp, levelUpReward, nextUnlock, unlocksAtLevel, UNLOCKS, xpToNext } from './levels';
 import { makeState } from './testUtils';
 
 describe('xpToNext', () => {
@@ -75,5 +75,21 @@ describe('grantXp', () => {
     const state = makeState();
     expect(grantXp(state, 0).state).toBe(state);
     expect(grantXp(state, -5).state).toBe(state);
+  });
+});
+
+describe('nextUnlock', () => {
+  it('finds the next level with an unlock, features first', () => {
+    const next = nextUnlock(4);
+    expect(next?.level).toBe(5);
+    expect(next?.unlocks[0]?.id).toBe('breeding');
+  });
+  it('skips levels with nothing new', () => {
+    const next = nextUnlock(15);
+    expect(next?.level).toBeGreaterThan(15);
+    expect(next?.unlocks.length).toBeGreaterThan(0);
+  });
+  it('returns null past the last unlock', () => {
+    expect(nextUnlock(999)).toBeNull();
   });
 });

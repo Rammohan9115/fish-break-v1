@@ -17,7 +17,7 @@ export function useNow(ms = 1000): number {
 /** The quest step to highlight right now, or null. */
 export function useQuestStep(): { step: QuestStep; fishId: string | null } | null {
   const game = useGameStore((s) => s.game);
-  const selectedFishId = useGameStore((s) => s.selectedFishId);
+  const selectedFishId = useGameStore((s) => s.quickFishId ?? s.selectedFishId);
   const pairingFishId = useGameStore((s) => s.pairingFishId);
   const sheetOpen = useGameStore((s) => s.pairSheet !== null);
   const now = useNow(2000);

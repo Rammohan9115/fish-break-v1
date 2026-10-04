@@ -22,7 +22,8 @@ import { BreedingGuide } from './ui/BreedingGuide';
 import { BreedingPanel } from './ui/BreedingPanel';
 import { PairingBanner } from './ui/PairingBanner';
 import { PairSheet } from './ui/PairSheet';
-import { QuestBanner } from './ui/QuestBanner';
+import { TopChip } from './ui/TopChip';
+import { QuickActions } from './ui/QuickActions';
 import { enterFullscreen, isTouchLandscape } from './ui/fullscreen';
 import { closeTopSheet } from './ui/kit';
 import { applyTokens } from './ui/tokens';
@@ -127,6 +128,7 @@ export function App() {
           <Hud />
           <IosInstallHint />
           <FishCard />
+          <QuickActions />
           <DecorCard />
           <Onboarding />
           <Toasts />
@@ -136,7 +138,7 @@ export function App() {
           <BreedingPanel />
           <PairingBanner />
           <PairSheet />
-          <QuestBanner />
+          <TopChip />
           <BreedingGuide />
           <LevelUpModal />
           <Settings />

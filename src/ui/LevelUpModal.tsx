@@ -1,7 +1,7 @@
 // Celebrates each level-up (one at a time) and lists what just unlocked.
 import { useEffect } from 'react';
 import { sound } from '../audio/sound';
-import { levelUpReward, unlocksAtLevel, type Unlock } from '../game/levels';
+import { levelUpReward, nextUnlock, unlocksAtLevel, type Unlock } from '../game/levels';
 import type { DecorId, SpeciesId } from '../game/types';
 import { useGameStore } from '../store/gameStore';
 import { DecorPreview, FishPreview } from './Preview';
@@ -29,6 +29,8 @@ export function LevelUpModal() {
   }, [level]);
   if (level === undefined) return null;
   const unlocks = unlocksAtLevel(level);
+  const next = nextUnlock(level);
+  const nextLabel = next?.unlocks[0]?.label.replace(/\s*\(.*\)$/, '');
 
   return (
     <Sheet
@@ -69,6 +71,11 @@ export function LevelUpModal() {
         </>
       ) : (
         <p className="lead">Keep caring for your fish. More surprises ahead!</p>
+      )}
+      {next && nextLabel && (
+        <p className="levelup-next">
+          Next up: <strong>Lv {next.level}</strong> unlocks {nextLabel}
+        </p>
       )}
     </Sheet>
   );

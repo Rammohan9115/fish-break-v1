@@ -6,7 +6,10 @@ import { logOut, sendMagicLink, signInWithGoogle, useCloudStore } from '../store
 import { useGameStore } from '../store/gameStore';
 import { saveGame } from '../store/save';
 import { SyncBadge } from './SyncIndicator';
-import { Button, ConfirmDialog, Sheet } from './kit';
+import { breedingUnlocked } from '../game/breeding';
+import { sound } from '../audio/sound';
+import { fullscreenSupported, toggleFullscreen } from './fullscreen';
+import { Button, ConfirmDialog, Sheet, Switch } from './kit';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -117,6 +120,66 @@ function LoginForm({ onBack }: { onBack: () => void }) {
   );
 }
 
+/** Sound, motion and fullscreen. On phones these are the only place for sound and fullscreen. */
+function Preferences() {
+  const muted = useGameStore((s) => s.game.settings.muted);
+  const reduced = useGameStore((s) => s.game.settings.reducedMotion);
+  const toggleMute = useGameStore((s) => s.toggleMute);
+  const setReducedMotion = useGameStore((s) => s.setReducedMotion);
+  return (
+    <section className="settings-section settings-prefs">
+      <h3 className="section-title">Preferences</h3>
+      <Switch
+        checked={!muted}
+        hint="Off by default, for playing at work"
+        onChange={(on) => {
+          toggleMute();
+          if (on) sound.play('coin');
+        }}
+      >
+        🔊 Sound
+      </Switch>
+      <Switch checked={reduced} hint="Fewer bubbles and effects, gentler animations" onChange={setReducedMotion}>
+        🌙 Reduce motion
+      </Switch>
+      {fullscreenSupported() && (
+        <Button size="sm" onClick={toggleFullscreen}>
+          ⤢ Toggle fullscreen
+        </Button>
+      )}
+    </section>
+  );
+}
+
+/** Help that's reachable from anywhere: replay the first tips, open the breeding guide. */
+function Help() {
+  const replayTips = useGameStore((s) => s.replayTips);
+  const openGuide = useGameStore((s) => s.openGuide);
+  const canBreed = useGameStore((s) => breedingUnlocked(s.game));
+  const openPanel = useGameStore((s) => s.openPanel);
+  return (
+    <section className="settings-section">
+      <h3 className="section-title">Help</h3>
+      <div className="settings-row">
+        <Button size="sm" onClick={replayTips}>
+          💡 Replay the tips
+        </Button>
+        {canBreed && (
+          <Button
+            size="sm"
+            onClick={() => {
+              openPanel(null);
+              openGuide();
+            }}
+          >
+            📖 How breeding works
+          </Button>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function ResetGame() {
   const [confirming, setConfirming] = useState(false);
   const openPanel = useGameStore((s) => s.openPanel);
@@ -199,6 +262,8 @@ export function Settings() {
               )}
             </section>
           )}
+          <Preferences />
+          <Help />
           <section className="settings-section">
             <h3 className="section-title">Game</h3>
             <ResetGame />

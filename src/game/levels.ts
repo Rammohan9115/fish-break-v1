@@ -108,3 +108,12 @@ export function unlocksAtLevel(level: number): Unlock[] {
 export function isUnlocked(playerLevel: number, requiredLevel: number): boolean {
   return playerLevel >= requiredLevel;
 }
+
+/** The next level above `level` that unlocks something, and what (features first). Null when everything is unlocked. */
+export function nextUnlock(level: number): { level: number; unlocks: Unlock[] } | null {
+  const upcoming = UNLOCKS.find((u) => u.level > level);
+  if (!upcoming) return null;
+  const at = unlocksAtLevel(upcoming.level);
+  const order: Record<UnlockKind, number> = { feature: 0, species: 1, tank: 2, theme: 3, decor: 4 };
+  return { level: upcoming.level, unlocks: [...at].sort((a, b) => order[a.kind] - order[b.kind]) };
+}

@@ -66,8 +66,10 @@ export function DailyGift() {
     return () => window.clearTimeout(handle);
   }, [reveal]);
 
+  // Wait until the first tip is done, and stay out of Break Mode (everything hides there).
+  const quiet = useGameStore((s) => s.onboardingStep === 0 || s.breakSession !== null);
   const available = loaded && lastDailyGift !== today;
-  if (!available && !reveal) return null;
+  if (quiet || (!available && !reveal)) return null;
 
   const style = { left: `${GIFT_BOX_POSITION.x * 100}%`, top: `${GIFT_BOX_POSITION.y * 100}%` };
   return (

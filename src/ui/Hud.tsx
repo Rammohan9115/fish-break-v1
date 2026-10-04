@@ -75,7 +75,7 @@ export function Hud() {
         <div className="hud-icons">
           <Button
             variant="icon"
-            className="hud-round"
+            className="hud-round hud-desktop-only"
             onClick={() => {
               toggleMute();
               if (muted) sound.play('coin');
@@ -85,7 +85,7 @@ export function Hud() {
             {muted ? '🔇' : '🔊'}
           </Button>
           {fullscreenSupported() && (
-            <Button variant="icon" className="hud-round" onClick={toggleFullscreen} aria-label={isFullscreen ? 'Exit fullscreen' : 'Go fullscreen'}>
+            <Button variant="icon" className="hud-round hud-desktop-only" onClick={toggleFullscreen} aria-label={isFullscreen ? 'Exit fullscreen' : 'Go fullscreen'}>
               {isFullscreen ? '⤡' : '⤢'}
             </Button>
           )}
@@ -114,6 +114,7 @@ export function Hud() {
         {capacity && (
           <span className={`hud-cap${capacity.used >= capacity.max ? ' hud-cap-full' : ''}`} aria-label={`${capacity.used} of ${capacity.max} spots`}>
             🐟 {capacity.used}/{capacity.max}
+            {capacity.used >= capacity.max && ' full'}
           </span>
         )}
         <span className="hud-tank-icon" aria-hidden="true">
