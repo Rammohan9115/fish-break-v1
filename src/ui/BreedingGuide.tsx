@@ -1,8 +1,9 @@
 // The breeding guide: four swipeable cartoon cards. Shown once when breeding unlocks (or after the
 // update for players already past Lv 5), and any time from "How breeding works".
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { FishPreview } from './Preview';
+import { Button, Sheet } from './kit';
 
 interface Card {
   title: string;
@@ -68,8 +69,6 @@ export function BreedingGuide() {
   const track = useRef<HTMLDivElement>(null);
   /** The card a button scroll is heading to (scroll events in between don't move the dots). */
   const target = useRef<number | null>(null);
-  if (!open) return null;
-
   const go = (i: number) => {
     const el = track.current;
     const next = Math.max(0, Math.min(CARDS.length - 1, i));
@@ -77,57 +76,67 @@ export function BreedingGuide() {
     target.current = next;
     el?.scrollTo({ left: next * el.clientWidth, behavior: 'smooth' });
   };
+  const step = useRef((_dir: number) => undefined as void);
+  step.current = (dir) => go(index + dir);
+
+  // ←/→ flip through the cards.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight') step.current(1);
+      if (e.key === 'ArrowLeft') step.current(-1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  if (!open) return null;
   const last = index === CARDS.length - 1;
 
   return (
-    <div className="modal-backdrop">
-      <section className="shop guide" role="dialog" aria-modal="true" aria-label="How breeding works">
-        <header className="shop-head">
-          <h2>How breeding works 💕</h2>
-          <button type="button" className="fishcard-close" onClick={close} aria-label="Close guide">
-            ✕
-          </button>
-        </header>
-        <div
-          className="guide-track"
-          ref={track}
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            const i = Math.round(el.scrollLeft / Math.max(1, el.clientWidth));
-            if (target.current !== null) {
-              if (Math.abs(el.scrollLeft - target.current * el.clientWidth) < 2) target.current = null;
-              return;
-            }
-            if (i !== index) setIndex(i);
-          }}
-        >
-          {CARDS.map((c, i) => (
-            <article key={c.title} className="guide-card" aria-hidden={i !== index}>
-              {c.art}
-              <div className="guide-step">Step {i + 1}</div>
-              <h3>{c.title}</h3>
-              <p>{c.body}</p>
-            </article>
-          ))}
-        </div>
+    <Sheet
+      title="How breeding works 💕"
+      size="sm"
+      onClose={close}
+      className="guide"
+      footer={
         <div className="guide-foot">
           <div className="guide-dots">
             {CARDS.map((c, i) => (
-              <button key={c.title} type="button" className={`guide-dot${i === index ? ' guide-dot-on' : ''}`} onClick={() => go(i)} aria-label={`Step ${i + 1}`} />
+              <button key={c.title} type="button" className={`guide-dot${i === index ? ' guide-dot-on' : ''}`} onClick={() => go(i)} aria-label={`Step ${i + 1}`} aria-current={i === index} />
             ))}
           </div>
           <div className="guide-buttons">
-            {index > 0 && (
-              <button type="button" className="shop-small" onClick={() => go(index - 1)}>
-                Back
-              </button>
-            )}
-            <button type="button" className="shop-buy" onClick={() => (last ? close() : go(index + 1))}>
+            {index > 0 && <Button onClick={() => go(index - 1)}>Back</Button>}
+            <Button variant="primary" data-autofocus onClick={() => (last ? close() : go(index + 1))}>
               {last ? 'Let’s go! 💕' : 'Next'}
-            </button>
+            </Button>
           </div>
         </div>
-      </section>
-    </div>
+      }
+    >
+      <div
+        className="guide-track"
+        ref={track}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          const i = Math.round(el.scrollLeft / Math.max(1, el.clientWidth));
+          if (target.current !== null) {
+            if (Math.abs(el.scrollLeft - target.current * el.clientWidth) < 2) target.current = null;
+            return;
+          }
+          if (i !== index) setIndex(i);
+        }}
+      >
+        {CARDS.map((c, i) => (
+          <article key={c.title} className="guide-card" aria-hidden={i !== index}>
+            {c.art}
+            <div className="guide-step">Step {i + 1}</div>
+            <h3>{c.title}</h3>
+            <p>{c.body}</p>
+          </article>
+        ))}
+      </div>
+    </Sheet>
   );
 }

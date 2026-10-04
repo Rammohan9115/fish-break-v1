@@ -1,105 +1,68 @@
-// Info card for the clicked fish: editable name, species, stage, hunger/happiness, growth.
-import { useEffect, useState } from 'react';
-import { FISH_NAME_MAX_LENGTH, SECOND_MS } from '../game/constants';
-import { THEMES, UNLOCK_LEVEL } from '../game/constants';
+// Info card for the tapped fish: editable name, species, stage, hunger/happiness (icon + word + bar),
+// growth, breeding checklist + Pair up, move and sell (with a confirm).
+import { useState } from 'react';
+import { BREEDING, FISH_NAME_MAX_LENGTH, FULL_HUNGER, HAPPINESS_STARVING_THRESHOLD, SAD_HAPPINESS, SECOND_MS, THEMES, UNLOCK_LEVEL } from '../game/constants';
 import { breedingChecklist, breedingUnlocked, courtshipOf, type CheckKey } from '../game/breeding';
 import { checkMoveFish, sellValue } from '../game/economy';
 import { stageProgress } from '../game/sim';
-import type { GameState } from '../game/types';
 import { getSpecies, getVariant } from '../game/species';
-import type { Fish, Stage } from '../game/types';
+import type { Fish, GameState, Stage } from '../game/types';
 import { useGameStore } from '../store/gameStore';
-import { Icon } from './Icon';
-import { clock, useNow, useQuestStep } from './useBreeding';
+import { formatClock, formatEta } from './format';
+import { Badge, Button, ConfirmDialog, CurrencyTag, LockedOverlay, NameField, ProgressBar, Sheet } from './kit';
+import { useNow, useQuestStep } from './useBreeding';
 
 const STAGE_LABEL: Record<Stage, string> = { egg: 'Egg', baby: 'Baby', juvenile: 'Juvenile', adult: 'Adult' };
 
-function formatEta(seconds: number): string {
-  if (seconds < 60) return 'under a minute';
-  const min = Math.round(seconds / 60);
-  if (min < 60) return `~${min} min`;
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return m === 0 ? `~${h}h` : `~${h}h ${m}m`;
+/** A word for each meter, so state never depends on color alone. */
+function hungerWord(h: number): string {
+  if (h >= FULL_HUNGER) return 'Full';
+  if (h >= BREEDING.minHunger) return 'Fed';
+  if (h >= HAPPINESS_STARVING_THRESHOLD) return 'Peckish';
+  return 'Hungry';
 }
 
-function Meter({ label, value, color }: { label: string; value: number; color: string }) {
-  const pct = Math.max(0, Math.min(100, value));
-  return (
-    <div className="meter">
-      <div className="meter-head">
-        <span>{label}</span>
-        <span>{Math.round(pct)}%</span>
-      </div>
-      <div className="meter-track" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)}>
-        <div className="meter-fill" style={{ width: `${pct}%`, background: color }} />
-      </div>
-    </div>
-  );
+function moodWord(h: number): { icon: string; word: string } {
+  if (h >= BREEDING.minHappiness) return { icon: '😊', word: 'Happy' };
+  if (h >= SAD_HAPPINESS) return { icon: '🙂', word: 'Okay' };
+  return { icon: '😢', word: 'Sad' };
 }
 
-function NameField({ fish }: { fish: Fish }) {
-  const renameFish = useGameStore((s) => s.renameFish);
-  const [draft, setDraft] = useState(fish.name);
-  useEffect(() => setDraft(fish.name), [fish.name]);
-  const commit = () => {
-    if (draft.trim()) renameFish(fish.id, draft);
-    else setDraft(fish.name);
-  };
-  return (
-    <input
-      className="fishcard-name"
-      value={draft}
-      maxLength={FISH_NAME_MAX_LENGTH}
-      aria-label="Fish name"
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') e.currentTarget.blur();
-        if (e.key === 'Escape') {
-          setDraft(fish.name);
-          e.stopPropagation();
-        }
-      }}
-    />
-  );
-}
-
-function GrowthInfo({ fish }: { fish: Fish }) {
+function Meters({ fish }: { fish: Fish }) {
+  const mood = moodWord(fish.happiness);
   const now = Date.now();
   const progress = stageProgress(fish, now);
   const boostLeft = fish.boostUntil !== null ? Math.max(0, fish.boostUntil - now) : 0;
-  let caption: string;
-  if (!progress.nextStage) caption = 'Fully grown 🎉';
-  else if (!progress.growing) caption = 'Too hungry to grow 🍤';
-  else caption = `${STAGE_LABEL[progress.nextStage]} in ${formatEta(progress.secondsRemaining ?? 0)}`;
-
+  let growth: string;
+  if (!progress.nextStage) growth = 'Fully grown 🎉';
+  else if (!progress.growing) growth = 'Paused: hungry';
+  else growth = `${STAGE_LABEL[progress.nextStage]} in ${formatEta(progress.secondsRemaining ?? 0)}`;
   return (
-    <div className="meter">
-      <div className="meter-head">
-        <span>Growth</span>
-        <span>{caption}</span>
-      </div>
-      <div className="meter-track" role="progressbar" aria-label="Growth" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress.fraction * 100)}>
-        <div className="meter-fill" style={{ width: `${progress.fraction * 100}%`, background: 'linear-gradient(90deg, #b7e4ff, #7cc8f2)' }} />
-      </div>
-      {boostLeft > 0 && <div className="fishcard-boost">🌟 Growth boost: {Math.ceil(boostLeft / SECOND_MS)}s left</div>}
+    <div className="fishcard-meters">
+      <ProgressBar label="Hunger" icon="🍤" tone="hunger" value={fish.hunger} valueText={`${hungerWord(fish.hunger)} · ${Math.round(fish.hunger)}%`} />
+      <ProgressBar label="Mood" icon={mood.icon} tone="happy" value={fish.happiness} valueText={`${mood.word} · ${Math.round(fish.happiness)}%`} />
+      <ProgressBar label="Growth" icon="🌱" tone="growth" value={progress.fraction * 100} valueText={growth} />
+      {boostLeft > 0 && <Badge tone="gold">🌟 Growth boost: {Math.ceil(boostLeft / SECOND_MS)}s left</Badge>}
     </div>
   );
 }
 
 const CHECK_LABEL: Record<CheckKey, string> = { adult: 'Adult', happy: 'Happy', fed: 'Well fed', rested: 'Rested', partner: 'Partner' };
 
-/** Breeding: a live ✅/❌ checklist with fix hints, and Pair up (enabled only when everything is ✅). */
+/** Breeding: ✅ when met, ⏳ with a fix hint when not, and Pair up (explains what's missing when tapped early). */
 function BreedingSection({ fish, game }: { fish: Fish; game: GameState }) {
   const now = useNow(1000);
   const startPairing = useGameStore((s) => s.startPairing);
   const openPanel = useGameStore((s) => s.openPanel);
   const quest = useQuestStep();
-  const [nudge, setNudge] = useState(0);
+  const [flag, setFlag] = useState(false);
 
   if (!breedingUnlocked(game)) {
-    return <div className="breed-teaser">💕 Breeding unlocks at Lv {UNLOCK_LEVEL.breeding}</div>;
+    return (
+      <div className="fishcard-breed-locked">
+        💕 Breeding <LockedOverlay level={UNLOCK_LEVEL.breeding} compact />
+      </div>
+    );
   }
   const courtship = courtshipOf(game, fish.id);
   if (courtship) {
@@ -108,45 +71,48 @@ function BreedingSection({ fish, game }: { fish: Fish; game: GameState }) {
     return (
       <section className="breed breed-love" aria-label="Breeding">
         <div className="breed-title">
-          In love 💞 <span className="breed-clock">{clock(courtship.endsAt - now)}</span>
+          In love 💞 <span className="tabular">{formatClock(courtship.endsAt - now)}</span>
         </div>
-        <small>{partner ? `Swimming with ${partner.name} — an egg is on its way!` : 'An egg is on its way!'}</small>
+        <span className="meta">{partner ? `Swimming with ${partner.name} — an egg is on its way!` : 'An egg is on its way!'}</span>
       </section>
     );
   }
 
   const list = breedingChecklist(game, fish, now);
-  const firstMissing = list.lines.find((l) => !l.ok)?.key ?? null;
-  const pulse = quest?.step === 'pairUp' && list.canPair;
+  const missing = list.lines.filter((l) => !l.ok);
+  const firstMissing = missing[0];
   return (
     <section className="breed" aria-label="Breeding">
-      <div className="breed-title">Breeding</div>
-      <ul className="breed-list">
-        {list.lines.map((l) => (
-          <li key={l.key} className={`breed-line${l.ok ? ' breed-ok' : ''}${nudge > 0 && l.key === firstMissing ? ' breed-flag' : ''}`}>
-            <span aria-hidden="true">{l.ok ? '✅' : '❌'}</span>
-            <span className="breed-label">{CHECK_LABEL[l.key]}</span>
-            <span className="breed-hint">{l.hint}</span>
-            {l.action === 'buy' && (
-              <button type="button" className="shop-small breed-buy" onClick={() => openPanel('shop', 'fish')}>
-                Buy one
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
-      <button
-        type="button"
-        key={nudge}
-        className={`breed-pair${list.canPair ? '' : ' breed-pair-off'}${nudge > 0 && !list.canPair ? ' breed-shake' : ''}${pulse ? ' quest-pulse' : ''}`}
-        aria-disabled={!list.canPair}
-        onClick={() => {
-          if (list.canPair) startPairing(fish.id);
-          else setNudge((n) => n + 1);
-        }}
+      <div className="breed-title">{list.canPair ? 'Ready to pair 💕' : 'Breeding'}</div>
+      {!list.canPair && (
+        <ul className="breed-list">
+          {list.lines.map((l) => (
+            <li key={l.key} className={`breed-line${l.ok ? ' breed-ok' : ''}${flag && l.key === firstMissing?.key ? ' breed-flag' : ''}`}>
+              <span aria-hidden="true">{l.ok ? '✅' : '⏳'}</span>
+              <span className="breed-label">
+                {CHECK_LABEL[l.key]}
+                <span className="sr-only">{l.ok ? ': done' : ': not yet'}</span>
+              </span>
+              {!l.ok && <span className="breed-hint">{l.hint}</span>}
+              {l.action === 'buy' && (
+                <Button size="sm" onClick={() => openPanel('shop', 'fish')}>
+                  Buy one
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <Button
+        variant="love"
+        block
+        pulse={quest?.step === 'pairUp' && list.canPair}
+        disabledReason={firstMissing ? `${CHECK_LABEL[firstMissing.key]}: ${firstMissing.hint}` : null}
+        onClick={() => startPairing(fish.id)}
+        onPointerDown={() => !list.canPair && setFlag(true)}
       >
         Pair up 💕
-      </button>
+      </Button>
     </section>
   );
 }
@@ -156,48 +122,60 @@ function MoveTo({ fish, game }: { fish: Fish; game: GameState }) {
   const moveFish = useGameStore((s) => s.moveFish);
   const others = game.tanks.filter((t) => t.id !== fish.tankId);
   if (others.length === 0) return null;
+  const species = getSpecies(fish.speciesId);
   return (
     <div className="fishcard-move">
-      <span>Move to</span>
+      <span className="meta">Move to</span>
       {others.map((t) => {
         const error = checkMoveFish(game, fish.id, t.id);
-        const why = error === 'full' ? 'That tank is full' : error === 'theme' ? `${getSpecies(fish.speciesId).name} needs a ${THEMES[getSpecies(fish.speciesId).themeOnly ?? 'classic'].name} tank` : undefined;
+        const why = error === 'full' ? `${t.name} is full` : error === 'theme' ? `${species.name} needs a ${THEMES[species.themeOnly ?? 'classic'].name} tank` : error ? 'Not possible right now' : null;
         return (
-          <button key={t.id} type="button" className="shop-small" disabled={error !== null} title={why} onClick={() => moveFish(fish.id, t.id)}>
+          <Button key={t.id} size="sm" disabledReason={why} onClick={() => moveFish(fish.id, t.id)}>
             🏠 {t.name}
             {error === 'full' && ' (full)'}
-          </button>
+          </Button>
         );
       })}
     </div>
   );
 }
 
-/** Sell with a confirm step. Juveniles sell for 40%; babies can't be sold. */
+/** Sell with a confirm dialog. Juveniles sell for 40%; babies can't be sold. */
 function SellButton({ fish }: { fish: Fish }) {
   const sellFish = useGameStore((s) => s.sellFish);
   const [confirming, setConfirming] = useState(false);
   const value = sellValue(fish);
   if (value === null) {
-    return <div className="fishcard-sell-note">Babies can't be sold yet 🐣</div>;
-  }
-  if (!confirming) {
     return (
-      <button type="button" className="fishcard-sell" onClick={() => setConfirming(true)}>
-        Sell for {value} <Icon id="shell" className="icon-inline" />
-      </button>
+      <Button variant="ghost" size="sm" disabledReason="Babies can't be sold. They need to grow up first 🐣" className="fishcard-sell">
+        Sell
+      </Button>
     );
   }
   return (
-    <div className="fishcard-confirm">
-      <span>Say goodbye to {fish.name}?</span>
-      <button type="button" className="shop-small" onClick={() => setConfirming(false)}>
-        Keep
-      </button>
-      <button type="button" className="fishcard-sell" onClick={() => sellFish(fish.id)}>
-        Sell
-      </button>
-    </div>
+    <>
+      <Button variant="danger" size="sm" className="fishcard-sell" onClick={() => setConfirming(true)}>
+        Sell for <CurrencyTag currency="shells" amount={value} size="sm" />
+      </Button>
+      {confirming && (
+        <ConfirmDialog
+          title={`Say goodbye to ${fish.name}?`}
+          body={
+            <p>
+              {fish.name} will move to a new home and you get <CurrencyTag currency="shells" amount={value} />.
+            </p>
+          }
+          confirmLabel="Sell"
+          cancelLabel="Keep"
+          tone="danger"
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => {
+            setConfirming(false);
+            sellFish(fish.id);
+          }}
+        />
+      )}
+    </>
   );
 }
 
@@ -205,6 +183,7 @@ export function FishCard() {
   const fish = useGameStore((s) => s.game.fish.find((f) => f.id === s.selectedFishId) ?? null);
   const game = useGameStore((s) => s.game);
   const selectFish = useGameStore((s) => s.selectFish);
+  const renameFish = useGameStore((s) => s.renameFish);
 
   if (!fish) return null;
   const courting = courtshipOf(game, fish.id) !== null;
@@ -212,27 +191,29 @@ export function FishCard() {
   const variant = getVariant(fish.speciesId, fish.variant);
 
   return (
-    <aside className="fishcard" aria-label={`About ${fish.name}`}>
-      <button type="button" className="fishcard-close" onClick={() => selectFish(null)} aria-label="Close">
-        ✕
-      </button>
-      <div className="fishcard-head">
+    <Sheet
+      inline
+      ariaLabel={`About ${fish.name}`}
+      title={<NameField key={fish.id} value={fish.name} maxLength={FISH_NAME_MAX_LENGTH} label="Fish name" onSave={(name) => renameFish(fish.id, name)} />}
+      onClose={() => selectFish(null)}
+      className="fishcard"
+    >
+      <div className="fishcard-sub">
         <span className="fishcard-swatch" style={{ background: variant.body, borderColor: variant.outline }} aria-hidden="true" />
-        <div>
-          <NameField key={fish.id} fish={fish} />
-          <div className="fishcard-sub">
-            {species.name} · {variant.name}
-            {fish.shiny && <span className="fishcard-shiny"> ✨ Shiny</span>}
-          </div>
-        </div>
+        <span className="meta">
+          {species.name} · {variant.name}
+        </span>
+        <Badge tone="brand">{STAGE_LABEL[fish.stage]}</Badge>
+        {fish.shiny && <Badge tone="gold">✨ Shiny</Badge>}
       </div>
-      <div className="fishcard-stage">{STAGE_LABEL[fish.stage]}</div>
-      <Meter label="Hunger" value={fish.hunger} color="linear-gradient(90deg, #ffd59e, #ffb26b)" />
-      <Meter label="Happiness" value={fish.happiness} color="linear-gradient(90deg, #ffc2d6, #ff8fb1)" />
-      <GrowthInfo fish={fish} />
+      <Meters fish={fish} />
       <BreedingSection fish={fish} game={game} />
-      {!courting && <MoveTo fish={fish} game={game} />}
-      {!courting && <SellButton key={fish.id} fish={fish} />}
-    </aside>
+      {!courting && (
+        <div className="fishcard-foot">
+          <MoveTo fish={fish} game={game} />
+          <SellButton key={fish.id} fish={fish} />
+        </div>
+      )}
+    </Sheet>
   );
 }

@@ -6,8 +6,9 @@ import { checkMoveFromNursery, rehomeValue } from '../game/economy';
 import { getSpecies, getVariant } from '../game/species';
 import type { Fish, GameState } from '../game/types';
 import { useGameStore } from '../store/gameStore';
-import { Icon } from './Icon';
-import { clock, useNow } from './useBreeding';
+import { formatClock as clock } from './format';
+import { Button, ConfirmDialog, CurrencyTag, EmptyState, Sheet, Tabs } from './kit';
+import { useNow } from './useBreeding';
 
 function Swatch({ fish }: { fish: Fish }) {
   const v = getVariant(fish.speciesId, fish.variant);
@@ -46,13 +47,13 @@ function PairsTab({ game, now }: { game: GameState; now: number }) {
 
   return (
     <>
-      <h3 className="breed-h">Ready to pair</h3>
+      <h3 className="section-title">Ready to pair</h3>
       {groups.length === 0 ? (
-        <p className="breed-empty">No pairs ready yet. Two happy, well-fed adults of the same species show a 💕.</p>
+        <EmptyState icon="💕" title="No pairs ready yet" body="Two happy, well-fed adults of the same species show a 💕 above them." />
       ) : (
         <ul className="breed-rows">
           {groups.map((g) => (
-            <li key={`${g[0]!.tankId}${g[0]!.speciesId}`} className="breed-row">
+            <li key={`${g[0]!.tankId}${g[0]!.speciesId}`} className="tile breed-row breed-row-love">
               <div className="breed-row-main">
                 <strong>{getSpecies(g[0]!.speciesId).name}</strong>
                 <span className="breed-names">
@@ -62,11 +63,11 @@ function PairsTab({ game, now }: { game: GameState; now: number }) {
                     </span>
                   ))}
                 </span>
-                <small>in {tankName(game, g[0]!.tankId)}</small>
+                <span className="meta">in {tankName(game, g[0]!.tankId)}</span>
               </div>
-              <button type="button" className="breed-pair breed-pair-small" onClick={() => pairUp(g)}>
+              <Button variant="love" size="sm" onClick={() => pairUp(g)}>
                 Pair up 💕
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
@@ -74,10 +75,10 @@ function PairsTab({ game, now }: { game: GameState; now: number }) {
 
       {(almost.length > 0 || lonely.length > 0) && (
         <>
-          <h3 className="breed-h">Almost ready</h3>
+          <h3 className="section-title">Almost ready</h3>
           <ul className="breed-rows">
             {lonely.map((f) => (
-              <li key={f.id} className="breed-row breed-row-soft">
+              <li key={f.id} className="tile breed-row">
                 <Swatch fish={f} />
                 <span>
                   <strong>{f.name}</strong> is ready — needs another adult {getSpecies(f.speciesId).name} in {tankName(game, f.tankId)}
@@ -85,7 +86,7 @@ function PairsTab({ game, now }: { game: GameState; now: number }) {
               </li>
             ))}
             {almost.map((f) => (
-              <li key={f.id} className="breed-row breed-row-soft">
+              <li key={f.id} className="tile breed-row">
                 <Swatch fish={f} />
                 <span>
                   <strong>{f.name}</strong> · {notReadyReasons(f, now).join(', ')}
@@ -98,12 +99,12 @@ function PairsTab({ game, now }: { game: GameState; now: number }) {
 
       {(game.courtships.length > 0 || game.eggs.length > 0) && (
         <>
-          <h3 className="breed-h">Love is in the water</h3>
+          <h3 className="section-title">Love is in the water</h3>
           <ul className="breed-rows">
             {game.courtships.map((c) => {
               const [a, b] = c.fishIds.map((id) => game.fish.find((f) => f.id === id));
               return (
-                <li key={c.id} className="breed-row breed-row-soft">
+                <li key={c.id} className="tile breed-row">
                   <span aria-hidden="true">💞</span>
                   <span>
                     <strong>{a?.name}</strong> & <strong>{b?.name}</strong> courting · egg in <span className="breed-clock">{clock(c.endsAt - now)}</span>
@@ -112,7 +113,7 @@ function PairsTab({ game, now }: { game: GameState; now: number }) {
               );
             })}
             {game.eggs.map((e) => (
-              <li key={e.id} className="breed-row breed-row-soft">
+              <li key={e.id} className="tile breed-row">
                 <span aria-hidden="true">🥚</span>
                 <span>
                   {getSpecies(e.speciesId).name} egg in {tankName(game, e.tankId)} · hatches in <span className="breed-clock">{clock(e.hatchAt - now)}</span>
@@ -123,9 +124,11 @@ function PairsTab({ game, now }: { game: GameState; now: number }) {
         </>
       )}
 
-      <button type="button" className="breed-link" onClick={openGuide}>
-        📖 How breeding works
-      </button>
+      <div className="shop-more">
+        <Button variant="ghost" onClick={openGuide}>
+          📖 How breeding works
+        </Button>
+      </div>
     </>
   );
 }
@@ -135,41 +138,49 @@ function NurseryBaby({ baby, game }: { baby: Fish; game: GameState }) {
   const rehomeBaby = useGameStore((s) => s.rehomeBaby);
   const [confirming, setConfirming] = useState(false);
   return (
-    <li className="breed-row nursery-row">
+    <li className="tile breed-row nursery-row">
       <div className="breed-row-main">
         <span>
           <Swatch fish={baby} /> <strong>{baby.name}</strong> 💤
         </span>
-        <small>
+        <span className="meta">
           Baby {getSpecies(baby.speciesId).name}
           {baby.shiny ? ' ✨' : ''} · napping
-        </small>
+        </span>
       </div>
       <div className="nursery-actions">
         {game.tanks.map((t) => {
           const error = checkMoveFromNursery(game, baby.id, t.id);
+          const reason = error === 'full' ? `${t.name} is full` : error === 'theme' ? `${getSpecies(baby.speciesId).name} needs a different tank theme` : error ? 'Not possible right now' : null;
           return (
-            <button key={t.id} type="button" className="shop-small" disabled={error !== null} onClick={() => moveFromNursery(baby.id, t.id)}>
+            <Button key={t.id} size="sm" variant="primary" disabledReason={reason} onClick={() => moveFromNursery(baby.id, t.id)}>
               🏠 {t.name}
-              {error === 'full' ? ' (full)' : error === 'theme' ? ' (wrong theme)' : ''}
-            </button>
+              {error === 'full' ? ' (full)' : ''}
+            </Button>
           );
         })}
-        {confirming ? (
-          <span className="fishcard-confirm">
-            <button type="button" className="shop-small" onClick={() => setConfirming(false)}>
-              Keep
-            </button>
-            <button type="button" className="fishcard-sell" onClick={() => rehomeBaby(baby.id)}>
-              Rehome
-            </button>
-          </span>
-        ) : (
-          <button type="button" className="shop-small" onClick={() => setConfirming(true)}>
-            Rehome +{rehomeValue(baby)} <Icon id="shell" className="icon-inline" />
-          </button>
-        )}
+        <Button size="sm" onClick={() => setConfirming(true)}>
+          Rehome
+        </Button>
       </div>
+      {confirming && (
+        <ConfirmDialog
+          title={`Rehome ${baby.name}?`}
+          body={
+            <p>
+              {baby.name} goes to a loving new home and you get <CurrencyTag currency="shells" amount={rehomeValue(baby)} />.
+            </p>
+          }
+          confirmLabel="Rehome"
+          cancelLabel="Keep"
+          tone="danger"
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => {
+            setConfirming(false);
+            rehomeBaby(baby.id);
+          }}
+        />
+      )}
     </li>
   );
 }
@@ -184,36 +195,27 @@ export function BreedingPanel() {
   if (panel !== 'breeding') return null;
 
   return (
-    <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && openPanel(null)}>
-      <section className="shop breed-panel" role="dialog" aria-modal="true" aria-label="Breeding">
-        <header className="shop-head">
-          <h2>Breeding 💕</h2>
-          <button type="button" className="fishcard-close" onClick={() => openPanel(null)} aria-label="Close">
-            ✕
-          </button>
-        </header>
-        <nav className="shop-tabs" aria-label="Breeding sections">
-          <button type="button" className={`shop-tab${tab === 'pairs' ? ' shop-tab-active' : ''}`} onClick={() => openBreeding('pairs')}>
-            💕 Pairs
-          </button>
-          <button type="button" className={`shop-tab${tab === 'nursery' ? ' shop-tab-active' : ''}`} onClick={() => openBreeding('nursery')}>
-            🍼 Nursery{game.nursery.length > 0 ? ` (${game.nursery.length})` : ''}
-          </button>
-        </nav>
-        <div className="shop-body">
-          {tab === 'pairs' ? (
-            <PairsTab game={game} now={now} />
-          ) : game.nursery.length === 0 ? (
-            <p className="breed-empty">The Nursery is empty. Babies that hatch into a full tank nap here until there’s room.</p>
-          ) : (
-            <ul className="breed-rows">
-              {game.nursery.map((b) => (
-                <NurseryBaby key={b.id} baby={b} game={game} />
-              ))}
-            </ul>
-          )}
-        </div>
-      </section>
-    </div>
+    <Sheet title="Breeding 💕" onClose={() => openPanel(null)} scrollKey={tab}>
+      <Tabs
+        ariaLabel="Breeding sections"
+        value={tab}
+        onChange={(t) => openBreeding(t)}
+        items={[
+          { id: 'pairs', label: '💕 Pairs' },
+          { id: 'nursery', label: `🍼 Nursery${game.nursery.length > 0 ? ` (${game.nursery.length})` : ''}` },
+        ]}
+      />
+      {tab === 'pairs' ? (
+        <PairsTab game={game} now={now} />
+      ) : game.nursery.length === 0 ? (
+        <EmptyState icon="🍼" title="The Nursery is empty" body="Babies that hatch into a full tank nap here until there’s room." />
+      ) : (
+        <ul className="breed-rows">
+          {game.nursery.map((b) => (
+            <NurseryBaby key={b.id} baby={b} game={game} />
+          ))}
+        </ul>
+      )}
+    </Sheet>
   );
 }

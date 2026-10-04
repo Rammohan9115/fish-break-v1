@@ -1,20 +1,16 @@
 // Bottom-center toasts that auto-dismiss.
 import { useEffect } from 'react';
 import { MAX_VISIBLE_TOASTS, TOAST_DURATION_MS } from '../game/constants';
-import { useGameStore, type Toast } from '../store/gameStore';
-import { RichText } from './Icon';
+import { useGameStore, type Toast as ToastData } from '../store/gameStore';
+import { Toast } from './kit';
 
-function ToastItem({ toast }: { toast: Toast }) {
+function ToastItem({ toast }: { toast: ToastData }) {
   const dismiss = useGameStore((s) => s.dismissToast);
   useEffect(() => {
     const handle = window.setTimeout(() => dismiss(toast.id), TOAST_DURATION_MS);
     return () => window.clearTimeout(handle);
   }, [toast.id, dismiss]);
-  return (
-    <div className="toast" role="status" onClick={() => dismiss(toast.id)}>
-      <RichText text={toast.text} />
-    </div>
-  );
+  return <Toast text={toast.text} onDismiss={() => dismiss(toast.id)} />;
 }
 
 export function Toasts() {

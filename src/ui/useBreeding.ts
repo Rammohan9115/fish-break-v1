@@ -1,5 +1,5 @@
-// Shared hooks for the breeding UI: a ticking clock for countdowns, and the first-baby quest's
-// current step (what to highlight next).
+// Shared hooks for the breeding UI: a ticking `now` for countdowns (format with format.formatClock), and the
+// first-baby quest's current step (what to highlight next).
 import { useEffect, useState } from 'react';
 import { breedingQuestStep, type QuestStep } from '../game/breeding';
 import { useGameStore } from '../store/gameStore';
@@ -22,13 +22,4 @@ export function useQuestStep(): { step: QuestStep; fishId: string | null } | nul
   const sheetOpen = useGameStore((s) => s.pairSheet !== null);
   const now = useNow(2000);
   return breedingQuestStep(game, { selectedFishId, pairingFishId, sheetOpen }, now);
-}
-
-/** m:ss for countdowns. */
-export function clock(ms: number): string {
-  const total = Math.max(0, Math.ceil(ms / 1000));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
 }

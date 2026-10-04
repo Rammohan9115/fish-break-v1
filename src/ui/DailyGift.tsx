@@ -6,6 +6,7 @@ import { localDateKey, type DailyGiftContents } from '../game/economy';
 import { sound } from '../audio/sound';
 import { useGameStore } from '../store/gameStore';
 import { Icon } from './Icon';
+import { Badge } from './kit';
 
 function GiftBoxArt({ open }: { open: boolean }) {
   return (
@@ -40,7 +41,7 @@ function Reveal({ gift }: { gift: DailyGiftContents }) {
           +{gift.pearls} <Icon id="pearl" className="icon-inline" /> pearl!
         </span>
       )}
-      <span className="gift-xp">+{XP.dailyGift} XP</span>
+      <Badge tone="gold">+{XP.dailyGift} XP</Badge>
       <small>See you tomorrow ✨</small>
     </div>
   );

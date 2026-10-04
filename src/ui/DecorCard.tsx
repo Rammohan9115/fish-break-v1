@@ -1,7 +1,9 @@
-// Card for the selected decor item: what it is, how to move it, and sell back for 50%.
+// Card for the selected decor item: what it is, how to move it, and sell back for 50% (with a confirm).
+import { useState } from 'react';
 import { DECOR, HAPPINESS_PER_DECOR } from '../game/constants';
 import { decorRefund } from '../game/economy';
 import { useGameStore } from '../store/gameStore';
+import { Button, ConfirmDialog, Sheet } from './kit';
 import { DecorPreview } from './Preview';
 import { PriceTag } from './Shop';
 
@@ -10,25 +12,40 @@ export function DecorCard() {
   const placed = useGameStore((s) => (s.selectedDecorId ? tank?.decor.find((d) => d.id === s.selectedDecorId) : undefined));
   const selectDecor = useGameStore((s) => s.selectDecor);
   const sellDecor = useGameStore((s) => s.sellDecor);
+  const [confirming, setConfirming] = useState(false);
   if (!tank || !placed) return null;
   const def = DECOR[placed.decorId];
 
   return (
-    <aside className="fishcard decorcard" aria-label={def.name}>
-      <button type="button" className="fishcard-close" onClick={() => selectDecor(null)} aria-label="Close">
-        ✕
-      </button>
+    <Sheet inline title={def.name} onClose={() => selectDecor(null)} className="decorcard" size="sm">
       <div className="decorcard-head">
         <DecorPreview decorId={placed.decorId} />
         <div>
-          <div className="decorcard-name">{def.name}</div>
-          <div className="fishcard-sub">+{HAPPINESS_PER_DECOR} happiness for fish in {tank.name}</div>
+          <p className="meta">+{HAPPINESS_PER_DECOR} happiness for fish in {tank.name}</p>
+          <p className="decorcard-hint">↔ Drag it along the sand to move it.</p>
         </div>
       </div>
-      <p className="decorcard-hint">↔ Drag it along the sand to move it.</p>
-      <button type="button" className="fishcard-sell" onClick={() => sellDecor(tank.id, placed.id)}>
+      <Button variant="danger" size="sm" onClick={() => setConfirming(true)}>
         Sell back <PriceTag price={decorRefund(placed.decorId)} />
-      </button>
-    </aside>
+      </Button>
+      {confirming && (
+        <ConfirmDialog
+          title={`Sell ${def.name}?`}
+          body={
+            <p>
+              You'll get back <PriceTag price={decorRefund(placed.decorId)} /> (half its price).
+            </p>
+          }
+          confirmLabel="Sell back"
+          cancelLabel="Keep it"
+          tone="danger"
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => {
+            setConfirming(false);
+            sellDecor(tank.id, placed.id);
+          }}
+        />
+      )}
+    </Sheet>
   );
 }

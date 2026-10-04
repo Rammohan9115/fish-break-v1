@@ -11,6 +11,8 @@ import { useGameStore } from '../store/gameStore';
 import { fullscreenSupported, toggleFullscreen } from './fullscreen';
 import { SyncBadge } from './SyncIndicator';
 import { Icon } from './Icon';
+import { Button } from './kit';
+import { formatCount } from './format';
 
 /** Window event fired when a collected shell/pearl lands on its counter (detail: 'shell' | 'pearl'). */
 export const HUD_BUMP_EVENT = 'fishbowl-hud-bump';
@@ -64,15 +66,15 @@ export function Hud() {
       <div className="hud-left">
         <div className={`hud-bar hud-coins${shellBump}`} title="Shells">
           <Icon id="shell" className="hud-bar-icon" />
-          <strong>{shells.toLocaleString()}</strong>
+          <strong>{formatCount(shells)}</strong>
         </div>
         <div className={`hud-bar hud-pearls${pearlBump}`} title="Pearls">
           <Icon id="pearl" className="hud-pearl-icon" />
-          <strong>{pearls.toLocaleString()}</strong>
+          <strong>{formatCount(pearls)}</strong>
         </div>
         <div className="hud-icons">
-          <button
-            type="button"
+          <Button
+            variant="icon"
             className="hud-round"
             onClick={() => {
               toggleMute();
@@ -81,15 +83,15 @@ export function Hud() {
             aria-label={muted ? 'Unmute sound' : 'Mute sound'}
           >
             {muted ? '🔇' : '🔊'}
-          </button>
+          </Button>
           {fullscreenSupported() && (
-            <button type="button" className="hud-round" onClick={toggleFullscreen} aria-label={isFullscreen ? 'Exit fullscreen' : 'Go fullscreen'}>
+            <Button variant="icon" className="hud-round" onClick={toggleFullscreen} aria-label={isFullscreen ? 'Exit fullscreen' : 'Go fullscreen'}>
               {isFullscreen ? '⤡' : '⤢'}
-            </button>
+            </Button>
           )}
-          <button type="button" className="hud-round" onClick={() => openPanel('settings')} aria-label="Settings">
+          <Button variant="icon" className="hud-round" onClick={() => openPanel('settings')} aria-label="Settings">
             ⚙️
-          </button>
+          </Button>
           <SyncBadge compact />
         </div>
       </div>
@@ -98,7 +100,7 @@ export function Hud() {
         <div className="hud-xpbar" role="progressbar" aria-label="Experience" aria-valuemin={0} aria-valuemax={needed} aria-valuenow={Math.floor(xp)}>
           <div className="hud-xpfill" style={{ width: `${pct}%` }} />
           <span className="hud-xptext">
-            {Math.floor(xp).toLocaleString()} / {needed.toLocaleString()}
+            {formatCount(xp)} / {formatCount(needed)} XP
           </span>
         </div>
         <div className="hud-star" aria-label={`Level ${level}`}>
@@ -119,9 +121,9 @@ export function Hud() {
         </span>
       </button>
       {capacity?.crowded && capacity.canUpgrade && (
-        <button type="button" className="hud-upgrade" onClick={() => openPanel('shop', 'tanks')}>
+        <Button variant="gold" size="sm" className="hud-upgrade" onClick={() => openPanel('shop', 'tanks')}>
           ⬆️ Upgrade
-        </button>
+        </Button>
       )}
       </div>
     </header>

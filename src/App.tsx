@@ -24,6 +24,8 @@ import { PairingBanner } from './ui/PairingBanner';
 import { PairSheet } from './ui/PairSheet';
 import { QuestBanner } from './ui/QuestBanner';
 import { enterFullscreen, isTouchLandscape } from './ui/fullscreen';
+import { closeTopSheet } from './ui/kit';
+import { applyTokens } from './ui/tokens';
 
 // Dev/art-preview panel: always in dev; in production only while DEV_TOOLS_IN_PRODUCTION is true
 // (when false, the lazy chunk is never loaded).
@@ -52,6 +54,18 @@ function useSoundSync() {
   }, []);
 }
 
+/** Motion tokens follow the in-game "Reduce motion" setting or the OS preference. */
+function useMotionTokens() {
+  const setting = useGameStore((s) => s.game.settings.reducedMotion);
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const apply = () => applyTokens(document.documentElement, setting || query.matches);
+    apply();
+    query.addEventListener('change', apply);
+    return () => query.removeEventListener('change', apply);
+  }, [setting]);
+}
+
 /** Phones held sideways go fullscreen on the next tap (browsers only allow it inside a user gesture). */
 function useLandscapeFullscreen() {
   useEffect(() => {
@@ -73,6 +87,7 @@ export function App() {
   useEffect(() => startCloudSync(), []);
   useSoundSync();
   useLandscapeFullscreen();
+  useMotionTokens();
   const onBreak = useGameStore((s) => s.breakSession !== null);
   const art = useArtPreload();
 
@@ -86,6 +101,8 @@ export function App() {
         store.exitBreak();
         return;
       }
+      // The topmost sheet/dialog/card closes first.
+      if (closeTopSheet()) return;
       if (store.pairingFishId || store.pairSheet) {
         store.cancelPairing();
         return;

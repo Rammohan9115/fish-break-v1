@@ -1,5 +1,6 @@
-// Shop overlay with Fish / Food / Decor / Tanks tabs. Locked items are greyed with "Unlocks at Lv X".
-import type { ReactNode } from 'react';
+// Shop with Fish / Food / Decor / Tanks tabs. Locked items show 🔒 "Unlocks at Lv X"; items you can't
+// afford say how far away you are; every blocked Buy explains why on tap.
+import { useState, type ReactNode } from 'react';
 import { CAPACITY_UPGRADE, DECOR, DECOR_LIST, MAX_DECOR_PER_TANK, PREMIUM_FOOD_PACK, THEMES, UNLOCK_LEVEL } from '../game/constants';
 import * as economy from '../game/economy';
 import { tankOccupancy } from '../game/sim';
@@ -7,23 +8,46 @@ import { SPECIES_LIST } from '../game/species';
 import type { GameState, Price, ThemeId } from '../game/types';
 import { sound } from '../audio/sound';
 import { useGameStore, type ShopTab } from '../store/gameStore';
+import { formatCount, formatMinutes } from './format';
 import { DecorPreview, FishPreview } from './Preview';
-import { Icon, RichText } from './Icon';
+import { RichText } from './Icon';
+import { Button, ConfirmDialog, CurrencyTag, EmptyState, LockedOverlay, Sheet, Tabs, type TabItem } from './kit';
 
-const TABS: { id: ShopTab; label: string }[] = [
+const TABS: TabItem<ShopTab>[] = [
   { id: 'fish', label: '🐟 Fish' },
   { id: 'food', label: '🍤 Food' },
   { id: 'decor', label: '🪴 Decor' },
   { id: 'tanks', label: '🏠 Tanks' },
 ];
 
-export function PriceTag({ price }: { price: Price }) {
-  return (
-    <span className="price">
-      {price.currency === 'shells' ? <Icon id="shell" className="icon-inline" label="shells" /> : <Icon id="pearl" className="icon-inline" label="pearls" />}{' '}
-      {price.amount.toLocaleString()}
-    </span>
-  );
+/** A price tag (kept as a named export for the other panels). */
+export function PriceTag({ price, short = false }: { price: Price; short?: boolean }) {
+  return <CurrencyTag currency={price.currency} amount={price.amount} short={short} />;
+}
+
+/** How many more shells/pearls the player needs for `price` (0 when affordable). */
+function shortfall(game: GameState, price: Price | null): number {
+  if (!price) return 0;
+  return Math.max(0, price.amount - (price.currency === 'shells' ? game.shells : game.pearls));
+}
+
+/** Button text + tap explanation for a blocked purchase. */
+function blocked(error: economy.PurchaseError, price: Price | null, game: GameState): { label: string; reason: string } {
+  switch (error) {
+    case 'cost': {
+      const need = shortfall(game, price);
+      const unit = price?.currency === 'pearls' ? '⚪' : '🐚';
+      return { label: `Need ${formatCount(need)} more ${unit}`, reason: 'Collect shells from the sand, or wait for the daily gift 🎁' };
+    }
+    case 'full':
+      return { label: 'Tank is full', reason: 'Make room, or get a bigger tank in Tanks 🏠' };
+    case 'max':
+      return { label: 'Maxed out', reason: 'You already have the most you can get' };
+    case 'owned':
+      return { label: 'Owned', reason: 'Already yours' };
+    default:
+      return { label: 'Unavailable', reason: 'Not available right now' };
+  }
 }
 
 interface ItemProps {
@@ -32,43 +56,28 @@ interface ItemProps {
   price: Price | null;
   unlockLevel: number;
   error: economy.PurchaseError | null;
-  /** Text shown on the button when buying is blocked for a non-lock reason. */
-  blockedText?: string;
+  game: GameState;
+  /** Overrides the blocked label/reason (e.g. theme-only species). */
+  blockedOverride?: { label: string; reason: string };
   buyLabel?: string;
   note?: ReactNode;
   /** Returns true on success (plays the coin sound). */
   onBuy: () => boolean | void;
 }
 
-function blockedLabel(error: economy.PurchaseError, price: Price | null): string {
-  switch (error) {
-    case 'cost':
-      return price?.currency === 'pearls' ? 'Need more pearls' : 'Need more shells';
-    case 'full':
-      return 'Tank is full';
-    case 'max':
-      return 'Maxed out';
-    case 'owned':
-      return 'Owned';
-    default:
-      return 'Unavailable';
-  }
-}
-
-function ShopItem({ title, art, price, unlockLevel, error, blockedText, buyLabel = 'Buy', note, onBuy }: ItemProps) {
+function ShopItem({ title, art, price, unlockLevel, error, game, blockedOverride, buyLabel = 'Buy', note, onBuy }: ItemProps) {
   const locked = error === 'locked';
+  const block = error && !locked ? (blockedOverride ?? blocked(error, price, game)) : null;
   return (
-    <div className={`shop-item${locked ? ' shop-item-locked' : ''}`}>
-      <div className="shop-art">{art}</div>
+    <div className={`tile shop-item${locked ? ' shop-item-locked' : ''}`}>
+      <div className="shop-art">{locked ? <LockedOverlay level={unlockLevel}>{art}</LockedOverlay> : art}</div>
       <div className="shop-title">{title}</div>
       {note && <div className="shop-note">{note}</div>}
-      {price && <PriceTag price={price} />}
-      {locked ? (
-        <div className="shop-lock">🔒 Unlocks at Lv {unlockLevel}</div>
-      ) : (
-        <button type="button" className="shop-buy" disabled={error !== null} onClick={() => onBuy() && sound.play('coin')}>
-          {error ? (blockedText ?? blockedLabel(error, price)) : buyLabel}
-        </button>
+      {price && <PriceTag price={price} short={error === 'cost'} />}
+      {!locked && (
+        <Button variant="primary" size="sm" block disabledReason={block?.reason} onClick={() => onBuy() && sound.play('coin')}>
+          {block ? block.label : buyLabel}
+        </Button>
       )}
     </div>
   );
@@ -79,12 +88,13 @@ function FishTab({ game }: { game: GameState }) {
   const tank = game.tanks.find((t) => t.id === game.activeTankId)!;
   return (
     <>
-      <p className="shop-sub">
+      <p className="lead">
         Buying for <strong>{tank.name}</strong> · 🐟 {tankOccupancy(game, tank.id)}/{tank.capacity}
       </p>
       <div className="shop-grid">
         {SPECIES_LIST.map((s) => {
           const error = economy.checkBuyFish(game, s.id);
+          const theme = s.themeOnly ? THEMES[s.themeOnly].name : null;
           return (
             <ShopItem
               key={s.id}
@@ -93,8 +103,9 @@ function FishTab({ game }: { game: GameState }) {
               price={s.cost}
               unlockLevel={s.unlockLevel}
               error={error}
-              blockedText={error === 'theme' && s.themeOnly ? `Needs ${THEMES[s.themeOnly].name}` : undefined}
-              note={<RichText text={`Grows in ${s.growMinutes >= 60 ? `${s.growMinutes / 60}h` : `${s.growMinutes}m`} · drops ${s.dropValue} 🐚`} />}
+              game={game}
+              blockedOverride={error === 'theme' && theme ? { label: `Needs ${theme}`, reason: `Lives only in a ${theme} tank` } : undefined}
+              note={<RichText text={`Grows in ${formatMinutes(s.growMinutes)} · drops ${s.dropValue} 🐚`} />}
               onBuy={() => buyFish(s.id)}
             />
           );
@@ -108,7 +119,9 @@ function FoodTab({ game }: { game: GameState }) {
   const buyPremiumFood = useGameStore((s) => s.buyPremiumFood);
   return (
     <>
-      <p className="shop-sub">You have {game.inventory.premiumFood} premium food. Premium pellets fill +25 hunger and give a 3-minute 2× growth boost.</p>
+      <p className="lead">
+        You have <strong>{game.inventory.premiumFood}</strong> premium food. Premium pellets fill +25 hunger and give a 3-minute 2× growth boost.
+      </p>
       <div className="shop-grid">
         <ShopItem
           title={`Premium food ×${PREMIUM_FOOD_PACK.count}`}
@@ -116,6 +129,7 @@ function FoodTab({ game }: { game: GameState }) {
           price={PREMIUM_FOOD_PACK.price}
           unlockLevel={UNLOCK_LEVEL.premiumFood}
           error={economy.checkBuyPremiumFood(game)}
+          game={game}
           onBuy={buyPremiumFood}
         />
       </div>
@@ -123,43 +137,76 @@ function FoodTab({ game }: { game: GameState }) {
   );
 }
 
+function PlacedDecor({ game }: { game: GameState }) {
+  const sellDecor = useGameStore((s) => s.sellDecor);
+  const tank = game.tanks.find((t) => t.id === game.activeTankId)!;
+  const [selling, setSelling] = useState<string | null>(null);
+  const placed = tank.decor.find((d) => d.id === selling);
+  if (tank.decor.length === 0) {
+    return <EmptyState icon="🪴" title="No decor yet" body="Pick something above. Each piece makes your fish a little happier." />;
+  }
+  return (
+    <>
+      <ul className="shop-list">
+        {tank.decor.map((d) => (
+          <li key={d.id} className="tile">
+            <span>{DECOR[d.decorId].name}</span>
+            <Button size="sm" onClick={() => setSelling(d.id)}>
+              Sell back <PriceTag price={economy.decorRefund(d.decorId)} />
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {placed && (
+        <ConfirmDialog
+          title={`Sell ${DECOR[placed.decorId].name}?`}
+          body={
+            <p>
+              You'll get back <PriceTag price={economy.decorRefund(placed.decorId)} /> (half its price).
+            </p>
+          }
+          confirmLabel="Sell back"
+          cancelLabel="Keep it"
+          tone="danger"
+          onCancel={() => setSelling(null)}
+          onConfirm={() => {
+            sellDecor(tank.id, placed.id);
+            setSelling(null);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
 function DecorTab({ game }: { game: GameState }) {
   const buyDecor = useGameStore((s) => s.buyDecor);
-  const sellDecor = useGameStore((s) => s.sellDecor);
   const tank = game.tanks.find((t) => t.id === game.activeTankId)!;
   return (
     <>
-      <p className="shop-sub">
+      <p className="lead">
         Each item makes fish a little happier. {tank.decor.length}/{MAX_DECOR_PER_TANK} in {tank.name}.
       </p>
       <div className="shop-grid">
-        {DECOR_LIST.map((d) => (
-          <ShopItem
-            key={d.id}
-            title={d.name}
-            art={<DecorPreview decorId={d.id} />}
-            price={d.cost}
-            unlockLevel={Math.max(UNLOCK_LEVEL.decorShop, d.unlockLevel)}
-            error={economy.checkBuyDecor(game, d.id)}
-            onBuy={() => buyDecor(d.id)}
-          />
-        ))}
+        {DECOR_LIST.map((d) => {
+          const error = economy.checkBuyDecor(game, d.id);
+          return (
+            <ShopItem
+              key={d.id}
+              title={d.name}
+              art={<DecorPreview decorId={d.id} />}
+              price={d.cost}
+              unlockLevel={Math.max(UNLOCK_LEVEL.decorShop, d.unlockLevel)}
+              error={error}
+              game={game}
+              blockedOverride={error === 'full' ? { label: 'Tank is full', reason: `Up to ${MAX_DECOR_PER_TANK} decor per tank. Sell one back to make space.` } : undefined}
+              onBuy={() => buyDecor(d.id)}
+            />
+          );
+        })}
       </div>
-      {tank.decor.length > 0 && (
-        <>
-          <h3 className="shop-heading">In this tank</h3>
-          <ul className="shop-list">
-            {tank.decor.map((placed) => (
-              <li key={placed.id}>
-                <span>{DECOR[placed.decorId].name}</span>
-                <button type="button" className="shop-small" onClick={() => sellDecor(tank.id, placed.id)}>
-                  Sell back <PriceTag price={economy.decorRefund(placed.decorId)} />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+      <h3 className="section-title">In this tank</h3>
+      <PlacedDecor game={game} />
     </>
   );
 }
@@ -180,6 +227,7 @@ function TanksTab({ game }: { game: GameState }) {
           price={upgradeCost}
           unlockLevel={UNLOCK_LEVEL.capacityUpgrade}
           error={economy.checkCapacityUpgrade(game)}
+          game={game}
           note={`${tank.name}: 🐟 ${tankOccupancy(game, tank.id)}/${tank.capacity} · ${economy.capacityUpgradesBought(tank)}/${CAPACITY_UPGRADE.maxPurchases} upgrades`}
           onBuy={store.buyCapacityUpgrade}
         />
@@ -189,43 +237,34 @@ function TanksTab({ game }: { game: GameState }) {
           price={nextTank?.price ?? null}
           unlockLevel={nextTank?.unlockLevel ?? 0}
           error={economy.checkBuyTank(game)}
+          game={game}
           onBuy={store.buyTank}
         />
         {themeIds.map((id) => {
           const theme = THEMES[id];
           const owned = game.ownedThemes.includes(id);
           const inUse = tank.theme === id;
-          if (owned) {
-            return (
-              <ShopItem
-                key={id}
-                title={`${theme.name} theme`}
-                art={<span className={`shop-swatch theme-${id}`} />}
-                price={null}
-                unlockLevel={theme.unlockLevel}
-                error={inUse ? 'owned' : null}
-                blockedText="In use"
-                buyLabel="Use here"
-                onBuy={() => store.applyTheme(id)}
-              />
-            );
-          }
           return (
             <ShopItem
               key={id}
               title={`${theme.name} theme`}
               art={<span className={`shop-swatch theme-${id}`} />}
-              price={theme.price}
+              price={owned ? null : theme.price}
               unlockLevel={theme.unlockLevel}
-              error={economy.checkBuyTheme(game, id)}
-              onBuy={() => store.buyTheme(id)}
+              error={owned ? (inUse ? 'owned' : null) : economy.checkBuyTheme(game, id)}
+              game={game}
+              blockedOverride={inUse ? { label: 'In use', reason: `${tank.name} already uses this theme` } : undefined}
+              buyLabel={owned ? 'Use here' : 'Buy'}
+              onBuy={() => (owned ? store.applyTheme(id) : store.buyTheme(id))}
             />
           );
         })}
       </div>
-      <button type="button" className="shop-small tankswitcher-shop" onClick={() => store.openPanel('tanks')}>
-        🏠 Switch &amp; rename tanks
-      </button>
+      <div className="shop-more">
+        <Button size="sm" onClick={() => store.openPanel('tanks')}>
+          🏠 Switch &amp; rename tanks
+        </Button>
+      </div>
     </>
   );
 }
@@ -238,32 +277,24 @@ export function Shop() {
   if (panel !== 'shop') return null;
 
   return (
-    <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && openPanel(null)}>
-      <section className="shop" role="dialog" aria-modal="true" aria-label="Shop">
-        <header className="shop-head">
-          <h2>Shop</h2>
-          <span className="shop-wallet">
-            <PriceTag price={{ currency: 'shells', amount: game.shells }} />
-            <PriceTag price={{ currency: 'pearls', amount: game.pearls }} />
-          </span>
-          <button type="button" className="fishcard-close" onClick={() => openPanel(null)} aria-label="Close shop">
-            ✕
-          </button>
-        </header>
-        <nav className="shop-tabs" role="tablist">
-          {TABS.map((t) => (
-            <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={`shop-tab${tab === t.id ? ' shop-tab-active' : ''}`} onClick={() => openPanel('shop', t.id)}>
-              {t.label}
-            </button>
-          ))}
-        </nav>
-        <div className="shop-body">
-          {tab === 'fish' && <FishTab game={game} />}
-          {tab === 'food' && <FoodTab game={game} />}
-          {tab === 'decor' && <DecorTab game={game} />}
-          {tab === 'tanks' && <TanksTab game={game} />}
-        </div>
-      </section>
-    </div>
+    <Sheet
+      title="Shop"
+      size="lg"
+      onClose={() => openPanel(null)}
+      scrollKey={tab}
+      className="shop"
+      headerExtra={
+        <span className="shop-wallet" aria-label="Your wallet">
+          <CurrencyTag currency="shells" amount={game.shells} />
+          <CurrencyTag currency="pearls" amount={game.pearls} />
+        </span>
+      }
+    >
+      <Tabs items={TABS} value={tab} onChange={(t) => openPanel('shop', t)} ariaLabel="Shop sections" />
+      {tab === 'fish' && <FishTab game={game} />}
+      {tab === 'food' && <FoodTab game={game} />}
+      {tab === 'decor' && <DecorTab game={game} />}
+      {tab === 'tanks' && <TanksTab game={game} />}
+    </Sheet>
   );
 }

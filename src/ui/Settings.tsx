@@ -6,6 +6,7 @@ import { logOut, sendMagicLink, signInWithGoogle, useCloudStore } from '../store
 import { useGameStore } from '../store/gameStore';
 import { saveGame } from '../store/save';
 import { SyncBadge } from './SyncIndicator';
+import { Button, ConfirmDialog, Sheet } from './kit';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -62,9 +63,7 @@ function LoginForm({ onBack }: { onBack: () => void }) {
         <p>
           We sent a magic link to <strong>{email.trim()}</strong>. Tap it on this device and your fish will be saved to the cloud.
         </p>
-        <button type="button" className="shop-small" onClick={onBack}>
-          Back
-        </button>
+        <Button onClick={onBack}>Back</Button>
       </div>
     );
   }
@@ -84,15 +83,10 @@ function LoginForm({ onBack }: { onBack: () => void }) {
       <p>Keep your fish safe and play on any device.</p>
       {AUTH_GOOGLE_ENABLED && (
         <>
-          <button
-            type="button"
-            className="shop-small login-google"
-            disabled={state !== 'idle'}
-            onClick={() => void google()}
-          >
+          <Button block busy={state !== 'idle'} onClick={() => void google()}>
             <GoogleLogo />
             {state === 'redirecting' ? 'Opening Google…' : 'Continue with Google'}
-          </button>
+          </Button>
           <div className="login-or" aria-hidden="true">
             or get a magic link by email
           </div>
@@ -110,12 +104,12 @@ function LoginForm({ onBack }: { onBack: () => void }) {
         autoFocus={!AUTH_GOOGLE_ENABLED}
       />
       {error && <p className="login-error">{error}</p>}
-      <button type="submit" className="shop-buy login-submit" disabled={state !== 'idle'}>
+      <Button type="submit" variant="primary" block busy={state !== 'idle'}>
         {state === 'sending' ? 'Sending…' : 'Send magic link ✨'}
-      </button>
-      <button type="button" className="login-back" onClick={onBack}>
+      </Button>
+      <Button variant="ghost" onClick={onBack}>
         Maybe later
-      </button>
+      </Button>
       <a className="login-privacy" href="/privacy.html" target="_blank" rel="noopener">
         Privacy policy
       </a>
@@ -133,25 +127,23 @@ function ResetGame() {
     useGameStore.getState().addToast('Fresh tank, fresh start 🐟');
     openPanel(null);
   };
-  if (!confirming) {
-    return (
-      <button type="button" className="shop-small settings-danger" onClick={() => setConfirming(true)}>
-        Reset game
-      </button>
-    );
-  }
   return (
-    <div className="settings-confirm" role="alertdialog" aria-label="Confirm reset">
-      <p>Start over with a brand-new tank? All your fish, shells and levels will be gone.</p>
-      <div className="settings-row">
-        <button type="button" className="shop-small" onClick={() => setConfirming(false)}>
-          Keep playing
-        </button>
-        <button type="button" className="shop-small settings-danger" onClick={reset}>
-          Yes, reset
-        </button>
-      </div>
-    </div>
+    <>
+      <Button variant="danger" onClick={() => setConfirming(true)}>
+        Reset game…
+      </Button>
+      {confirming && (
+        <ConfirmDialog
+          title="Start over?"
+          body={<p>You'll get a brand-new tank. All your fish, shells and levels will be gone for good.</p>}
+          confirmLabel="Yes, reset"
+          cancelLabel="Keep playing"
+          tone="danger"
+          onCancel={() => setConfirming(false)}
+          onConfirm={reset}
+        />
+      )}
+    </>
   );
 }
 
@@ -170,61 +162,49 @@ export function Settings() {
   };
 
   return (
-    <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <section className="shop settings" role="dialog" aria-modal="true" aria-label="Settings">
-        <header className="shop-head">
-          <h2>{view === 'login' ? 'Cloud save' : 'Settings'}</h2>
-          <button type="button" className="fishcard-close" onClick={close} aria-label="Close">
-            ✕
-          </button>
-        </header>
-        <div className="shop-body">
-          {view === 'login' && !user ? (
-            <LoginForm onBack={() => setView('main')} />
-          ) : (
-            <>
-              {enabled && (
-                <div className="settings-section">
-                  <h3>Account</h3>
-                  {user ? (
-                    <>
-                      <p className="settings-email">
-                        Signed in as <strong>{user.email ?? 'your account'}</strong>
-                      </p>
-                      <SyncBadge />
-                      <button
-                        type="button"
-                        className="shop-small"
-                        disabled={loggingOut}
-                        onClick={() => {
-                          setLoggingOut(true);
-                          void logOut().finally(() => {
-                            setLoggingOut(false);
-                            openPanel(null);
-                          });
-                        }}
-                      >
-                        {loggingOut ? 'Saving…' : 'Log out'}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <p>You're playing as a guest. Your fish live only in this browser.</p>
-                      <button type="button" className="shop-buy" onClick={() => setView('login')}>
-                        Save progress ☁️
-                      </button>
-                    </>
-                  )}
-                </div>
+    <Sheet title={view === 'login' ? 'Cloud save' : 'Settings'} size="sm" onClose={close} className="settings">
+      {view === 'login' && !user ? (
+        <LoginForm onBack={() => setView('main')} />
+      ) : (
+        <>
+          {enabled && (
+            <section className="settings-section">
+              <h3 className="section-title">Account</h3>
+              {user ? (
+                <>
+                  <p className="lead">
+                    Signed in as <strong>{user.email ?? 'your account'}</strong>
+                  </p>
+                  <SyncBadge />
+                  <Button
+                    busy={loggingOut}
+                    onClick={() => {
+                      setLoggingOut(true);
+                      void logOut().finally(() => {
+                        setLoggingOut(false);
+                        openPanel(null);
+                      });
+                    }}
+                  >
+                    {loggingOut ? 'Saving…' : 'Log out'}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <p className="lead">You're playing as a guest. Your fish live only in this browser.</p>
+                  <Button variant="primary" block onClick={() => setView('login')}>
+                    Save progress ☁️
+                  </Button>
+                </>
               )}
-              <div className="settings-section">
-                <h3>Game</h3>
-                <ResetGame />
-              </div>
-            </>
+            </section>
           )}
-        </div>
-      </section>
-    </div>
+          <section className="settings-section">
+            <h3 className="section-title">Game</h3>
+            <ResetGame />
+          </section>
+        </>
+      )}
+    </Sheet>
   );
 }

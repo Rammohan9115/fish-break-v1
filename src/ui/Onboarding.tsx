@@ -1,11 +1,12 @@
-// Three gentle tooltip bubbles for new players: Feed → Watch them grow → Collect shells.
+// Three gentle tips for new players: Feed → Watch them grow → Collect shells.
 // Steps advance automatically when the player does the thing, or via "Got it".
 import { useGameStore } from '../store/gameStore';
+import { Button, Coachmark } from './kit';
 
 interface StepDef {
   title: string;
   body: string;
-  /** Where the bubble sits; 'toolbar' points down at the Feed button. */
+  /** Where the bubble sits; 'toolbar' points down at the tools. */
   anchor: 'toolbar' | 'center' | 'sand';
 }
 
@@ -24,20 +25,22 @@ export function Onboarding() {
   if (!def) return null;
 
   return (
-    <div className={`onboarding onboarding-${def.anchor}`} role="dialog" aria-label="Tip">
-      <div className="onboarding-progress">
-        Tip {step + 1} of {STEPS.length}
-      </div>
-      <strong className="onboarding-title">{def.title}</strong>
-      <p className="onboarding-body">{def.body}</p>
-      <div className="onboarding-actions">
-        <button type="button" className="onboarding-skip" onClick={skip}>
-          Skip tips
-        </button>
-        <button type="button" className="onboarding-next" onClick={() => complete(step)}>
-          {step + 1 < STEPS.length ? 'Got it' : 'Done'}
-        </button>
-      </div>
-    </div>
+    <Coachmark
+      title={def.title}
+      body={def.body}
+      step={step + 1}
+      total={STEPS.length}
+      anchor={def.anchor}
+      actions={
+        <>
+          <Button variant="ghost" size="sm" onClick={skip}>
+            Skip tips
+          </Button>
+          <Button variant="gold" size="sm" onClick={() => complete(step)}>
+            {step + 1 < STEPS.length ? 'Got it' : 'Done'}
+          </Button>
+        </>
+      }
+    />
   );
 }

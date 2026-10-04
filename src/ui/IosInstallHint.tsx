@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { IOS_INSTALL_HINT_KEY } from '../game/constants';
 import { isIOS, isStandalone, isTouchLandscape } from './fullscreen';
+import { CloseButton } from './kit';
 
 function dismissedBefore(): boolean {
   try {
@@ -42,9 +43,7 @@ export function IosInstallHint() {
       <span>
         For true fullscreen on iPhone: tap <strong>Share ⬆︎</strong> then <strong>Add to Home Screen</strong>, and play from the icon.
       </span>
-      <button type="button" onClick={dismiss} aria-label="Dismiss">
-        ✕
-      </button>
+      <CloseButton onClick={dismiss} label="Dismiss" />
     </div>
   );
 }

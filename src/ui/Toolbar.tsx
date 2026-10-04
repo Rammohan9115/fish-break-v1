@@ -6,6 +6,7 @@ import { breedingUnlocked } from '../game/breeding';
 import { UNLOCK_LEVEL } from '../game/constants';
 import { useGameStore, type ToolMode } from '../store/gameStore';
 import { useQuestStep } from './useBreeding';
+import { Badge, LockedOverlay } from './kit';
 
 /** How far (px) a drag must travel to count as a swipe. */
 const SWIPE_PX = 30;
@@ -24,13 +25,15 @@ interface ToolButtonProps {
   hidden?: boolean;
   /** Shown as locked (still tappable, to say when it unlocks). */
   locked?: boolean;
+  /** Level that unlocks it (shown on the lock). */
+  lockLevel?: number;
   /** The first-baby quest points here. */
   pulse?: boolean;
   onClick: () => void;
   onboarding?: string;
 }
 
-function ToolButton({ icon, label, active = false, badge, hidden = false, locked = false, pulse = false, onClick, onboarding }: ToolButtonProps) {
+function ToolButton({ icon, label, active = false, badge, hidden = false, locked = false, lockLevel, pulse = false, onClick, onboarding }: ToolButtonProps) {
   return (
     <button
       type="button"
@@ -44,10 +47,14 @@ function ToolButton({ icon, label, active = false, badge, hidden = false, locked
         {icon}
       </span>
       <span className="tool-label">{label}</span>
-      {badge !== undefined && <span className="tool-badge">{badge}</span>}
-      {locked && (
-        <span className="tool-lock" aria-label="locked">
-          🔒
+      {badge !== undefined && (
+        <Badge count className="tool-badge">
+          {badge}
+        </Badge>
+      )}
+      {locked && lockLevel !== undefined && (
+        <span className="tool-lock">
+          <LockedOverlay level={lockLevel} compact />
         </span>
       )}
     </button>
@@ -132,6 +139,7 @@ export function Toolbar() {
           badge={nurseryCount > 0 ? nurseryCount : undefined}
           hidden={!open}
           locked={!breedingOpen}
+          lockLevel={UNLOCK_LEVEL.breeding}
           onClick={() =>
             pick(() => (breedingOpen ? (panel === 'breeding' ? openPanel(null) : openBreeding()) : addToast(`💕 Breeding unlocks at Lv ${UNLOCK_LEVEL.breeding}`)))
           }

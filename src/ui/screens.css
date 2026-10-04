@@ -1,0 +1,935 @@
+/* Screen-specific layout for the panels and cards. Tokens only (no hex literals): colors, buttons,
+   sheets, tabs, tags and bars come from the kit (src/ui/kit/kit.css). */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---- Shop ---- */
+.shop-wallet {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.shop-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-3);
+}
+
+.shop-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  text-align: center;
+}
+
+.shop-item-locked {
+  background: var(--color-surface-alt);
+}
+
+.shop-art {
+  height: 84px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shop-emoji {
+  font-size: 44px;
+  line-height: 1;
+}
+
+.shop-swatch {
+  width: 70px;
+  height: 52px;
+  border-radius: var(--radius-md);
+  border: 2px solid var(--color-line);
+}
+
+.shop-title {
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.shop-note {
+  font-size: var(--text-label);
+  line-height: 1.35;
+  color: var(--color-text-muted);
+}
+
+.shop-item > .btn {
+  margin-top: auto;
+}
+
+.shop-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.shop-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  font-weight: 700;
+}
+
+.shop-more {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-4);
+}
+
+@media (max-width: 640px) {
+  /* Same height on every tab, so switching tabs never makes the sheet jump. */
+  .shop.sheet {
+    height: 88dvh;
+  }
+  .shop-wallet .ctag {
+    font-size: var(--text-small);
+  }
+  .shop-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
+}
+
+/* ---- Settings, login, cloud sync ---- */
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+}
+
+.settings-section + .settings-section {
+  border-top: 2px dashed var(--color-line);
+  padding-top: var(--space-4);
+}
+
+.settings-section .lead {
+  margin: 0;
+}
+
+.settings-section strong {
+  word-break: break-all;
+}
+
+.login {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  text-align: center;
+}
+
+.login h3,
+.conflict-col h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  color: var(--color-brand);
+}
+
+.login p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.login-icon,
+.conflict-icon {
+  font-size: 44px;
+  line-height: 1;
+  animation: gentle-bob 2.4s ease-in-out infinite;
+}
+
+@keyframes gentle-bob {
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.login-input {
+  width: 100%;
+  min-height: var(--tap-min);
+  padding: var(--space-2) var(--space-4);
+  font: inherit;
+  font-size: var(--text-md);
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 3px solid var(--color-secondary-edge);
+  border-radius: var(--radius-pill);
+}
+
+.login-input:focus-visible {
+  outline: none;
+  border-color: var(--color-focus);
+}
+
+.login-google-logo {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+
+.login-or {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  font-size: var(--text-small);
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.login-or::before,
+.login-or::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background: var(--color-line);
+}
+
+.login-error {
+  color: var(--color-danger-text);
+  font-weight: 700;
+}
+
+.login-privacy {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap-min);
+  font-size: var(--text-small);
+  color: var(--color-brand);
+}
+
+.sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 3px var(--space-3);
+  font-size: var(--text-small);
+  font-weight: 800;
+  color: var(--color-text-good);
+  background: var(--color-surface);
+  border: 2px solid var(--color-primary-edge);
+  border-radius: var(--radius-pill);
+}
+
+.sync-saving {
+  color: var(--color-brand);
+  border-color: var(--color-brand-light);
+}
+
+.sync-offline,
+.sync-error,
+.sync-conflict {
+  color: var(--color-text-warn);
+  background: var(--color-surface-gold);
+  border-color: var(--color-gold-edge);
+}
+
+.sync-compact {
+  align-self: center;
+  pointer-events: auto;
+  height: 28px;
+  padding: 0 var(--space-2);
+  border-width: 3px;
+}
+
+.sync-spin {
+  display: inline-block;
+  animation: sync-spin 1s linear infinite;
+}
+
+@keyframes sync-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.conflict-lead {
+  text-align: center;
+}
+
+.conflict-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3);
+}
+
+.conflict-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+}
+
+.conflict-col dl {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  width: 100%;
+  margin: 0;
+}
+
+.conflict-col dt {
+  color: var(--color-text-muted);
+}
+
+.conflict-col dd {
+  margin: 0;
+  font-weight: 800;
+  text-align: right;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-icon,
+  .conflict-icon,
+  .sync-spin {
+    animation: none;
+  }
+}
+
+:root[data-reduced-motion] .login-icon,
+:root[data-reduced-motion] .conflict-icon,
+:root[data-reduced-motion] .sync-spin {
+  animation: none;
+}
+
+/* Small secondary line under a name. */
+.meta {
+  font-size: var(--text-small);
+  line-height: 1.4;
+  color: var(--color-text-muted);
+}
+
+/* ---- Tank switcher ---- */
+.tankcards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tankcard {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+}
+
+.tankcard-active {
+  border-color: var(--color-brand-light);
+  background: var(--color-brand-soft);
+}
+
+.tankcard .shop-swatch {
+  flex: none;
+  width: 56px;
+  height: 42px;
+}
+
+.tankcard-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.tankswitcher-buy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  font-weight: 700;
+  border: 2px dashed var(--color-line);
+  border-radius: var(--radius-lg);
+}
+
+.tankswitcher-buy > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* ---- Break Mode ---- */
+.breaksetup-xp {
+  margin: var(--space-2) 0 var(--space-4);
+  font-size: var(--text-body);
+  color: var(--color-text-muted);
+}
+
+.break-end .sheet-title {
+  text-align: center;
+}
+
+.break-end-xp {
+  margin: 0 0 var(--space-4);
+  text-align: center;
+  font-size: var(--text-md);
+}
+
+/* ---- Level up ---- */
+.levelup.sheet {
+  background: var(--color-surface-gold);
+  border-color: var(--color-gold-edge);
+  text-align: center;
+}
+
+.levelup .sheet-head {
+  justify-content: center;
+  padding-top: var(--space-4);
+}
+
+.levelup .sheet-title {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: var(--text-hero);
+  color: var(--color-text-warn);
+}
+
+.levelup-burst {
+  font-size: 44px;
+  line-height: 1.1;
+}
+
+.levelup-reward {
+  margin: 0 0 var(--space-2);
+  font-weight: 800;
+  font-size: var(--text-md);
+}
+
+.levelup-unlocks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: var(--space-2);
+}
+
+.levelup-unlocks li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  font-size: var(--text-small);
+  font-weight: 700;
+}
+
+.levelup .sheet-foot {
+  border-top: none;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.note-warn {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-small);
+  font-weight: 700;
+  color: var(--color-text-warn);
+  background: var(--color-surface-gold);
+  border: 2px solid var(--color-gold-edge);
+  border-radius: var(--radius-md);
+}
+
+/* ---- Fish card (inline sheet) ---- */
+.sheet-head .namefield {
+  flex: 1;
+}
+
+.sheet-head .namefield input {
+  color: var(--color-text-on-brand);
+  font-size: var(--text-xl);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
+}
+
+.sheet-head .namefield:hover,
+.sheet-head .namefield:focus-within {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.sheet-head .namefield-pencil {
+  opacity: 0.9;
+}
+
+.fishcard .sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.fishcard-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.fishcard-swatch {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 3px solid;
+}
+
+.fishcard-meters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.fishcard-breed-locked {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.fishcard-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.fishcard-move {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.fishcard-sell {
+  margin-left: auto;
+}
+
+/* ---- Decor card ---- */
+.decorcard .sheet-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.decorcard-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.decorcard-head p {
+  margin: 0 0 var(--space-1);
+}
+
+.decorcard-head .preview {
+  flex: none;
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-md);
+}
+
+.decorcard-hint {
+  font-size: var(--text-body);
+  font-weight: 700;
+}
+
+/* ---- Breeding (FishCard section) ---- */
+.breed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--color-surface-love);
+  border: 2px solid var(--color-love);
+  border-radius: var(--radius-lg);
+}
+
+.breed-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-md);
+  color: var(--color-text-love);
+}
+
+.breed-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.breed-line {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 2px var(--space-1);
+  font-size: var(--text-small);
+  border-radius: var(--radius-sm);
+}
+
+.breed-label {
+  font-weight: 800;
+}
+
+.breed-hint {
+  color: var(--color-text-muted);
+}
+
+.breed-flag {
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 2px var(--color-love-edge);
+}
+
+/* ---- Breeding panel ---- */
+.breed-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.breed-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-body);
+}
+
+.breed-row-love {
+  background: var(--color-surface-love);
+  border-color: var(--color-love);
+}
+
+.breed-row-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.breed-names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--space-3);
+}
+
+.breed-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  vertical-align: middle;
+}
+
+.nursery-row {
+  flex-wrap: wrap;
+}
+
+.nursery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* ---- Pair confirm sheet ---- */
+.pair-duo {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  gap: var(--space-8);
+}
+
+.pair-fish {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.pair-heart {
+  position: absolute;
+  top: 26px;
+  left: 50%;
+  font-size: 22px;
+  translate: -50% 0;
+  animation: heart-beat 1.6s ease-in-out infinite;
+}
+
+@keyframes heart-beat {
+  50% {
+    scale: 1.2;
+  }
+}
+
+.pair-odds {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-body);
+}
+
+.pair-odds li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pair-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid;
+}
+
+.pair-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+/* ---- Breeding guide ---- */
+.guide .sheet-body {
+  padding: 0;
+}
+
+.guide-track {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.guide-track::-webkit-scrollbar {
+  display: none;
+}
+
+.guide-card {
+  flex: 0 0 100%;
+  scroll-snap-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5) var(--space-2);
+  text-align: center;
+}
+
+.guide-card h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  color: var(--color-brand);
+}
+
+.guide-card p {
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+.guide-step {
+  font-size: var(--text-label);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-love);
+}
+
+.guide-art {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 110px;
+  font-size: 44px;
+  background: linear-gradient(180deg, var(--color-surface-alt) 0%, var(--color-meter-growth) 100%);
+  border: 3px solid var(--color-brand-edge);
+  border-radius: var(--radius-lg);
+}
+
+.guide-art .preview {
+  max-width: 40%;
+}
+
+.guide-plus,
+.guide-arrow {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--color-text-on-brand);
+  text-shadow: 0 2px 0 var(--color-brand-edge);
+}
+
+.guide-float {
+  position: absolute;
+  top: 6px;
+  font-size: 26px;
+  animation: gentle-bob 1.8s ease-in-out infinite;
+}
+
+.guide-chips {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-small);
+}
+
+.guide-chips span {
+  padding: 2px var(--space-2);
+  font-weight: 700;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border-radius: var(--radius-pill);
+}
+
+/* A picture of the Pair up button (not interactive). */
+.guide-button {
+  padding: var(--space-2) var(--space-4);
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--color-love-text);
+  background: var(--color-love);
+  border: 2px solid var(--color-love-edge);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-press) var(--color-love-edge);
+}
+
+.guide-finger {
+  position: absolute;
+  right: 26%;
+  bottom: var(--space-2);
+  font-size: 34px;
+  animation: guide-tap 1.4s ease-in-out infinite;
+}
+
+@keyframes guide-tap {
+  50% {
+    transform: translate(-8px, -10px);
+  }
+}
+
+.guide-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.guide-dots {
+  display: flex;
+}
+
+/* 12px dot, 44px target. */
+.guide-dot {
+  position: relative;
+  width: 28px;
+  height: var(--tap-min);
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.guide-dot::before {
+  content: '';
+  position: absolute;
+  top: calc(50% - 6px);
+  left: calc(50% - 6px);
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--color-brand);
+  border-radius: 50%;
+}
+
+.guide-dot-on::before {
+  background: var(--color-brand);
+}
+
+.guide-buttons {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* ---- Quest-highlighted toolbar/tank controls ---- */
+.quest-pulse {
+  position: relative;
+  animation: quest-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes quest-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 120, 180, 0.75);
+  }
+  50% {
+    box-shadow: 0 0 0 9px rgba(255, 120, 180, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quest-pulse,
+  .pair-heart,
+  .guide-float,
+  .guide-finger {
+    animation: none;
+  }
+}
+
+:root[data-reduced-motion] .quest-pulse,
+:root[data-reduced-motion] .pair-heart,
+:root[data-reduced-motion] .guide-float,
+:root[data-reduced-motion] .guide-finger {
+  animation: none;
+}
+
+/* Theme swatches: miniature tank art (palette literals are the theme's art, not UI colors). */
+.theme-classic { background: linear-gradient(180deg, #a6e2e2, #4aa6bf 45%, #1d6585 74%, #ead7a6 75%, #c9ad7c); }
+.theme-night { background: linear-gradient(180deg, #3d4f94, #1f2a64 45%, #0e1440 74%, #4f5280 75%, #393b62); }
+.theme-coral { background: linear-gradient(180deg, #aef2e4, #3cbcbe 45%, #13789a 74%, #f6e8c6 75%, #e1c79a); }
+.theme-pond { background: linear-gradient(180deg, #bcd9a2, #6d9c69 45%, #2b5442 74%, #b9a37b 75%, #958160); }

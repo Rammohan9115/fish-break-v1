@@ -1,6 +1,8 @@
 // First login with progress on both sides: compare the two saves and let the player pick one.
 import { useState } from 'react';
 import { resolveCloudConflict, summarize, useCloudStore, type SaveSummary } from '../store/cloudSave';
+import { formatCount } from './format';
+import { Button, CurrencyTag, Sheet } from './kit';
 
 function formatWhen(ms: number): string {
   return new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -8,7 +10,7 @@ function formatWhen(ms: number): string {
 
 function SaveColumn({ title, icon, s, onPick, busy }: { title: string; icon: string; s: SaveSummary; onPick: () => void; busy: boolean }) {
   return (
-    <div className="conflict-col">
+    <div className="tile conflict-col">
       <div className="conflict-icon" aria-hidden="true">
         {icon}
       </div>
@@ -17,17 +19,21 @@ function SaveColumn({ title, icon, s, onPick, busy }: { title: string; icon: str
         <dt>Level</dt>
         <dd>{s.level}</dd>
         <dt>Shells</dt>
-        <dd>🐚 {s.shells.toLocaleString()}</dd>
+        <dd>
+          <CurrencyTag currency="shells" amount={s.shells} size="sm" />
+        </dd>
         <dt>Pearls</dt>
-        <dd>{s.pearls.toLocaleString()}</dd>
+        <dd>
+          <CurrencyTag currency="pearls" amount={s.pearls} size="sm" />
+        </dd>
         <dt>Fish</dt>
-        <dd>🐟 {s.fish}</dd>
+        <dd>🐟 {formatCount(s.fish)}</dd>
         <dt>Last played</dt>
         <dd>{formatWhen(s.lastPlayed)}</dd>
       </dl>
-      <button type="button" className="shop-buy" onClick={onPick} disabled={busy}>
+      <Button variant="primary" block busy={busy} onClick={onPick}>
         Keep this one
-      </button>
+      </Button>
     </div>
   );
 }
@@ -41,19 +47,13 @@ export function CloudConflictModal() {
     void resolveCloudConflict(choice).finally(() => setBusy(false));
   };
   return (
-    <div className="modal-backdrop conflict-backdrop">
-      <section className="shop conflict" role="dialog" aria-modal="true" aria-label="Choose which save to keep">
-        <header className="shop-head">
-          <h2>Two tanks found!</h2>
-        </header>
-        <div className="shop-body">
-          <p className="conflict-lead">This browser and your cloud account both have progress. Which one would you like to keep? The other one will be replaced.</p>
-          <div className="conflict-cols">
-            <SaveColumn title="This device" icon="📱" s={summarize(conflict.local)} onPick={() => pick('local')} busy={busy} />
-            <SaveColumn title="Cloud" icon="☁️" s={summarize(conflict.cloud)} onPick={() => pick('cloud')} busy={busy} />
-          </div>
-        </div>
-      </section>
-    </div>
+    // No ✕: the player has to pick one (nothing is lost until they do).
+    <Sheet title="Two tanks found!" layer="confirm" className="conflict">
+      <p className="lead conflict-lead">This browser and your cloud account both have progress. Which one would you like to keep? The other one will be replaced.</p>
+      <div className="conflict-cols">
+        <SaveColumn title="This device" icon="📱" s={summarize(conflict.local)} onPick={() => pick('local')} busy={busy} />
+        <SaveColumn title="Cloud" icon="☁️" s={summarize(conflict.cloud)} onPick={() => pick('cloud')} busy={busy} />
+      </div>
+    </Sheet>
   );
 }

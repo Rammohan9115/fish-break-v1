@@ -2,7 +2,10 @@
 import type { QuestStep } from '../game/breeding';
 import { BREEDING_QUEST_REWARD } from '../game/constants';
 import { useGameStore } from '../store/gameStore';
-import { clock, useNow, useQuestStep } from './useBreeding';
+import { formatClock } from './format';
+import { RichText } from './Icon';
+import { Banner } from './kit';
+import { useNow, useQuestStep } from './useBreeding';
 
 const TEXT: Record<QuestStep, string> = {
   getPair: 'Raise two adults of the same species — buy a buddy in the Shop 🛒',
@@ -25,18 +28,12 @@ export function QuestBanner() {
   let countdown: string | null = null;
   if (quest.step === 'wait') {
     const next = Math.min(...game.courtships.map((c) => c.endsAt), ...game.eggs.map((e) => e.hatchAt));
-    if (Number.isFinite(next)) countdown = clock(next - now);
+    if (Number.isFinite(next)) countdown = formatClock(next - now);
   }
   return (
-    <div className="quest-banner" role="status">
-      <span className="quest-title">🍼 Your first baby</span>
-      <span>
-        {TEXT[quest.step]}
-        {countdown && <span className="breed-clock"> · {countdown}</span>}
-      </span>
-      <small>
-        Reward: +{BREEDING_QUEST_REWARD.shells} 🐚 +{BREEDING_QUEST_REWARD.pearls} ⚪
-      </small>
-    </div>
+    <Banner tone="love" className="quest-banner" sub={<RichText text={`🍼 Your first baby · reward +${BREEDING_QUEST_REWARD.shells} 🐚 +${BREEDING_QUEST_REWARD.pearls} ⚪`} />}>
+      {TEXT[quest.step]}
+      {countdown && <span className="tabular"> · {countdown}</span>}
+    </Banner>
   );
 }
