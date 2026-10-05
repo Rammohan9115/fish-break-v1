@@ -38,9 +38,10 @@ import {
   JELLY_SHADOW_SCALE,
   JELLY_CONTRACT_MS,
   JELLY_EXPAND_MS,
+  PET_HITBOX_PAD,
 } from '../game/constants';
 import { getSpecies, getVariant, SHINY_OUTLINE, SHINY_SPARKLE } from '../game/species';
-import type { Fish, GameState, Tank, ThemeId } from '../game/types';
+import type { BondLevel, Fish, GameState, Tank, ThemeId } from '../game/types';
 import {
   createActor,
   heartPoint,
@@ -86,6 +87,8 @@ import { SandItems } from './ambient/sandItems';
 import type { Courtship, DecorId, Egg } from '../game/types';
 import type { SimEvent } from '../game/sim';
 import { drawDrop, drawPellet, Particles } from './particles';
+import { BondFx, type PetOutcome } from './bondFx';
+import type { TrickId } from '../game/bond';
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -102,6 +105,10 @@ export interface RendererDeps {
   onHudArrive?: (icon: IconId) => void;
   /** Breeding state to show (read once per frame). */
   getBreedingView?: () => BreedingView;
+  /** A pet session's meter filled: the store pays out (or the fish is just content). Null if the fish is gone. */
+  onPetComplete?: (fishId: string) => PetOutcome | null;
+  /** The pet meter moved (0..1), or petting stopped (null). */
+  onPetProgress?: (fishId: string, progress: number | null) => void;
 }
 
 /** What the tank shows for breeding. */
@@ -153,6 +160,7 @@ export class Renderer {
   private readonly ctx: Ctx;
   private readonly actors = new Map<string, FishActor>();
   private readonly particles = new Particles();
+  private readonly bond = new BondFx(this.particles);
   /** Static background (water, distant ridges) and foreground (sand, stones), re-baked on theme/size change. */
   private backLayer: BakedLayer | null = null;
   private frontLayer: BakedLayer | null = null;
@@ -301,16 +309,16 @@ export class Renderer {
     };
   }
 
-  /** Topmost fish under a tank-space point, or null. */
-  fishAt(x: number, y: number): string | null {
+  /** Topmost fish under a tank-space point, or null. `pad` widens the hit area (tank units). */
+  fishAt(x: number, y: number, pad = 0): string | null {
     const ids = [...this.actors.keys()].reverse();
     const fish = this.deps.getGame().fish;
     for (const id of ids) {
       const actor = this.actors.get(id)!;
       const f = fish.find((ff) => ff.id === id);
       if (!f) continue;
-      const rx = FISH_ART[f.speciesId].mouthX * fishScale(f.stage) * 1.2;
-      const ry = fishHalfHeight(f.speciesId, f.stage) * 1.1;
+      const rx = FISH_ART[f.speciesId].mouthX * fishScale(f.stage) * 1.2 + pad;
+      const ry = fishHalfHeight(f.speciesId, f.stage) * 1.1 + pad;
       if (((x - actor.x) / rx) ** 2 + ((y - actor.y) / ry) ** 2 <= 1) return id;
     }
     return null;
@@ -468,6 +476,69 @@ export class Renderer {
     }
   }
 
+  /** A generously sized fish hit test for pressing and petting (easy to grab on a phone). */
+  fishToPet(x: number, y: number): string | null {
+    return this.fishAt(x, y, PET_HITBOX_PAD);
+  }
+
+  /** Fish whose center is within `radius` of (x, y) in the active tank (hand-feeding bond). */
+  fishNear(x: number, y: number, radius: number): string[] {
+    const out: string[] = [];
+    for (const [id, actor] of this.actors) if (Math.hypot(actor.x - x, actor.y - y) <= radius) out.push(id);
+    return out;
+  }
+
+  /** Starts petting a fish; the pointer (tank units) defaults to just in front of it (keyboard). */
+  petStart(fishId: string, point: { x: number; y: number } | null): boolean {
+    const actor = this.actors.get(fishId);
+    const f = this.deps.getGame().fish.find((ff) => ff.id === fishId);
+    if (!actor || !f) return false;
+    const p = point ?? { x: actor.x + (actor.facing >= 0 ? 1 : -1) * 30, y: actor.y };
+    this.bond.start(f, p.x, p.y, performance.now());
+    return true;
+  }
+
+  petMove(point: { x: number; y: number }): void {
+    this.bond.move(point.x, point.y, performance.now());
+  }
+
+  /** Stops petting (an unfinished meter is lost; the fish wiggles and swims on). */
+  petEnd(): void {
+    const id = this.bond.end(this.actors, performance.now());
+    if (id) this.deps.onPetProgress?.(id, null);
+  }
+
+  get pettingFishId(): string | null {
+    return this.bond.pettingId;
+  }
+
+  /** Plays a trick animation (the store already checked unlocks and cooldowns). */
+  playTrick(fishId: string, trick: Exclude<TrickId, 'follow'>): void {
+    this.bond.playTrick(fishId, trick, this.deps.getGame().fish.find((f) => f.id === fishId), this.actors.get(fishId), performance.now());
+  }
+
+  /** Follow mode on (until a wall-clock time) or off (null). */
+  setFollow(fishId: string, until: number | null): void {
+    this.bond.setFollow(fishId, until);
+  }
+
+  /** Welcome back: these fish swim to the front and wiggle hello. */
+  greet(fishIds: readonly string[]): void {
+    this.bond.greet(fishIds, this.camX + this.viewW / 2, performance.now());
+  }
+
+  /** A tap on empty water: Curious+ fish nearby swim over. */
+  sayHi(x: number, y: number): void {
+    const game = this.deps.getGame();
+    this.bond.sayHi(x, y, game.fish.filter((f) => f.tankId === game.activeTankId), this.actors, performance.now());
+  }
+
+  /** A bond level-up: a big heart burst and a demo of the new trick. */
+  celebrateBond(fishId: string, level: BondLevel): void {
+    const f = this.deps.getGame().fish.find((ff) => ff.id === fishId);
+    if (f) this.bond.celebrate(f, this.actors.get(fishId), level, performance.now(), this.reducedMotion(this.deps.getGame()));
+  }
+
   /** Dance Mode: jellies pulse on the beat (null/false stops). */
   setDance(on: boolean): void {
     this.beatMs = on ? 60_000 / DANCE_BPM : null;
@@ -598,6 +669,7 @@ export class Renderer {
         beatTempo,
         reduced,
         jellies: zones,
+        ...this.bond.steer(f.id, this.pointer, reduced),
       });
       this.updateGaze(actor, food, dt);
       if (eaten) {
@@ -664,6 +736,21 @@ export class Renderer {
     if (this.seenPellets) for (const p of tank.pellets) if (!this.seenPellets.has(p.id)) this.fx.ripple(p.x);
     this.seenPellets = ids;
     this.particles.update(dt, reduced, currentNow.total);
+    this.updateBond(fish, now, dt, reduced);
+  }
+
+  /** Petting meter, hellos, tricks; pays out a completed pet session through the store. */
+  private updateBond(fish: Fish[], now: number, dt: number, reduced: boolean): void {
+    const done = this.bond.update(dt, now, fish, this.actors, this.pointer, reduced, (id, trick) => this.playTrick(id, trick));
+    const petting = this.bond.pettingId;
+    if (petting) this.deps.onPetProgress?.(petting, this.bond.progress);
+    if (!done) return;
+    const outcome = this.deps.onPetComplete?.(done);
+    const actor = this.actors.get(done);
+    const f = this.deps.getGame().fish.find((ff) => ff.id === done);
+    if (!outcome || !actor || !f) return;
+    this.bond.completed(actor, f, outcome, reduced);
+    this.spinAt.set(done, now);
   }
 
   /** Fills the pooled tentacle zones for this tank's jellies (fish keep out of them). */
@@ -828,7 +915,7 @@ export class Renderer {
       if (glowing || chooser) this.drawSelection(actor, f, timeSec, px, chooser ? '#ffffff' : '#ff8fb8', bob);
       ctx.save();
       if (pairing && !glowing && !chooser) ctx.globalAlpha = 0.35;
-      // A newborn's happy spin: one full turn, easing out.
+      // A newborn's (or a just-petted fish's) happy spin: one full turn, easing out.
       const spinAt = this.spinAt.get(f.id);
       if (spinAt !== undefined && !reduced) {
         const t = Math.min(1, (now - spinAt) / HATCH_SPIN_MS);
@@ -836,10 +923,18 @@ export class Renderer {
         ctx.rotate((1 - (1 - t) ** 3) * Math.PI * 2 * (actor.facing >= 0 ? -1 : 1));
         ctx.translate(-actor.x, -actor.y);
       }
+      // Tricks, the greeting wiggle and petting flavor pose the fish around its center.
+      const pose = this.bond.poseFor(f, actor, now, reduced);
+      if (pose) {
+        ctx.translate(actor.x + pose.dx, actor.y + pose.dy);
+        ctx.rotate(pose.rot);
+        ctx.scale(pose.scale, pose.scale);
+        ctx.translate(-actor.x, -actor.y);
+      }
       drawFish(ctx, actor.x, actor.y + bob, {
         speciesId: f.speciesId,
         variant: getVariant(f.speciesId, f.variant),
-        shiny: f.shiny,
+        shiny: f.shiny || this.bond.rainbow(f.id),
         stage: f.stage,
         facing: actor.facing,
         pitch: getSpecies(f.speciesId).traits.includes('walksOnSand') ? 0 : actor.tilt,
@@ -849,14 +944,14 @@ export class Renderer {
         eat: eatSquash(now - actor.eatAt),
         bounce: pokeBounce(now - actor.pokeAt),
         gaze: { x: actor.gazeX, y: actor.gazeY },
-        blinking: now < actor.blinkUntil,
-        sad: isSad(f),
-        gloom: actor.gloom,
-        inflate: puffAmount(actor, now),
+        blinking: now < actor.blinkUntil || this.bond.happyEyes(f.id),
+        sad: isSad(f) && !this.bond.happyEyes(f.id),
+        gloom: this.bond.happyEyes(f.id) ? 0 : actor.gloom,
+        inflate: Math.max(puffAmount(actor, now), this.bond.minInflate(f)),
         glow: pal.glowFish ? getVariant(f.speciesId, f.variant).accent : null,
         px,
         dpr,
-        wobbleAmp: reduced ? REDUCED_WAVE : 1,
+        wobbleAmp: (reduced ? REDUCED_WAVE : 1) * (pose?.wave ?? 1),
         time: timeSec,
         jelly: this.jellyState(actor, now),
       });
@@ -886,8 +981,11 @@ export class Renderer {
     const lights = Math.max(day.lights, THEME_ART[tank.theme].minLights);
     for (const d of tank.decor) this.behaviors.drawLights(ctx, d, tank.theme, grid.k, lights, timeSec);
     this.fx.drawSpecks(fx, 2);
+    this.particles.drawRings(ctx, px);
+    this.particles.drawStreaks(ctx, px);
     this.particles.drawHearts(ctx, px);
     this.particles.drawSparkles(ctx, px);
+    this.bond.draw(ctx, this.actors, game.fish, px, timeSec, EMOJI_FONT);
     this.particles.drawChips(ctx, px);
     const paintIcon = (icon: IconId, x: number, y: number, size: number) => drawIconAt(ctx, icon, x, y, size, grid.k);
     this.particles.drawPops(ctx, px, paintIcon);

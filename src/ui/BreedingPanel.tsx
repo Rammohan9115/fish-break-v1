@@ -8,6 +8,8 @@ import type { Fish, GameState } from '../game/types';
 import { useGameStore } from '../store/gameStore';
 import { formatClock as clock } from './format';
 import { Button, ConfirmDialog, CurrencyTag, EmptyState, Sheet, Tabs } from './kit';
+import { bondNameClass } from './BondSection';
+import { bondName } from '../game/bond';
 import { useNow } from './useBreeding';
 
 function Swatch({ fish }: { fish: Fish }) {
@@ -59,7 +61,7 @@ function PairsTab({ game, now }: { game: GameState; now: number }) {
                 <span className="breed-names">
                   {g.map((f) => (
                     <span key={f.id}>
-                      <Swatch fish={f} /> {f.name}
+                      <Swatch fish={f} /> <span className={bondNameClass(f.bondLevel)}>{f.name}</span>
                     </span>
                   ))}
                 </span>
@@ -81,7 +83,7 @@ function PairsTab({ game, now }: { game: GameState; now: number }) {
               <li key={f.id} className="tile breed-row">
                 <Swatch fish={f} />
                 <span>
-                  <strong>{f.name}</strong> is ready — needs another adult {getSpecies(f.speciesId).name} in {tankName(game, f.tankId)}
+                  <strong className={bondNameClass(f.bondLevel)}>{f.name}</strong> is ready — needs another adult {getSpecies(f.speciesId).name} in {tankName(game, f.tankId)}
                 </span>
               </li>
             ))}
@@ -89,7 +91,7 @@ function PairsTab({ game, now }: { game: GameState; now: number }) {
               <li key={f.id} className="tile breed-row">
                 <Swatch fish={f} />
                 <span>
-                  <strong>{f.name}</strong> · {notReadyReasons(f, now).join(', ')}
+                  <strong className={bondNameClass(f.bondLevel)}>{f.name}</strong> · {notReadyReasons(f, now).join(', ')}
                 </span>
               </li>
             ))}
@@ -165,7 +167,7 @@ function NurseryBaby({ baby, game }: { baby: Fish; game: GameState }) {
       </div>
       {confirming && (
         <ConfirmDialog
-          title={`Rehome ${baby.name}?`}
+          title={baby.bondLevel >= 3 ? `${baby.name} is your ${bondName(baby.bondLevel)} 💕 — rehome anyway?` : `Rehome ${baby.name}?`}
           body={
             <p>
               {baby.name} goes to a loving new home and you get <CurrencyTag currency="shells" amount={rehomeValue(baby)} />.

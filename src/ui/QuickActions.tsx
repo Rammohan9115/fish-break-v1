@@ -2,7 +2,7 @@
 // It follows the fish as it swims; tap the water, press Esc, or tap another fish to move on. Tapping the same
 // fish again (or Info) opens the full FishCard.
 import { useEffect, useRef, useState } from 'react';
-import { FULL_HUNGER } from '../game/constants';
+import { BOND, FULL_HUNGER } from '../game/constants';
 import { breedingChecklist, breedingUnlocked, courtshipOf } from '../game/breeding';
 import { sound } from '../audio/sound';
 import { currentRenderer } from '../render/renderer';
@@ -62,7 +62,9 @@ function Actions({ fishId }: { fishId: string }) {
     const renderer = currentRenderer();
     const p = renderer?.fishScreenPoint(fish.id);
     if (!renderer || !p) return;
-    if (dropPellet(renderer.toTank(p.x, p.y).x)) sound.play('plop');
+    const at = renderer.toTank(p.x, p.y);
+    // Dropped right next to it: hand-fed, so it earns a little bond when it eats.
+    if (dropPellet(at.x, false, renderer.fishNear(at.x, at.y, BOND.feedRadius))) sound.play('plop');
   };
 
   let pair: { reason: string | null } | null = null;

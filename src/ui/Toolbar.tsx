@@ -1,6 +1,5 @@
 // Bottom-right tool dock (spec order). It stays tucked behind a single handle button so the water is free;
 // tap the handle (or swipe left/up on it) to slide the tools out, and picking a tool tucks them away again.
-// Unbuilt features show a "coming soon" toast.
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { breedingUnlocked } from '../game/breeding';
 import { UNLOCK_LEVEL } from '../game/constants';
@@ -89,7 +88,6 @@ export function Toolbar() {
   };
   const toggle = (target: ToolMode) => pick(() => setMode(mode === target ? 'look' : target));
   const togglePanel = (target: 'shop' | 'tanks' | 'break') => pick(() => openPanel(panel === target ? null : target, target === 'shop' ? 'fish' : undefined));
-  const soon = (icon: string, label: string) => pick(() => addToast(`${icon} ${label}: coming soon!`));
 
   const onPointerDown = (e: ReactPointerEvent) => {
     swipeStart.current = { x: e.clientX, y: e.clientY };
@@ -144,7 +142,7 @@ export function Toolbar() {
             pick(() => (breedingOpen ? (panel === 'breeding' ? openPanel(null) : openBreeding()) : addToast(`💕 Breeding unlocks at Lv ${UNLOCK_LEVEL.breeding}`)))
           }
         />
-        <ToolButton icon="🐟" label="My Fish" hidden={!open} onClick={() => soon('🐟', 'My Fish')} />
+        <ToolButton icon="🐟" label="My Fish" active={panel === 'myfish'} hidden={!open} onClick={() => pick(() => openPanel(panel === 'myfish' ? null : 'myfish'))} />
         <ToolButton icon="🏠" label="Tanks" active={panel === 'tanks'} hidden={!open} onClick={() => togglePanel('tanks')} />
         <ToolButton icon="☕" label="Break" active={panel === 'break'} hidden={!open} onClick={() => togglePanel('break')} />
       </div>

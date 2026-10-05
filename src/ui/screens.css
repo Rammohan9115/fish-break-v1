@@ -996,3 +996,116 @@
     right: 48px;
   }
 }
+
+/* ---- Bond (FishCard) ---- */
+.bond {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--color-surface-alt);
+  border: 2px solid var(--color-line);
+  border-radius: var(--radius-lg);
+}
+
+.bond-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.bond-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-md);
+  color: var(--color-text-love);
+}
+
+.bond-pets {
+  margin-left: auto;
+}
+
+.bond-heart-on {
+  color: var(--color-love-edge);
+}
+
+.bond-heart-off {
+  color: var(--color-line);
+}
+
+.bond-hint {
+  margin: 0;
+}
+
+.bond-tricks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.bond-trick-lvl {
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.bond-badge-soulmate {
+  box-shadow: 0 0 0 2px var(--color-gold-edge);
+}
+
+/* Soulmates: a soft golden glow on the name (FishCard and lists). */
+.bond-soulmate,
+.bond-soulmate input {
+  text-shadow:
+    0 0 6px var(--color-gold),
+    0 0 12px var(--color-gold);
+}
+
+/* ---- My Fish ---- */
+.myfish-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.myfish-tank {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  color: var(--color-text);
+}
+
+.myfish-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--tap-min);
+  padding: var(--space-2) var(--space-3);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.myfish-row:hover {
+  background: var(--color-surface-alt);
+}
+
+.myfish-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* The tank is keyboard-focusable (arrows pick a fish, Space pets): only show a ring for keyboard focus. */
+.tank-canvas:focus {
+  outline: none;
+}
+
+.tank-canvas:focus-visible {
+  outline: 3px solid var(--color-gold);
+  outline-offset: -3px;
+}

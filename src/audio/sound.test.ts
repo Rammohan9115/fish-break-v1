@@ -68,7 +68,7 @@ describe('SoundEngine', () => {
   it('plays synthesized effects once unmuted, creating a single context', () => {
     const { fake, sfx } = engine();
     sfx.setMuted(false);
-    for (const name of ['plop', 'coin', 'chime', 'squeak', 'bubble'] as const) {
+    for (const name of ['plop', 'coin', 'chime', 'squeak', 'bubble', 'bloop'] as const) {
       clock += 1000;
       expect(sfx.play(name)).toBe(true);
     }

@@ -285,3 +285,28 @@ describe('v3 → v4 migration (breeding overhaul, bigger tanks)', () => {
     expect(state.fish).toHaveLength(3);
   });
 });
+
+describe('v4 → v5 migration (petting & bond)', () => {
+  const strip = (f: ReturnType<typeof makeFish>) => {
+    const { bondPoints: _p, bondLevel: _l, petLog: _g, lastPettedAt: _t, feedBondLog: _f, ...rest } = f;
+    return rest;
+  };
+
+  it('every fish and napping baby starts as a Stranger, and nothing else changes', () => {
+    const s = makeState({ fish: [makeFish({ name: 'Bubbles' }), makeFish()] });
+    const old = { ...s, version: 4, fish: s.fish.map(strip), nursery: [strip(makeFish({ tankId: '' }))] };
+    const migrated = migrate(old as unknown as Record<string, unknown>);
+    expect(isValidGameState(migrated)).toBe(true);
+    const state = migrated as unknown as ReturnType<typeof makeState>;
+    for (const f of [...state.fish, ...state.nursery]) {
+      expect(f).toMatchObject({ bondPoints: 0, bondLevel: 0, petLog: [], lastPettedAt: null, feedBondLog: [] });
+    }
+    expect(state.fish[0]!.name).toBe('Bubbles');
+    expect(state.tanks).toEqual(s.tanks);
+  });
+
+  it('a v4 save missing bond fields is not valid until migrated', () => {
+    const s = makeState({ fish: [makeFish()] });
+    expect(isValidGameState({ ...s, fish: s.fish.map(strip) })).toBe(false);
+  });
+});

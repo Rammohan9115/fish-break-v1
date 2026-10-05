@@ -77,9 +77,14 @@ interface Fish {
   lastBredAt: number | null;
   lastDropAt: number;
   tankId: string;
+  bondPoints: number;     // only ever goes up (see Petting & Bond)
+  bondLevel: 0 | 1 | 2 | 3 | 4 | 5;
+  petLog: number[];       // timestamps of rewarded pet sessions in the last hour
+  lastPettedAt: number | null;
+  feedBondLog: number[];  // timestamps of hand-feeding bond grants in the last hour
 }
 
-interface Egg { id: string; speciesId: SpeciesId; variant: string; shiny: boolean; tankId: string; hatchAt: number; x?: number; } // x: where it was laid
+interface Egg { id: string; speciesId: SpeciesId; variant: string; shiny: boolean; tankId: string; hatchAt: number; x?: number; startBond?: number; } // x: where it was laid; startBond: the baby's starting bond
 
 interface Courtship { id: string; tankId: string; fishIds: [string, string]; startedAt: number; endsAt: number; x: number; }
 
@@ -255,6 +260,51 @@ randomness only affects the baby's color and shiny chance.
 | shipwreck | Shipwreck | L13 | 6 pearls |
 Decor sits on the sand and is placed by dragging horizontally. Max 8 decor items per tank. Sell back for 50%.
 
+## Petting & Bond
+Press and hold a fish to pet it. Petting builds a **bond** that unlocks tricks and small perks. It's a fidget toy for
+stress relief, so it must always feel soft and rewarding.
+- **Pillars:** bond NEVER decreases (no decay, no guilt, no "your fish misses you"). Rewards cap; the joy doesn't.
+  Every pet gets instant feedback.
+- **Levels** (`BOND.levels`): 0 Stranger (0) · 1 Curious (10) · 2 Friendly (30) · 3 Buddy (60) · 4 Best Friend (100) · 5 Soulmate (160).
+- **Sources:**
+  - A completed pet session gives +3 bond, +5 happiness and +1 XP.
+  - A fish eating a pellet the player dropped within 80 units of it gives +0.2 bond (max +2 per fish per rolling hour).
+- **Cap:** 3 rewarded sessions per fish per rolling hour. After that, petting plays every animation and gives +2 happiness,
+  but no bond or XP, and the fish shows "😌 content" instead of the meter.
+- **Babies** of two Buddy+ parents start at Curious (10). The egg stores it as `startBond`.
+- **Gesture:**
+  - Hold ~250ms on a fish in look mode to pet; the hitbox is +12 units. A quick tap keeps its behavior (quick actions, then the FishCard).
+  - Dragging before the hold completes pans on tall screens; elsewhere it starts petting.
+  - Petting is off in Feed, Clean, decor drag, pairing and Break.
+- **While holding:**
+  - The fish stops, faces the pointer and drifts after it slowly (never leaving the water).
+  - It leans in with a slower body wave and happy closed "^ ^" eyes.
+  - Hearts float up every ~0.5s, and sparkles appear at the pointer.
+  - A heart-ring meter at the pointer fills in 3s. Stroking (back and forth) fills it 50% faster and makes the fish wiggle.
+- **When the meter fills:** a heart burst, a "+3 💕" pop, a happy spin and a soft "bloop". Keep holding for the next session.
+  Releasing early loses the partial meter (no penalty) and the fish wiggles.
+- **Species flavor:** the puffer puffs a little; the axolotl rolls onto its back; the jelly pulses slowly and glows; the betta fans its fins.
+- **Keyboard:** Tab focuses the tank, ←/→ pick a fish, and holding Space pets it.
+- **Tricks & perks:**
+  - Curious: says hi (swims over when the cursor hovers near, or when you tap the water nearby).
+  - Friendly: Spin.
+  - Buddy: Bubble Hoop.
+  - Best Friend: Follow mode (30s) and +10% shell drops (rounded up).
+  - Soulmate: the species signature, a golden heart badge and a name glow.
+  - Signatures: goldfish heart bubble · guppy rainbow twirl · danio/tetra zoom dash · betta fin fan · angelfish loop-de-loop ·
+    clownfish wiggle dance · puffer puff-spin-pop · axolotl backflip · koi leap and splash · jelly rainbow glow.
+  - Play tricks from the FishCard Tricks row (locked tricks show the level needed) or by double-tapping the fish (it cycles through tricks).
+    Each trick has a 5s cooldown and gives no rewards.
+- **Greeting:** after 30+ minutes away, Friendly+ fish swim to the front and wiggle.
+- **UI:**
+  - The FishCard Bond section: badge, progress to the next unlock, pets left this hour, a live % for screen readers, and Tricks.
+  - Level-up: a big heart burst, a toast ("Bubbles is now your Buddy! 🎉 New trick: Bubble Hoop") and a trick demo.
+  - My Fish lists every fish with its bond and can sort by bond.
+  - The sell/rehome confirm for a Buddy+ fish names the bond neutrally.
+  - The first fish tap after the update shows "Tip: press and hold to pet 💕" once.
+- **Reduced motion:** no follow drift, fewer hearts, and tricks become simple scale pulses.
+- **Performance:** heart/sparkle/ring particles are pooled, so nothing is allocated per frame.
+
 ## Daily gift
 Once per local calendar day, on first open: 20 shells + 3 premium food, with a 15% chance of +1 pearl. A gift box bobs in the tank and pops open on click. No streaks.
 
@@ -262,7 +312,7 @@ Once per local calendar day, on first open: 20 shells + 3 premium food, with a 1
 - 1 classic tank, capacity 10, cleanliness 100
 - 2 baby danios with random variants and names
 - 30 shells, 0 pearls, level 1
-- Short onboarding: 3 tooltip bubbles (Feed → Watch them grow → Collect shells)
+- Short onboarding: 4 tooltip bubbles (Feed → Watch them grow → Collect shells → Pet your fish)
 
 ## UI
 - The tank fills the viewport (max aspect ~16:10, letterboxed with a soft gradient).
@@ -271,7 +321,8 @@ Once per local calendar day, on first open: 20 shells + 3 premium food, with a 1
 - **Capacity** shows as "🐟 7/10" on the HUD tank tag and in the tank switcher, with an "Upgrade" shortcut once a tank is 80%+ full.
 - **Feed mode:** clicking in the water drops 1 pellet at that x position (max 1 pellet per 150ms).
 - **Clean mode:** the cursor becomes a sponge; drag across algae to wipe.
-- **Clicking a fish** opens a FishCard: name (editable), species, stage, hunger bar, happiness bar, growth progress, breeding checklist + Pair up, sell button.
+- **Clicking a fish** opens a FishCard: name (editable), species, stage, hunger bar, happiness bar, growth progress, bond + tricks, breeding checklist + Pair up, sell button.
+- **My Fish 🐟** lists every fish by tank (plus the Nursery) with its bond, sortable by bond / name / species. Tap a row to open that fish.
 - **Shop tabs:** Fish / Food / Decor / Tanks. Locked items are shown greyed out with "Unlocks at Lv X".
 - **Toasts** appear bottom-center and auto-dismiss after 3s.
 - Responsive down to 360px wide (toolbar wraps to 2 rows on mobile).

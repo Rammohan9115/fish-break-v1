@@ -1,12 +1,25 @@
 // Hosts the tank canvas and the renderer. React never draws fish; it only mounts the canvas
-// and routes input: collect a drop > sponge (Clean) / drop food (Feed/Premium) > fish > decor (hold to pick up, then drag).
+// and routes input: collect a drop > sponge (Clean) / drop food (Feed/Premium) > fish (tap, double-tap trick,
+// hold to pet) > decor (hold to pick up, then drag). Keyboard: arrows pick a fish, hold Space to pet it.
 import { useEffect, useRef } from 'react';
-import { DECOR_LONG_PRESS_MS, DRAG_THRESHOLD_PX, LONG_PRESS_SLOP_PX, PAN_TIP_KEY, SAND_Y, XP } from '../game/constants';
+import {
+  BOND,
+  DECOR_LONG_PRESS_MS,
+  DOUBLE_TAP_MS,
+  DRAG_THRESHOLD_PX,
+  LONG_PRESS_SLOP_PX,
+  PAN_TIP_KEY,
+  PET_HOLD_MS,
+  PET_TIP_KEY,
+  SAND_Y,
+  XP,
+} from '../game/constants';
+import { playableTricks } from '../game/bond';
 import { algaeTouchedBySponge } from '../game/sim';
 import { sound } from '../audio/sound';
 import { breedingQuestStep, breedingUnlocked, compatiblePartners, isReadyToPair } from '../game/breeding';
 import { Renderer, type BreedingView } from '../render/renderer';
-import { subscribeSimEvents, useGameStore } from '../store/gameStore';
+import { subscribeBondEvents, subscribeSimEvents, useGameStore } from '../store/gameStore';
 import { DailyGift } from './DailyGift';
 import { HUD_BUMP_EVENT } from './Hud';
 
@@ -19,7 +32,54 @@ type Gesture =
   /** A press on decor that isn't picked up yet: it only moves if held for DECOR_LONG_PRESS_MS. */
   | { kind: 'hold'; id: string; grabOffset: number; startClientX: number; startClientY: number }
   | { kind: 'pan'; lastClientX: number }
+  /** A press on a fish: a tap on release, or petting once held for PET_HOLD_MS. */
+  | { kind: 'press'; fishId: string; startClientX: number; startClientY: number }
+  | { kind: 'pet'; fishId: string }
   | null;
+
+/** The last fish tap (two quick taps on a Friendly+ fish play a trick). */
+let lastTap: { fishId: string; at: number } | null = null;
+/** Which trick a double-tap plays next, per fish (they take turns). */
+const nextTrick = new Map<string, number>();
+
+/** "Tip: press and hold to pet 💕", once, the first time a returning player taps a fish. */
+function showPetTip(): void {
+  if (useGameStore.getState().onboardingStep !== null) return;
+  try {
+    if (localStorage.getItem(PET_TIP_KEY)) return;
+    localStorage.setItem(PET_TIP_KEY, '1');
+  } catch {
+    return;
+  }
+  useGameStore.getState().addToast('Tip: press and hold to pet 💕');
+}
+
+/** A tap on a fish (released before the pet hold): quick actions, the full card on a second tap, or a trick on a double-tap. */
+function tapFish(fishId: string): void {
+  const store = useGameStore.getState();
+  const now = Date.now();
+  const fish = store.game.fish.find((f) => f.id === fishId);
+  const tricks = fish ? playableTricks(fish) : [];
+  if (lastTap?.fishId === fishId && now - lastTap.at < DOUBLE_TAP_MS && tricks.length > 0) {
+    lastTap = null;
+    const i = nextTrick.get(fishId) ?? 0;
+    // Try each trick in turn until one is off cooldown.
+    for (let k = 0; k < tricks.length; k++) {
+      const trick = tricks[(i + k) % tricks.length]!;
+      if (store.playTrick(fishId, trick)) {
+        nextTrick.set(fishId, (i + k + 1) % tricks.length);
+        sound.play('bubble');
+        break;
+      }
+    }
+    return;
+  }
+  lastTap = { fishId, at: now };
+  showPetTip();
+  // Tapping the same fish again opens its full card; the first tap shows quick actions next to it.
+  if (store.quickFishId === fishId) store.selectFish(fishId);
+  else store.showQuickActions(fishId);
+}
 
 /** Wipes every algae spot the sponge touched between two tank-space points. */
 function sponge(renderer: Renderer, from: Point, to: Point): void {
@@ -76,6 +136,9 @@ function handleTankPress(renderer: Renderer, clientX: number, clientY: number): 
     return null;
   }
 
+  // Hand-feeding: fish close to where the pellet drops earn a little bond when they eat it.
+  const nearFish = () => renderer.fishNear(x, y, BOND.feedRadius);
+
   const dropId = renderer.dropAt(x, y);
   if (dropId) {
     renderer.popDrop(dropId);
@@ -99,7 +162,7 @@ function handleTankPress(renderer: Renderer, clientX: number, clientY: number): 
       store.setMode('feed');
       return null;
     }
-    const dropped = store.dropPellet(x, premium);
+    const dropped = store.dropPellet(x, premium, nearFish());
     if (dropped) sound.play('plop');
     if (dropped && premium && useGameStore.getState().game.inventory.premiumFood === 0) {
       store.addToast('That was your last premium food 🌟');
@@ -110,14 +173,12 @@ function handleTankPress(renderer: Renderer, clientX: number, clientY: number): 
     return null;
   }
 
-  const fishId = renderer.fishAt(x, y);
+  const fishId = renderer.fishToPet(x, y);
   if (fishId) {
     renderer.poke(fishId);
     sound.play('bubble');
-    // Tapping the same fish again opens its full card; the first tap shows quick actions next to it.
-    if (store.quickFishId === fishId) store.selectFish(fishId);
-    else store.showQuickActions(fishId);
-    return null;
+    // Decided on release (tap) or after the hold (pet).
+    return { kind: 'press', fishId, startClientX: clientX, startClientY: clientY };
   }
 
   const decorId = renderer.decorAt(x, y);
@@ -136,6 +197,8 @@ function handleTankPress(renderer: Renderer, clientX: number, clientY: number): 
   store.selectFish(null);
   store.selectDecor(null);
   store.showQuickActions(null);
+  // Curious+ fish nearby swim over to say hi.
+  renderer.sayHi(x, y);
   // Empty water: on tall screens, dragging pans the view.
   return renderer.canPan ? { kind: 'pan', lastClientX: clientX } : null;
 }
@@ -176,6 +239,16 @@ export function TankView() {
       },
       onHudArrive: (icon) => window.dispatchEvent(new CustomEvent(HUD_BUMP_EVENT, { detail: icon })),
       getBreedingView,
+      onPetComplete: (fishId) => {
+        const result = useGameStore.getState().petFish(fishId);
+        if (result) {
+          sound.play('bloop');
+          navigator.vibrate?.(12);
+        }
+        return result;
+      },
+      onPetProgress: (fishId, progress) =>
+        useGameStore.getState().setPetProgress(progress === null ? null : { fishId, pct: Math.floor(progress * 10) * 10 }),
     });
     rendererRef.current = renderer;
     // Dev-only handle for debugging/tests (stripped from production builds).
@@ -203,9 +276,22 @@ export function TankView() {
       if (events.some((e) => e.type === 'eggLaid')) sound.play('chime');
       if (events.some((e) => e.type === 'hatched')) sound.play('bubble');
     });
+    const unsubscribeBond = subscribeBondEvents((e) => {
+      if (e.type === 'levelUp') {
+        renderer.celebrateBond(e.fishId, e.to);
+        sound.play('chime');
+      } else if (e.type === 'trick') {
+        if (e.trick !== 'follow') renderer.playTrick(e.fishId, e.trick);
+      } else if (e.type === 'follow') {
+        renderer.setFollow(e.fishId, e.until);
+      } else {
+        renderer.greet(e.fishIds);
+      }
+    });
     return () => {
       if (holdTimerRef.current !== null) window.clearTimeout(holdTimerRef.current);
       unsubscribe();
+      unsubscribeBond();
       observer.disconnect();
       renderer.stop();
       rendererRef.current = null;
@@ -220,6 +306,18 @@ export function TankView() {
     const gesture = handleTankPress(renderer, e.clientX, e.clientY);
     gestureRef.current = gesture;
     if (gesture) e.currentTarget.setPointerCapture(e.pointerId);
+    if (gesture?.kind === 'press') {
+      const point = renderer.toTank(e.clientX, e.clientY);
+      holdTimerRef.current = window.setTimeout(() => {
+        holdTimerRef.current = null;
+        if (gestureRef.current !== gesture) return;
+        // Held: start petting (the quick actions step aside so the fish stays visible).
+        if (!renderer.petStart(gesture.fishId, point)) return;
+        useGameStore.getState().showQuickActions(null);
+        navigator.vibrate?.(10);
+        gestureRef.current = { kind: 'pet', fishId: gesture.fishId };
+      }, PET_HOLD_MS);
+    }
     if (gesture?.kind === 'hold') {
       const canvas = e.currentTarget;
       holdTimerRef.current = window.setTimeout(() => {
@@ -247,6 +345,25 @@ export function TankView() {
       if (useGameStore.getState().mode !== 'clean') return;
       sponge(renderer, gesture.last, point);
       gesture.last = point;
+      return;
+    }
+    if (gesture?.kind === 'pet') {
+      renderer.petMove(point);
+      return;
+    }
+    if (gesture?.kind === 'press') {
+      if (Math.hypot(e.clientX - gesture.startClientX, e.clientY - gesture.startClientY) < LONG_PRESS_SLOP_PX) return;
+      clearHold();
+      // Moving before the hold completes: on tall screens the finger is looking around (pan); elsewhere
+      // there's nothing to pan, so it's someone eagerly stroking the fish: start petting right away.
+      if (renderer.canPan) {
+        gestureRef.current = { kind: 'pan', lastClientX: e.clientX };
+      } else if (renderer.petStart(gesture.fishId, point)) {
+        useGameStore.getState().showQuickActions(null);
+        gestureRef.current = { kind: 'pet', fishId: gesture.fishId };
+      } else {
+        gestureRef.current = null;
+      }
       return;
     }
     if (gesture?.kind === 'hold') {
@@ -277,9 +394,44 @@ export function TankView() {
     e.currentTarget.style.cursor = !hover ? '' : hover === useGameStore.getState().selectedDecorId ? 'grab' : 'pointer';
   };
 
+  /** Space is held down on a fish (keyboard petting). */
+  const keyPetRef = useRef(false);
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
+    const renderer = rendererRef.current;
+    const store = useGameStore.getState();
+    if (!renderer || store.mode !== 'look' || store.breakSession || store.pairingFishId) return;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      // Cycle through the fish in this tank.
+      const ids = store.game.fish.filter((f) => f.tankId === store.game.activeTankId).map((f) => f.id);
+      if (ids.length === 0) return;
+      e.preventDefault();
+      const current = ids.indexOf(store.quickFishId ?? store.selectedFishId ?? '');
+      const step = e.key === 'ArrowRight' ? 1 : -1;
+      const next = ids[(current + step + ids.length) % ids.length] ?? ids[0]!;
+      if (current === -1 && step < 0) store.showQuickActions(ids[ids.length - 1]!);
+      else store.showQuickActions(next);
+      return;
+    }
+    if (e.key === ' ') {
+      e.preventDefault();
+      const fishId = store.quickFishId ?? store.selectedFishId;
+      if (e.repeat || keyPetRef.current || !fishId) return;
+      keyPetRef.current = renderer.petStart(fishId, null);
+    }
+  };
+
+  const onKeyUp = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
+    if (e.key !== ' ' || !keyPetRef.current) return;
+    keyPetRef.current = false;
+    rendererRef.current?.petEnd();
+  };
+
   const endGesture = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const gesture = gestureRef.current;
     clearHold();
+    if (gesture?.kind === 'press' && e.type === 'pointerup') tapFish(gesture.fishId);
+    if (gesture?.kind === 'pet') rendererRef.current?.petEnd();
     if (gesture?.kind === 'hold' && e.type === 'pointerup' && !holdTipShownRef.current) {
       holdTipShownRef.current = true;
       useGameStore.getState().addToast('Hold a decoration to move it ✋');
@@ -300,6 +452,14 @@ export function TankView() {
         ref={canvasRef}
         className="tank-canvas"
         data-mode={mode}
+        tabIndex={0}
+        aria-label="Fish tank. Arrow keys pick a fish, hold Space to pet it."
+        onKeyDown={onKeyDown}
+        onKeyUp={onKeyUp}
+        onBlur={() => {
+          if (keyPetRef.current) rendererRef.current?.petEnd();
+          keyPetRef.current = false;
+        }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endGesture}

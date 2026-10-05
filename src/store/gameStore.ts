@@ -8,6 +8,10 @@ import {
   FEED_COOLDOWN_MS,
   TOAST_QUEUE_MAX,
   FISH_NAME_MAX_LENGTH,
+  FOLLOW_MS,
+  GREET_AWAY_MS,
+  GREET_START_DELAY_MS,
+  TRICK_COOLDOWN_MS,
   JUVENILE_AT_FRACTION,
   MINUTE_MS,
   ONBOARDING_STEPS,
@@ -21,6 +25,16 @@ import {
   UNLOCK_LEVEL,
   XP,
 } from '../game/constants';
+import {
+  bondName,
+  completePetSession,
+  grantFeedBond,
+  levelUnlockText,
+  setBondLevel,
+  TRICKS,
+  type BondLevelUp,
+  type TrickId,
+} from '../game/bond';
 import { breedingChecklist, compatiblePartners, startCourtship } from '../game/breeding';
 import * as economy from '../game/economy';
 import { grantXp } from '../game/levels';
@@ -35,7 +49,7 @@ import {
   tick,
   type SimEvent,
 } from '../game/sim';
-import type { DecorId, GameState, Rng, SpeciesId, Stage, ThemeId } from '../game/types';
+import type { BondLevel, DecorId, GameState, Rng, SpeciesId, Stage, ThemeId } from '../game/types';
 import {
   browserEnv,
   formatOfflineSummary,
@@ -80,7 +94,7 @@ export function mergeToast(toasts: Toast[], text: string, id: number): Toast[] {
 export type ToolMode = 'look' | 'feed' | 'premium' | 'clean';
 
 /** Overlay panel currently open. */
-export type Panel = 'shop' | 'tanks' | 'break' | 'settings' | 'breeding' | null;
+export type Panel = 'shop' | 'tanks' | 'break' | 'settings' | 'breeding' | 'myfish' | null;
 export type BreedingTab = 'pairs' | 'nursery';
 
 /** An active Break Mode session (UI-only; not saved). */
@@ -107,7 +121,7 @@ export const PURCHASE_ERROR_TEXT: Record<economy.PurchaseError, string> = {
   courting: 'In love — try again after the egg 💞',
 };
 
-/** Onboarding steps: 0 Feed → 1 Watch them grow → 2 Collect shells. null = finished/not shown. */
+/** Onboarding steps: 0 Feed → 1 Watch them grow → 2 Collect shells → 3 Pet your fish. null = finished/not shown. */
 export type OnboardingStep = number | null;
 
 export interface GameStore {
@@ -138,12 +152,19 @@ export interface GameStore {
   quickFishId: string | null;
   /** Last tap in the tank while a tool mode is on (modes exit after MODE_IDLE_EXIT_MS idle). */
   modeTouchedAt: number;
+  /** Transient: the fish being petted and its meter (0..100, in steps), for the FishCard's live region. */
+  petProgress: { fishId: string; pct: number } | null;
+  /** Transient: when each `${fishId}:${trick}` can play again (ms). */
+  trickCooldowns: Record<string, number>;
+  /** Transient: a Best Friend+ fish following the pointer, until this time (ms). */
+  follow: { fishId: string; until: number } | null;
 
   loadState: (game: GameState) => void;
   /** Runs fixed 1s sim ticks up to `now`; long gaps use offline catch-up. */
   advanceTo: (now: number, rng?: Rng) => void;
   /** Drops a pellet at logical x in the active tank. Returns false if rate-limited or out of premium food. */
-  dropPellet: (x: number, premium?: boolean) => boolean;
+  /** `nearFishIds`: fish within BOND.feedRadius of the drop (they earn a little bond if they eat it). */
+  dropPellet: (x: number, premium?: boolean, nearFishIds?: readonly string[]) => boolean;
   eatPellet: (fishId: string, pelletId: string) => boolean;
   collectDrop: (dropId: string) => boolean;
   wipeAlgae: (spotId: string) => boolean;
@@ -160,7 +181,14 @@ export interface GameStore {
   /** Marks activity in the current tool mode (resets the idle exit). */
   touchMode: () => void;
   setReducedMotion: (on: boolean) => void;
-  /** Shows the three first-time tips again. */
+  /** A pet session completed (the meter filled). Null if the fish is gone. */
+  petFish: (fishId: string) => { rewarded: boolean; levelUp: BondLevelUp | null } | null;
+  setPetProgress: (progress: { fishId: string; pct: number } | null) => void;
+  /** Plays a trick if unlocked and off cooldown. Returns false otherwise. */
+  playTrick: (fishId: string, trick: TrickId) => boolean;
+  /** Best Friend+: follow the pointer for FOLLOW_MS (or stop). */
+  toggleFollow: (fishId: string) => void;
+  /** Shows the first-time tips again. */
   replayTips: () => void;
   /** Completes `step` if it is the current one (no-op otherwise). */
   completeOnboardingStep: (step: number) => void;
@@ -222,6 +250,10 @@ export interface DevActions {
   finishCourtships: () => void;
   hatchEggsNow: () => void;
   fillTank: () => void;
+  /** Bond test helpers. */
+  setBondLevel: (fishId: string, level: BondLevel) => void;
+  resetPetCaps: () => void;
+  greet: () => void;
 }
 
 /** Growth seconds that put a fish at the start of `stage`. */
@@ -274,9 +306,42 @@ export function breedingToasts(events: SimEvent[], game: GameState): string[] {
   return texts;
 }
 
+/** Bond moments for the renderer (not saved): level-ups, tricks, follow mode, the welcome-back greeting. */
+export type BondEvent =
+  | { type: 'levelUp'; fishId: string; to: BondLevel }
+  | { type: 'trick'; fishId: string; trick: TrickId }
+  | { type: 'follow'; fishId: string; until: number | null }
+  | { type: 'greet'; fishIds: string[] };
+type BondListener = (event: BondEvent) => void;
+const bondListeners = new Set<BondListener>();
+
+export function subscribeBondEvents(listener: BondListener): () => void {
+  bondListeners.add(listener);
+  return () => bondListeners.delete(listener);
+}
+
+function emitBond(event: BondEvent): void {
+  for (const listener of bondListeners) listener(event);
+}
+
+/** Pellets dropped near fish: pelletId → the fish that were close (hand-feeding bond). Transient. */
+const nearPellets = new Map<string, readonly string[]>();
+
+/** Friendly+ fish in the active tank (they greet you after a long time away). */
+function greeters(game: GameState): string[] {
+  return game.fish.filter((f) => f.tankId === game.activeTankId && f.bondLevel >= 2).map((f) => f.id);
+}
+
+export const trickKey = (fishId: string, trick: TrickId): string => `${fishId}:${trick}`;
+
 let toastSeq = 0;
 let pelletSeq = 0;
 let devFishSeq = 0;
+
+/** Whether a fish's bond level unlocks this trick. */
+function unlockedTrick(level: BondLevel, trick: TrickId): boolean {
+  return TRICKS.some((t) => t.id === trick && level >= t.level);
+}
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 
@@ -306,6 +371,16 @@ export const useGameStore = create<GameStore>()((set, get) => {
     announceLevelUps(levelsGained);
   };
 
+  /** Celebrates a bond level-up: a toast naming what's new, and the renderer's burst + trick demo. */
+  const announceBondLevelUp = (levelUp: BondLevelUp | null) => {
+    if (!levelUp) return;
+    const fish = get().game.fish.find((f) => f.id === levelUp.fishId);
+    if (!fish) return;
+    const unlock = levelUnlockText(levelUp.to, fish.speciesId);
+    get().addToast(`${fish.name} is now your ${bondName(levelUp.to)}! 🎉${unlock ? ` ${unlock.replace('Trick:', 'New trick:')}` : ''}`);
+    emitBond({ type: 'levelUp', fishId: fish.id, to: levelUp.to });
+  };
+
   const levelUpsFrom = (events: SimEvent[]) => events.flatMap((e) => (e.type === 'levelUp' ? [e.level] : []));
 
   return {
@@ -327,6 +402,9 @@ export const useGameStore = create<GameStore>()((set, get) => {
     guideOpen: false,
     quickFishId: null,
     modeTouchedAt: 0,
+    petProgress: null,
+    trickCooldowns: {},
+    follow: null,
 
     loadState: (game) =>
       set({
@@ -358,6 +436,10 @@ export const useGameStore = create<GameStore>()((set, get) => {
         game = result.state;
         events.push(...result.events);
         if (result.summary.elapsedMs >= OFFLINE_SUMMARY_MIN_MS) get().addToast(formatOfflineSummary(result.summary));
+        if (gap >= GREET_AWAY_MS) {
+          const fishIds = greeters(game);
+          if (fishIds.length > 0) emitBond({ type: 'greet', fishIds });
+        }
       } else {
         while (game.lastTickAt + SIM_TICK_MS <= now) {
           const result = tick(game, SIM_TICK_MS, rng);
@@ -373,7 +455,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
       }
     },
 
-    dropPellet: (x, premium = false) => {
+    dropPellet: (x, premium = false, nearFishIds = []) => {
       const now = Date.now();
       const { game, lastPelletAt } = get();
       if (now - lastPelletAt < FEED_COOLDOWN_MS) return false;
@@ -388,6 +470,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
         landedAt: null,
       };
       get().completeOnboardingStep(0);
+      if (nearFishIds.length > 0) nearPellets.set(pellet.id, nearFishIds);
       set({
         lastPelletAt: now,
         game: {
@@ -402,11 +485,21 @@ export const useGameStore = create<GameStore>()((set, get) => {
     eatPellet: (fishId, pelletId) => {
       const now = Date.now();
       const { game } = get();
-      const next = simEatPellet(game, fishId, pelletId, now);
+      let next = simEatPellet(game, fishId, pelletId, now);
       if (next === game) return false;
+      // Hand-fed: the pellet was dropped near this fish.
+      let levelUp: BondLevelUp | null = null;
+      if (nearPellets.get(pelletId)?.includes(fishId)) ({ state: next, levelUp } = grantFeedBond(next, fishId, now));
+      nearPellets.delete(pelletId);
+      // Forget pellets that are gone (dissolved or eaten elsewhere).
+      if (nearPellets.size > 0) {
+        const alive = new Set(next.tanks.flatMap((t) => t.pellets.map((p) => p.id)));
+        for (const id of nearPellets.keys()) if (!alive.has(id)) nearPellets.delete(id);
+      }
       // Feeding XP is capped per hour-long window (saved, so reloads don't reset it).
       const { xp, feedXp } = economy.feedingXp(next, now);
       commitWithXp({ ...next, feedXp }, xp);
+      announceBondLevelUp(levelUp);
       return true;
     },
 
@@ -501,6 +594,50 @@ export const useGameStore = create<GameStore>()((set, get) => {
     touchMode: () => set({ modeTouchedAt: Date.now() }),
 
     setReducedMotion: (on) => set((s) => ({ game: { ...s.game, settings: { ...s.game.settings, reducedMotion: on } } })),
+
+    petFish: (fishId) => {
+      const result = completePetSession(get().game, fishId, Date.now());
+      if (result.state === get().game) return null;
+      set({ game: result.state });
+      announceLevelUps(result.levelsGained);
+      announceBondLevelUp(result.levelUp);
+      get().completeOnboardingStep(3);
+      return { rewarded: result.rewarded, levelUp: result.levelUp };
+    },
+
+    setPetProgress: (petProgress) => {
+      const prev = get().petProgress;
+      if (prev?.fishId === petProgress?.fishId && prev?.pct === petProgress?.pct) return;
+      set({ petProgress });
+    },
+
+    playTrick: (fishId, trick) => {
+      const fish = get().game.fish.find((f) => f.id === fishId);
+      if (!fish || trick === 'follow') return false;
+      const now = Date.now();
+      const key = trickKey(fishId, trick);
+      if ((get().trickCooldowns[key] ?? 0) > now) return false;
+      if (!unlockedTrick(fish.bondLevel, trick)) return false;
+      set((s) => ({ trickCooldowns: { ...s.trickCooldowns, [key]: now + TRICK_COOLDOWN_MS } }));
+      emitBond({ type: 'trick', fishId, trick });
+      return true;
+    },
+
+    toggleFollow: (fishId) => {
+      const fish = get().game.fish.find((f) => f.id === fishId);
+      if (!fish || !unlockedTrick(fish.bondLevel, 'follow')) return;
+      const now = Date.now();
+      const current = get().follow;
+      if (current && current.fishId === fishId && current.until > now) {
+        set({ follow: null });
+        emitBond({ type: 'follow', fishId, until: null });
+        return;
+      }
+      const until = now + FOLLOW_MS;
+      if (current && current.fishId !== fishId) emitBond({ type: 'follow', fishId: current.fishId, until: null });
+      set({ follow: { fishId, until } });
+      emitBond({ type: 'follow', fishId, until });
+    },
 
     replayTips: () => set({ onboardingStep: 0, panel: null }),
 
@@ -725,6 +862,12 @@ export const useGameStore = create<GameStore>()((set, get) => {
         const now = Date.now();
         set((s) => ({ game: { ...s.game, eggs: s.game.eggs.map((e) => ({ ...e, hatchAt: Math.min(e.hatchAt, now) })) } }));
       },
+      setBondLevel: (fishId, level) =>
+        set((s) => ({ game: { ...s.game, fish: s.game.fish.map((f) => (f.id === fishId ? setBondLevel(f, level) : f)) } })),
+      resetPetCaps: () => {
+        set((s) => ({ game: { ...s.game, fish: s.game.fish.map((f) => ({ ...f, petLog: [], feedBondLog: [] })) }, trickCooldowns: {} }));
+      },
+      greet: () => emitBond({ type: 'greet', fishIds: greeters(get().game) }),
       fillTank: () => {
         const { game } = get();
         const tank = game.tanks.find((t) => t.id === game.activeTankId);
@@ -756,6 +899,11 @@ export function startGame(env: AutosaveEnv = browserEnv()): () => void {
   const loaded = useGameStore.getState().game;
   if (loaded.level >= UNLOCK_LEVEL.breeding && !loaded.breedingQuest.guideSeen) useGameStore.setState({ guideOpen: true });
   if (summary) store.addToast(formatOfflineSummary(summary));
+  // Back after a while: Friendly+ fish swim to the glass to say hi (once the tank has mounted).
+  if (summary && summary.elapsedMs >= GREET_AWAY_MS) {
+    const fishIds = greeters(loaded);
+    if (fishIds.length > 0) globalThis.setTimeout(() => emitBond({ type: 'greet', fishIds }), GREET_START_DELAY_MS);
+  }
 
   const loop = env.setInterval(() => useGameStore.getState().advanceTo(Date.now()), SIM_TICK_MS);
   const stopAutosave = startAutosave(() => useGameStore.getState().game, env);

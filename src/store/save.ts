@@ -64,6 +64,12 @@ export const migrations: Record<number, Migration> = {
       breedingQuest: { guideSeen: false, status: level >= UNLOCK_LEVEL.breeding ? 'active' : 'off' },
     };
   },
+  // v4 → v5: petting & bond. Every fish (and napping baby) starts as a Stranger.
+  4: (data) => {
+    const withBond = (list: unknown) =>
+      Array.isArray(list) ? list.map((f) => (isObject(f) ? { bondPoints: 0, bondLevel: 0, petLog: [], lastPettedAt: null, feedBondLog: [], ...f } : f)) : list;
+    return { ...data, fish: withBond(data.fish), nursery: withBond(data.nursery) };
+  },
 };
 
 /** The v3 capacity rules, needed to read old saves: base 6, +2 per upgrade, at most 3 upgrades. */
@@ -105,7 +111,11 @@ function isFish(v: unknown): boolean {
     isNum(v.hunger) &&
     isNum(v.happiness) &&
     isNum(v.lastDropAt) &&
-    isStr(v.tankId)
+    isStr(v.tankId) &&
+    isNum(v.bondPoints) &&
+    isNum(v.bondLevel) &&
+    Array.isArray(v.petLog) &&
+    Array.isArray(v.feedBondLog)
   );
 }
 

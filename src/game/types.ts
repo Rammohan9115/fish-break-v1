@@ -120,7 +120,18 @@ export interface Fish {
   /** Premium-food 2x growth boost active until this time (ms), or null. */
   boostUntil: number | null;
   tankId: string;
+  /** Bond with the player (only ever goes up). Petting and hand-feeding raise it. */
+  bondPoints: number;
+  /** 0 Stranger … 5 Soulmate, derived from bondPoints (thresholds in BOND.levels). */
+  bondLevel: BondLevel;
+  /** Timestamps of rewarded pet sessions in the last hour (pruned; enforces the per-hour cap). */
+  petLog: number[];
+  lastPettedAt: number | null;
+  /** Timestamps of hand-feeding bond grants in the last hour (pruned; enforces the per-hour cap). */
+  feedBondLog: number[];
 }
+
+export type BondLevel = 0 | 1 | 2 | 3 | 4 | 5;
 
 export interface Egg {
   id: string;
@@ -131,6 +142,8 @@ export interface Egg {
   hatchAt: number;
   /** Where it was laid on the sand (tank units); older eggs pick a stable spot from their id. */
   x?: number;
+  /** Bond points the baby starts with (decided when laid, from its parents' bond). */
+  startBond?: number;
 }
 
 /** Two fish swimming their heart loop; an egg is laid (guaranteed) at `x` when it ends. */

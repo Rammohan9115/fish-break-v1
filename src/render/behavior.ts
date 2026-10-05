@@ -76,6 +76,8 @@ import {
   JELLY_WOBBLE_FREQ,
   JELLY_CONTRACT_MS,
   JELLY_EXPAND_MS,
+  PET_FOLLOW_GAP,
+  PET_FOLLOW_SPEED,
 } from '../game/constants';
 import { getSpecies } from '../game/species';
 import type { Fish, Rng, SpeciesId } from '../game/types';
@@ -197,6 +199,19 @@ export interface BehaviorInput {
   reduced?: boolean;
   /** Jelly tentacle areas fish keep out of. */
   jellies?: JellyZone[];
+  /** Being petted: hold still near the pointer, facing it (and drift after it if `follow`). */
+  pet?: PetInput;
+  /** Swim toward this point instead of wandering (say hi, follow mode, the greeting). Food still wins. */
+  seek?: { x: number; y: number };
+}
+
+export interface PetInput {
+  x: number;
+  y: number;
+  /** Drift gently after the pointer (off with reduced motion). */
+  follow: boolean;
+  /** 0..1: stroking makes the body wiggle happily. */
+  wiggle: number;
 }
 
 /**
@@ -445,6 +460,10 @@ export function jellyAvoidance(x: number, y: number, zones: JellyZone[] | undefi
  */
 export function updateActor(actor: FishActor, input: BehaviorInput): string | null {
   if (actor.jelly) return updateJelly(actor, actor.jelly, input);
+  if (input.pet) {
+    updatePetted(actor, input, input.pet);
+    return null;
+  }
   const { fish, now, dt, rng } = input;
   const species = getSpecies(fish.speciesId);
   const swim = swimBounds(fish.speciesId);
@@ -473,6 +492,10 @@ export function updateActor(actor: FishActor, input: BehaviorInput): string | nu
     const side = food.x >= actor.x ? 1 : -1;
     tx = food.x - side * mouthOffset(fish.speciesId, fish.stage) * 0.8;
     ty = food.y;
+  } else if (input.seek) {
+    tx = input.seek.x;
+    ty = input.seek.y;
+    actor.nextWanderAt = now + WANDER_MIN_MS;
   } else {
     const arrived = Math.hypot(actor.targetX - actor.x, actor.targetY - actor.y) < ARRIVE_DIST;
     if (arrived || now >= actor.nextWanderAt) pickWanderTarget(actor, rng, now);
@@ -564,6 +587,66 @@ export function updateActor(actor: FishActor, input: BehaviorInput): string | nu
   return null;
 }
 
+/** How quickly a petted fish settles (speed → 0) and leans toward the pointer. */
+const PET_SETTLE = 6;
+/** Max lean toward the pointer while petted (radians). */
+const PET_LEAN = 0.3;
+/** The body wave slows to this fraction (dreamy) while petted. */
+const PET_WAVE = 0.45;
+
+/**
+ * Petted: stop swimming, turn to face the pointer, lean toward it with a slow dreamy body wave, and
+ * (if `follow`) drift gently after it, never leaving the water. Mutates the actor.
+ */
+function updatePetted(actor: FishActor, input: BehaviorInput, pet: PetInput): void {
+  const { fish, now, dt } = input;
+  const species = getSpecies(fish.speciesId);
+  const bounds = swimBounds(fish.speciesId);
+  actor.speed += (0 - actor.speed) * Math.min(1, dt * PET_SETTLE);
+  actor.nextWanderAt = now + WANDER_MIN_MS;
+  actor.indicator = null;
+
+  // Face the pointer (a normal eased turn-around when it crosses to the other side).
+  const dx = pet.x - actor.x;
+  const side = actor.turnStart === null ? (actor.facing >= 0 ? 1 : -1) : actor.turnFrom;
+  if (actor.turnStart === null && Math.abs(dx) > PET_FOLLOW_GAP * 0.3 && Math.sign(dx) !== side) {
+    actor.turnStart = now;
+    actor.turnFrom = side;
+  }
+  if (actor.turnStart !== null) {
+    const progress = (now - actor.turnStart) / TURN_MS;
+    if (progress >= 1) {
+      actor.turnFrom = -actor.turnFrom;
+      actor.facing = actor.turnFrom;
+      actor.turnStart = null;
+    } else {
+      actor.facing = turnFacing(actor.turnFrom, progress);
+    }
+  }
+  actor.heading = actor.facing >= 0 ? 0 : Math.PI;
+
+  // Drift after the pointer, keeping a little gap so the finger doesn't cover the face.
+  if (pet.follow) {
+    const gx = pet.x - (dx >= 0 ? 1 : -1) * PET_FOLLOW_GAP;
+    const gy = pet.y;
+    const ddx = gx - actor.x;
+    const ddy = gy - actor.y;
+    const d = Math.hypot(ddx, ddy);
+    if (d > 1) {
+      const step = Math.min(d, PET_FOLLOW_SPEED * dt);
+      actor.x = clamp(actor.x + (ddx / d) * step, bounds.minX, bounds.maxX);
+      actor.y = clamp(actor.y + (ddy / d) * step, bounds.minY, bounds.maxY);
+    }
+  }
+
+  // Lean into the touch.
+  const lean = clamp(Math.atan2(pet.y - actor.y, Math.abs(dx) + 20), -PET_LEAN, PET_LEAN);
+  actor.tilt += (lean - actor.tilt) * Math.min(1, dt * PET_SETTLE);
+  actor.stretch += (0 - actor.stretch) * Math.min(1, dt * STRETCH_SMOOTHING);
+  const wave = waveFrequency(species.motion, 0.35, fish.stage === 'baby') * (PET_WAVE + pet.wiggle * 1.6);
+  actor.phase += dt * wave;
+}
+
 const tmpBox: Box = { x0: 0, x1: 0, y0: 0, y1: 0 };
 
 /** The tentacle area of a jelly actor right now (written into `out`). */
@@ -571,6 +654,9 @@ export function jellyTentacles(actor: FishActor, fish: Fish, out: Box): Box {
   const { w, h } = jellySize(fish.stage);
   return tentacleBox(actor.x, actor.y, w, h, bellSplitY(fish.speciesId, fish.stage), out);
 }
+
+/** A petted jelly pulses slowly (longer, dreamier pulses). */
+const JELLY_PET_TEMPO = 1.7;
 
 /** A tap: a few quick happy pulses and a glow flash. */
 export function jellyHappy(j: JellyActor, now: number): void {
@@ -597,7 +683,9 @@ function updateJelly(actor: FishActor, j: JellyActor, input: BehaviorInput): str
   blink(actor, now, rng);
 
   // Where it wants to be: the courtship loop, a nearby pellet (tentacles under it), or a wander point.
-  const courting = input.courtship;
+  // Being petted holds it near the pointer (or where it is); saying hi or following steers it like a courtship.
+  const pet = input.pet;
+  const courting = input.courtship ?? (pet ? (pet.follow ? { x: pet.x, y: pet.y } : { x: actor.x, y: actor.y }) : input.seek);
   let food: FoodTarget | null = null;
   if (!courting && fish.hunger < FULL_HUNGER) {
     const near = nearestFood(actor, input.food);
@@ -622,7 +710,7 @@ function updateJelly(actor: FishActor, j: JellyActor, input: BehaviorInput): str
   // where it wants to be, so it sinks there instead).
   const gapK = (baby ? JELLY_BABY_GAP : 1) * (reduced ? JELLY_REDUCED_GAP : 1);
   const strength = (baby ? JELLY_BABY_PULSE : 1) * (reduced ? JELLY_REDUCED_PULSE : 1);
-  const tempo = baby ? 0.75 : reduced ? 1.3 : 1;
+  const tempo = (baby ? 0.75 : reduced ? 1.3 : 1) * (pet ? JELLY_PET_TEMPO : 1);
   const happyTempo = JELLY_HAPPY_GAP_MS / (JELLY_CONTRACT_MS + JELLY_EXPAND_MS);
   let pulse: { strength: number; thrust: number; tempo: number } | null = null;
   if (input.beat !== undefined && input.beat !== null && j.happyLeft === 0) {

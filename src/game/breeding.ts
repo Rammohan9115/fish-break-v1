@@ -1,6 +1,7 @@
 // Breeding (unlocks at L5): player-driven, never a hidden roll. The player pairs two ready fish, they
 // court for a minute, and an egg is guaranteed. Randomness only picks the baby's color and shininess.
 // Pure: decisions depend only on (state, now, rng).
+import { startBondFor } from './bond';
 import { BREEDING, MINUTE_MS, TANK_EDGE_MARGIN, TANK_WIDTH, UNLOCK_LEVEL } from './constants';
 import { stageProgress } from './sim';
 import { randomVariantKey, SPECIES } from './species';
@@ -251,6 +252,8 @@ export function completeCourtships(
       hatchAt: c.endsAt + hatchMinutes(a.speciesId) * MINUTE_MS,
       x: c.x,
     };
+    const startBond = startBondFor(a, b);
+    if (startBond > 0) egg.startBond = startBond;
     eggs.push(egg);
     fish = fish.map((f) => (f.id === a.id || f.id === b.id ? { ...f, lastBredAt: c.endsAt } : f));
     laid.push({ egg, parentIds: [a.id, b.id] });

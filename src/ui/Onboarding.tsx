@@ -14,6 +14,7 @@ const STEPS: StepDef[] = [
   { title: 'Feed 🍤', body: 'Tap Feed, then tap the water to drop a pellet. Your fish will swim over for a snack!', anchor: 'toolbar' },
   { title: 'Watch them grow 🌱', body: 'Fed, happy fish grow up over time. Tap a fish to see how it’s doing.', anchor: 'center' },
   { title: 'Collect shells 🐚', body: 'Grown-up fish drop shells on the sand. Tap them to collect, then spend them in the shop.', anchor: 'sand' },
+  { title: 'Pet your fish 💕', body: 'Press and hold a fish to pet it. Keep holding until the heart fills: you’ll grow closer and unlock cute tricks.', anchor: 'center' },
 ];
 
 export function Onboarding() {

@@ -1,7 +1,7 @@
 // All balance numbers live here. Logic must not contain magic numbers.
 import type { DecorDef, DecorId, Price, ThemeId } from './types';
 
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 // ---------------------------------------------------------------------------
 // Time
@@ -131,6 +131,33 @@ export const XP = {
   dailyGift: 5,
   breakComplete: 10,
 } as const;
+// ---------------------------------------------------------------------------
+// Petting & bond (bond never decreases)
+// ---------------------------------------------------------------------------
+export const BOND = {
+  /** Points needed for each bond level 0..5. */
+  levels: [0, 10, 30, 60, 100, 160],
+  names: ['Stranger', 'Curious', 'Friendly', 'Buddy', 'Best Friend', 'Soulmate'],
+  /** A completed (rewarded) pet session. */
+  petSession: 3,
+  petHappiness: 5,
+  petXp: 1,
+  /** Rewarded sessions per fish per rolling hour; later sessions only give contentHappiness. */
+  sessionsPerHour: 3,
+  contentHappiness: 2,
+  /** A fish eating a pellet the player dropped within feedRadius of it. */
+  feedBond: 0.2,
+  /** Max bond per fish per rolling hour from hand-feeding. */
+  feedBondPerHour: 2,
+  feedRadius: 80,
+  /** Babies of two parents at parentMinLevel+ start at this level's points. */
+  parentMinLevel: 3,
+  babyStartLevel: 1,
+  /** Shell drops of Best Friend+ fish are worth this much more (rounded up). */
+  dropBonusLevel: 4,
+  dropBonus: 0.1,
+} as const;
+
 /** Max XP earnable from feeding per rolling hour. */
 export const FEED_XP_MAX_PER_HOUR = 30;
 
@@ -273,7 +300,7 @@ export const BREAK_TIMER_TICK_MS = 250;
 // ---------------------------------------------------------------------------
 export const SOUND_MASTER_VOLUME = 0.9;
 /** Minimum gap between two plays of the same effect (avoids machine-gun squeaks). */
-export const SOUND_MIN_GAP_MS = { plop: 60, coin: 40, chime: 400, squeak: 140, bubble: 0 } as const;
+export const SOUND_MIN_GAP_MS = { plop: 60, coin: 40, chime: 400, squeak: 140, bubble: 0, bloop: 300 } as const;
 /** Ambience: random soft bubble blips per second, plus a quiet filtered-noise bed. */
 export const AMBIENCE_BLIPS_PER_SEC = 1.6;
 export const AMBIENCE_BED_VOLUME = 0.06;
@@ -289,7 +316,7 @@ export const DEV_TOOLS_IN_PRODUCTION = true;
 // ---------------------------------------------------------------------------
 export const FEED_COOLDOWN_MS = 150;
 export const TOAST_DURATION_MS = 3 * SECOND_MS;
-export const ONBOARDING_STEPS = 3;
+export const ONBOARDING_STEPS = 4;
 export const FISH_NAME_MAX_LENGTH = 20;
 export const TANK_NAME_MAX_LENGTH = 20;
 /** Pointer travel (CSS px) below which a press counts as a click, not a drag. */
@@ -298,6 +325,43 @@ export const DRAG_THRESHOLD_PX = 5;
 export const DECOR_LONG_PRESS_MS = 450;
 /** Pointer travel (CSS px) that cancels a pending long press (the finger is panning instead). */
 export const LONG_PRESS_SLOP_PX = 10;
+/** Hold a fish this long to start petting it (shorter is a tap). */
+export const PET_HOLD_MS = 250;
+/** The pet meter fills in this long while holding still… */
+export const PET_METER_MS = 3 * SECOND_MS;
+/** …and this much faster while stroking back and forth. */
+export const PET_STROKE_BOOST = 1.5;
+/** Extra hit radius (tank units) around a fish, so it's easy to grab on a phone. */
+export const PET_HITBOX_PAD = 12;
+/** Floating hearts while petting (seconds between; ×3 with reduced motion). */
+export const PET_HEART_GAP_S = 0.5;
+/** Direction reversals within PET_STROKE_WINDOW_MS that count as stroking. */
+export const PET_STROKE_REVERSALS = 2;
+export const PET_STROKE_WINDOW_MS = 700;
+/** Pointer travel (tank units) that counts as one stroke leg. */
+export const PET_STROKE_MIN_TRAVEL = 6;
+/** A petted fish drifts toward the pointer at most this fast (units/s), keeping this distance. */
+export const PET_FOLLOW_SPEED = 45;
+export const PET_FOLLOW_GAP = 26;
+/** Two taps on the same fish within this time play a trick. */
+export const DOUBLE_TAP_MS = 300;
+/** Each trick can play again after this long. */
+export const TRICK_COOLDOWN_MS = 5 * SECOND_MS;
+/** How long one trick animation lasts. */
+export const TRICK_DURATION_MS = 1600;
+/** Best Friend+ follow mode lasts this long. */
+export const FOLLOW_MS = 30 * SECOND_MS;
+/** Curious+ fish swim over to say hi when the pointer (or a water tap) is this close, at most once per cooldown. */
+export const HELLO_RADIUS = 150;
+export const HELLO_COOLDOWN_MS = 20 * SECOND_MS;
+export const HELLO_LINGER_MS = 2500;
+/** Coming back after this long away: Friendly+ fish swim to the front glass and wiggle. */
+export const GREET_AWAY_MS = 30 * 60 * SECOND_MS;
+export const GREET_MS = 3500;
+/** After loading, the greeting waits this long for the tank to mount. */
+export const GREET_START_DELAY_MS = 1200;
+/** localStorage flag: the "press and hold to pet" tip was shown. */
+export const PET_TIP_KEY = 'fishbowl-pet-tip-shown';
 
 // ---------------------------------------------------------------------------
 // Behavior (renderer)

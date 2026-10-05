@@ -10,8 +10,8 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
 - **Not started, Phase 11 (polish + balance):** check 360px mobile layout, touch for feed/clean/decor drag,
   empty states, a **Settings menu with Reset game (confirm) and a reduced-motion toggle** (`settings.reducedMotion`
   exists, but nothing in the UI changes it), and `scripts/balance.ts` pacing sim. Targets: Lv5 by end of day 1, Lv8 by day 3.
-- **Toolbar "My Fish 🐟"** still shows "coming soon". The spec lists it, but no phase prompt covers it.
-- **Checks:** `npm test` passes 343 tests (as of 2026-10-04) (`cloudSave.test.ts` fails to load under Node 20 when `.env.local` has Supabase keys: no native WebSocket), and `npm run build` passes. Local Node is 20.4, so Vite is pinned to 5 and Vitest to 2.
+- **Toolbar "My Fish 🐟"** opens `ui/MyFish.tsx` (built with Petting & Bond, 2026-10-04).
+- **Checks:** `npm test` passes 416 tests (as of 2026-10-04) (`cloudSave.test.ts` fails to load under Node 20 when `.env.local` has Supabase keys: no native WebSocket), and `npm run build` passes. Local Node is 20.4, so Vite is pinned to 5 and Vitest to 2.
 - **Repo:** https://github.com/Rammohan9115/fish-break-v1 (branch `main`).
 - **Live:** https://fishbowl-break.vercel.app. Deploy with `npx vercel --prod --yes`; the CLI is already logged in and linked (`.vercel/`, which is gitignored).
   GitHub auto-deploy isn't connected (`npx vercel git connect`). The `.vercel` line in `.gitignore` may still be uncommitted.
@@ -131,12 +131,13 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
 - Magic links use the implicit flow (`detectSessionInUrl`), so a link opened in another browser still works; `#error_description` → toast.
 
 ## Departures from the spec (data model)
-- **Save version is 4.** Migrations in `src/store/save.ts`, keyed by the version they upgrade from:
+- **Save version is 5.** Migrations in `src/store/save.ts`, keyed by the version they upgrade from:
   - **1→2:** adds `feedXp`, adds `ownedThemes` (built from the themes the tanks use), and defaults `boostUntil` to null.
   - **2→3:** adds `lastBreakXpAt`.
   - **3→4 (breeding overhaul):** each tank gets `upgrades` (old `round((capacity − 6) / 2)`, max 3) and `capacity = base[i] + 3 × upgrades`
     (base 10 / 12 / 15 by tank order). Adds `courtships: []`, `nursery: []`, and `breedingQuest` (`status: 'active'` for Lv5+, so they
     see the guide and quest once). Fish and eggs pass through untouched.
+  - **4→5 (petting & bond):** every fish and Nursery baby gets `bondPoints: 0, bondLevel: 0, petLog: [], lastPettedAt: null, feedBondLog: []`.
 - **`Fish.boostUntil: number|null`:** the premium 2× growth boost ends at this ms timestamp.
 - **`GameState.feedXp {windowStart, earned}`:** the hourly 30-XP feeding cap. It's saved so reloads can't reset it.
 - **`GameState.ownedThemes: ThemeId[]`:** a theme is bought once and can be applied to any tank.
@@ -235,6 +236,35 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
 - `SoundEngine` with a `sound` singleton: `play('plop'|'coin'|'chime'|'squeak'|'bubble')`, `setMuted`, `unlock`, `setAmbience`.
 - Muted by default, and no AudioContext is created until unmuted. Repeats are rate-limited.
 - Ambience plays only during Break Mode. The engine accepts a fake audio context for tests.
+
+## Petting & Bond (2026-10-04, save v5)
+- **Rules, `game/bond.ts` (pure, tested in `bond.test.ts`):**
+  - `completePetSession` (+3 bond, +5 happiness, +1 XP; capped to 3 per rolling hour via `petLog`, then +2 happiness only).
+  - `grantFeedBond` (+0.2, max +2/hour via `feedBondLog`), `startBondFor` (both parents Buddy+ → 10, stored on `Egg.startBond`).
+  - `bondDropValue` (Best Friend+ → `ceil(×1.1)`, used by `sim.addDrop`), `TRICKS`/`SIGNATURE_TRICKS`, `nextBondLevel`.
+  - Bond is only ever added (`addBond` takes the max). The sim never touches it otherwise.
+- **Store:**
+  - `petFish`, `playTrick` (5s `trickCooldowns`, transient), `toggleFollow` (`follow`, transient), `setPetProgress` (FishCard aria-live).
+  - `dropPellet(x, premium, nearFishIds)` fills a module-level `nearPellets` map (not saved); `eatPellet` grants feed bond from it.
+  - `subscribeBondEvents` emits `levelUp | trick | follow | greet` (greet when `advanceTo`'s offline path or `startGame` sees ≥30 min away).
+  - Dev: `setBondLevel`, `resetPetCaps`, `greet` (dev panel → Bond).
+- **Renderer:**
+  - `render/bondFx.ts` (`BondFx`, owned by the Renderer): petting meter/hearts/sparkles, hellos, follow, greeting, trick effects, level-up burst + demo.
+  - `render/petting.ts` (pure, tested): `PetMeter`, `StrokeDetector` (ring buffer), `trickPose`/`trickVisual`.
+  - `behavior.ts`: `BehaviorInput.pet` (`updatePetted`: settle, face the pointer, lean, drift) and `seek` (overrides wander; food still wins).
+    For jellies both act like a courtship target.
+  - Renderer API: `fishToPet` (+`PET_HITBOX_PAD`), `fishNear`, `petStart/petMove/petEnd`, `playTrick`, `setFollow`, `greet`, `sayHi`,
+    `celebrateBond`. Deps `onPetComplete` / `onPetProgress`.
+  - Eyes use the existing happy blink arc (`blinking || petting`).
+- **Particles are pooled** (`Pool<T>` with in-place compaction). New: `spawnHeartBurst`, gold hearts, `spawnRing` (hoop / heart bubble),
+  `spawnStreak`, colored sparkles (`RAINBOW`).
+- **Input (`TankView`):** a fish press is a `press` gesture; after `PET_HOLD_MS` it becomes `pet`. The tap fires on release.
+  A double-tap within `DOUBLE_TAP_MS` on a Friendly+ fish cycles its tricks. The canvas is focusable: ←/→ pick a fish, hold Space to pet.
+  The pet tip shows once (`fishbowl-pet-tip-shown`).
+- **UI:** `ui/BondSection.tsx` (`BondBadge`, `bondNameClass` for the Soulmate glow), `ui/MyFish.tsx` (panel `'myfish'`). Onboarding step 4 is "Pet your fish".
+- **Sound:** `bloop` (soft two-note rise) on a completed session.
+- **Verified:** headless-Chrome E2E (long press, early release, stroking, cap → content, trick cooldown, double-tap, keyboard,
+  My Fish, sell wording). With 20 fish while petting: ~2ms update+draw per frame.
 
 ## Breeding UI map (v4)
 - Store UI state: `pairingFishId` (pairing mode), `pairSheet` (confirm), `breedingTab`, `guideOpen`; actions `startPairing`,

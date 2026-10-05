@@ -1,7 +1,8 @@
 // Dev/art-preview panel. Loaded lazily; shown in production while DEV_TOOLS_IN_PRODUCTION is true.
 import { useState } from 'react';
 import { SPECIES, SPECIES_LIST } from '../game/species';
-import type { SpeciesId, ThemeId } from '../game/types';
+import type { BondLevel, SpeciesId, ThemeId } from '../game/types';
+import { BOND } from '../game/constants';
 import { useGameStore } from '../store/gameStore';
 import { EyeEditor } from './EyeEditor';
 import { sandLineY, setSandLineY } from '../render/artConfig';
@@ -13,6 +14,46 @@ import { BellSplitEditor } from './BellSplitEditor';
 type SpawnStage = 'baby' | 'juvenile' | 'adult';
 const STAGES: SpawnStage[] = ['baby', 'juvenile', 'adult'];
 const THEMES: ThemeId[] = ['classic', 'night', 'coral', 'pond'];
+
+/** Bond: set any fish's bond level, reset the hourly pet caps, replay the welcome-back greeting. */
+function BondTools() {
+  const dev = useGameStore((s) => s.dev);
+  const game = useGameStore((s) => s.game);
+  const fish = game.fish.filter((f) => f.tankId === game.activeTankId);
+  const selected = useGameStore((s) => s.quickFishId ?? s.selectedFishId);
+  const [picked, setPicked] = useState('');
+  const target = fish.find((f) => f.id === (picked || selected)) ?? fish[0];
+  return (
+    <>
+      <div className="dev-label">Bond</div>
+      <label className="dev-row">
+        <span>Fish</span>
+        <select value={target?.id ?? ''} onChange={(e) => setPicked(e.target.value)}>
+          {fish.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.name} ({SPECIES[f.speciesId].name}) · {BOND.names[f.bondLevel]} {Math.round(f.bondPoints * 10) / 10}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="dev-buttons">
+        {BOND.names.map((name, level) => (
+          <button key={name} type="button" disabled={!target} onClick={() => target && dev.setBondLevel(target.id, level as BondLevel)}>
+            {level} {name}
+          </button>
+        ))}
+      </div>
+      <div className="dev-buttons">
+        <button type="button" onClick={dev.resetPetCaps}>
+          ♻️ Reset pet caps
+        </button>
+        <button type="button" onClick={dev.greet}>
+          👋 Play greeting
+        </button>
+      </div>
+    </>
+  );
+}
 
 export default function DevPanel() {
   const dev = useGameStore((s) => s.dev);
@@ -142,6 +183,7 @@ export default function DevPanel() {
           🐟 Fill tank
         </button>
       </div>
+      <BondTools />
       <div className="dev-label">Theme</div>
       <div className="dev-buttons">
         {THEMES.map((t) => (

@@ -10,11 +10,12 @@ import {
   SECOND_MS,
   TANK_WIDTH,
   TOAST_QUEUE_MAX,
+  TRICK_COOLDOWN_MS,
   XP,
 } from '../game/constants';
 import { makeFish, makeState, seededRng, T0 } from '../game/testUtils';
 import type { GameState, Pellet } from '../game/types';
-import { breedingToasts, mergeToast, startGame, subscribeSimEvents, useGameStore, type Toast } from './gameStore';
+import { breedingToasts, mergeToast, startGame, subscribeBondEvents, subscribeSimEvents, useGameStore, type BondEvent, type Toast } from './gameStore';
 import { saveGame } from './save';
 import { fakeEnv } from './testEnv';
 
@@ -315,7 +316,7 @@ describe('onboarding', () => {
     return fish;
   };
 
-  it('advances Feed → Grow → Shells by doing each action, then finishes', () => {
+  it('advances Feed → Grow → Shells → Pet by doing each action, then finishes', () => {
     const fish = start();
     store().selectFish(fish.id); // wrong step: ignored
     expect(store().onboardingStep).toBe(0);
@@ -324,6 +325,8 @@ describe('onboarding', () => {
     store().selectFish(fish.id);
     expect(store().onboardingStep).toBe(2);
     store().collectDrop('d1');
+    expect(store().onboardingStep).toBe(3);
+    store().petFish(fish.id);
     expect(store().onboardingStep).toBeNull();
   });
 
@@ -616,5 +619,83 @@ describe('notification budget', () => {
     for (let i = 0; i < 10; i++) t = mergeToast(t, `msg ${i}`, i);
     expect(t).toHaveLength(TOAST_QUEUE_MAX);
     expect(t[t.length - 1]!.text).toBe('msg 9');
+  });
+});
+
+describe('petting & bond', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('petFish rewards 3 sessions an hour, then the fish is just content', () => {
+    const fish = makeFish({ happiness: 50 });
+    load(makeState({ fish: [fish], overrides: { lastTickAt: T0 } }));
+    for (let i = 0; i < 3; i++) expect(store().petFish(fish.id)?.rewarded).toBe(true);
+    expect(store().petFish(fish.id)?.rewarded).toBe(false);
+    expect(game().fish[0]!.bondPoints).toBe(9);
+  });
+
+  it('a bond level-up toasts what is new and tells the renderer', () => {
+    const fish = { ...makeFish({ name: 'Bubbles' }), bondPoints: 58, bondLevel: 2 as const };
+    load(makeState({ fish: [fish], overrides: { lastTickAt: T0 } }));
+    const seen: BondEvent[] = [];
+    const off = subscribeBondEvents((e) => seen.push(e));
+    store().petFish(fish.id);
+    off();
+    expect(store().toasts.map((t) => t.text)).toContain('Bubbles is now your Buddy! 🎉 New trick: Bubble Hoop');
+    expect(seen).toContainEqual({ type: 'levelUp', fishId: fish.id, to: 3 });
+  });
+
+  it('only fish near a dropped pellet earn hand-feeding bond', () => {
+    const near = makeFish({ hunger: 50 });
+    const far = makeFish({ hunger: 50 });
+    load(makeState({ fish: [near, far], overrides: { lastTickAt: T0 } }));
+    store().dropPellet(300, false, [near.id]);
+    const first = tank().pellets[0]!.id;
+    store().eatPellet(near.id, first);
+    vi.setSystemTime(T0 + FEED_COOLDOWN_MS);
+    store().dropPellet(300, false, [near.id]);
+    store().eatPellet(far.id, tank().pellets[0]!.id);
+    expect(game().fish.find((f) => f.id === near.id)!.bondPoints).toBeCloseTo(0.2);
+    expect(game().fish.find((f) => f.id === far.id)!.bondPoints).toBe(0);
+  });
+
+  it('tricks need the bond level and respect a 5s cooldown', () => {
+    const stranger = makeFish();
+    const friend = { ...makeFish(), bondPoints: 30, bondLevel: 2 as const };
+    load(makeState({ fish: [stranger, friend], overrides: { lastTickAt: T0 } }));
+    expect(store().playTrick(stranger.id, 'spin')).toBe(false);
+    expect(store().playTrick(friend.id, 'hoop')).toBe(false);
+    expect(store().playTrick(friend.id, 'spin')).toBe(true);
+    expect(store().playTrick(friend.id, 'spin')).toBe(false);
+    vi.setSystemTime(T0 + TRICK_COOLDOWN_MS);
+    expect(store().playTrick(friend.id, 'spin')).toBe(true);
+  });
+
+  it('follow mode toggles for Best Friends only', () => {
+    const buddy = { ...makeFish(), bondPoints: 60, bondLevel: 3 as const };
+    const best = { ...makeFish(), bondPoints: 100, bondLevel: 4 as const };
+    load(makeState({ fish: [buddy, best], overrides: { lastTickAt: T0 } }));
+    store().toggleFollow(buddy.id);
+    expect(store().follow).toBeNull();
+    store().toggleFollow(best.id);
+    expect(store().follow?.fishId).toBe(best.id);
+    store().toggleFollow(best.id);
+    expect(store().follow).toBeNull();
+  });
+
+  it('coming back after 30+ minutes makes Friendly+ fish greet you', () => {
+    const friend = { ...makeFish(), bondPoints: 30, bondLevel: 2 as const };
+    const stranger = makeFish();
+    load(makeState({ fish: [friend, stranger], overrides: { lastTickAt: T0 } }));
+    const seen: BondEvent[] = [];
+    const off = subscribeBondEvents((e) => seen.push(e));
+    store().advanceTo(T0 + 10 * MINUTE_MS);
+    expect(seen).toEqual([]);
+    store().advanceTo(T0 + 50 * MINUTE_MS);
+    off();
+    expect(seen).toEqual([{ type: 'greet', fishIds: [friend.id] }]);
   });
 });

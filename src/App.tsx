@@ -20,6 +20,7 @@ import { Toasts } from './ui/Toasts';
 import { Toolbar } from './ui/Toolbar';
 import { BreedingGuide } from './ui/BreedingGuide';
 import { BreedingPanel } from './ui/BreedingPanel';
+import { MyFish } from './ui/MyFish';
 import { PairingBanner } from './ui/PairingBanner';
 import { PairSheet } from './ui/PairSheet';
 import { TopChip } from './ui/TopChip';
@@ -136,6 +137,7 @@ export function App() {
           <Shop />
           <TankSwitcher />
           <BreedingPanel />
+          <MyFish />
           <PairingBanner />
           <PairSheet />
           <TopChip />

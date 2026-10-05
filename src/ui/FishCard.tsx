@@ -1,5 +1,5 @@
 // Info card for the tapped fish: editable name, species, stage, hunger/happiness (icon + word + bar),
-// growth, breeding checklist + Pair up, move and sell (with a confirm).
+// growth, bond (pets, tricks), breeding checklist + Pair up, move and sell (with a confirm).
 import { useState } from 'react';
 import { BREEDING, FISH_NAME_MAX_LENGTH, FULL_HUNGER, HAPPINESS_STARVING_THRESHOLD, SAD_HAPPINESS, SECOND_MS, THEMES, UNLOCK_LEVEL } from '../game/constants';
 import { breedingChecklist, breedingUnlocked, courtshipOf, type CheckKey } from '../game/breeding';
@@ -11,6 +11,8 @@ import { useGameStore } from '../store/gameStore';
 import { formatClock, formatEta } from './format';
 import { Badge, Button, ConfirmDialog, CurrencyTag, LockedOverlay, NameField, ProgressBar, Sheet } from './kit';
 import { useNow, useQuestStep } from './useBreeding';
+import { BondSection, bondNameClass } from './BondSection';
+import { bondName } from '../game/bond';
 
 const STAGE_LABEL: Record<Stage, string> = { egg: 'Egg', baby: 'Baby', juvenile: 'Juvenile', adult: 'Adult' };
 
@@ -159,7 +161,7 @@ function SellButton({ fish }: { fish: Fish }) {
       </Button>
       {confirming && (
         <ConfirmDialog
-          title={`Say goodbye to ${fish.name}?`}
+          title={fish.bondLevel >= 3 ? `${fish.name} is your ${bondName(fish.bondLevel)} 💕 — sell anyway?` : `Say goodbye to ${fish.name}?`}
           body={
             <p>
               {fish.name} will move to a new home and you get <CurrencyTag currency="shells" amount={value} />.
@@ -194,7 +196,11 @@ export function FishCard() {
     <Sheet
       inline
       ariaLabel={`About ${fish.name}`}
-      title={<NameField key={fish.id} value={fish.name} maxLength={FISH_NAME_MAX_LENGTH} label="Fish name" onSave={(name) => renameFish(fish.id, name)} />}
+      title={
+        <span className={bondNameClass(fish.bondLevel)}>
+          <NameField key={fish.id} value={fish.name} maxLength={FISH_NAME_MAX_LENGTH} label="Fish name" onSave={(name) => renameFish(fish.id, name)} />
+        </span>
+      }
       onClose={() => selectFish(null)}
       className="fishcard"
     >
@@ -207,6 +213,7 @@ export function FishCard() {
         {fish.shiny && <Badge tone="gold">✨ Shiny</Badge>}
       </div>
       <Meters fish={fish} />
+      <BondSection fish={fish} />
       <BreedingSection fish={fish} game={game} />
       {!courting && (
         <div className="fishcard-foot">

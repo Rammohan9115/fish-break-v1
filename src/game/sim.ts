@@ -1,4 +1,5 @@
 // Pure simulation. No DOM, no React. Deterministic given (state, dtMs, rng).
+import { bondDropValue, newBond } from './bond';
 import {
   ADULT_AT_FRACTION,
   ALGAE_MAX_SIZE,
@@ -219,7 +220,7 @@ function updateCleanliness(ctx: TickCtx, tank: Tank, cleanlinessBefore: number):
 function addDrop(ctx: TickCtx, tank: Tank, fish: Fish): void {
   const species = getSpecies(fish.speciesId);
   const pearl = ctx.rng() < DROP_PEARL_CHANCE;
-  const value = pearl ? PEARL_DROP_VALUE : species.dropValue;
+  const value = pearl ? PEARL_DROP_VALUE : bondDropValue(fish, species.dropValue);
   tank.shells.push({
     id: ctx.newId('drop'),
     x: TANK_EDGE_MARGIN + ctx.rng() * (TANK_WIDTH - 2 * TANK_EDGE_MARGIN),
@@ -299,6 +300,7 @@ function hatchEggs(ctx: TickCtx): void {
       id: ctx.newId('fish'),
       variant: egg.variant,
       shiny: egg.shiny,
+      bondPoints: egg.startBond,
       takenNames: [...state.fish, ...state.nursery].map((f) => f.name),
     });
     if (roomy) state.fish.push(fish);
@@ -468,6 +470,8 @@ export interface CreateFishOptions {
   variant?: string;
   shiny?: boolean;
   takenNames?: readonly string[];
+  /** Starting bond (babies of close parents start Curious). */
+  bondPoints?: number;
 }
 
 /** A new baby fish with default hunger/happiness. */
@@ -487,6 +491,7 @@ export function createFish(speciesId: SpeciesId, tankId: string, now: number, rn
     lastDropAt: now,
     boostUntil: null,
     tankId,
+    ...newBond(opts.bondPoints ?? 0),
   };
 }
 

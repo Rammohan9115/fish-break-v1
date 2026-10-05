@@ -255,8 +255,15 @@ function bubble(ctx: AudioContext, out: AudioNode, random: () => number, peak = 
   tone(ctx, out, { type: 'sine', from, to: from * 2.2, attack: 0.004, decay: 0.07, peak });
 }
 
+/** A completed pet: a soft, rounded two-note "bloop" going up. */
+const bloop: Synth = (ctx, out) => {
+  tone(ctx, out, { type: 'sine', from: 330, to: 520, attack: 0.02, decay: 0.18, peak: 0.45 });
+  tone(ctx, out, { type: 'sine', from: 660, to: 880, start: 0.11, attack: 0.02, decay: 0.24, peak: 0.3 });
+};
+
 const SYNTHS: Record<SoundName, Synth> = {
   plop,
+  bloop,
   coin,
   chime,
   squeak,
