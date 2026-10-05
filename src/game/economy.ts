@@ -573,3 +573,27 @@ export function collectDrop(state: GameState, dropId: string): GameState | null 
     tanks: state.tanks.map((t) => (t.id === tank.id ? { ...t, shells: t.shells.filter((d) => d.id !== dropId) } : t)),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Undoing a sale (the 6-second Undo toast)
+// ---------------------------------------------------------------------------
+
+/**
+ * Takes a just-sold fish back for what it sold for. Null when that's no longer possible: the money was spent,
+ * or its tank filled up in the meantime.
+ */
+export function restoreSoldFish(state: GameState, fish: Fish, soldFor: number): GameState | null {
+  const tank = state.tanks.find((t) => t.id === fish.tankId);
+  if (!tank || state.fish.some((f) => f.id === fish.id) || state.shells < soldFor) return null;
+  if (tankOccupancy(state, tank.id) >= tank.capacity) return null;
+  return { ...state, shells: state.shells - soldFor, fish: [...state.fish, fish] };
+}
+
+/** Takes a just-sold decor piece back (placed exactly where it was) for its refund. Null if the refund was spent or the tank is full. */
+export function restoreSoldDecor(state: GameState, tankId: string, placed: PlacedDecor, refund: Price): GameState | null {
+  const tank = state.tanks.find((t) => t.id === tankId);
+  if (!tank || tank.decor.some((d) => d.id === placed.id) || tank.decor.length >= maxDecor(tank)) return null;
+  if (!canAfford(state, refund)) return null;
+  const paid = pay(state, refund);
+  return mapTank(paid, tankId, (t) => ({ ...t, decor: [...t.decor, placed] }));
+}

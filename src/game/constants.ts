@@ -443,6 +443,8 @@ export const DEV_TOOLS_KEY = 'fishbowl-dev-tools';
 // ---------------------------------------------------------------------------
 export const FEED_COOLDOWN_MS = 150;
 export const TOAST_DURATION_MS = 3 * SECOND_MS;
+/** A toast with an Undo button stays up this long. */
+export const UNDO_TOAST_MS = 6 * SECOND_MS;
 export const ONBOARDING_STEPS = 4;
 export const FISH_NAME_MAX_LENGTH = 20;
 export const TANK_NAME_MAX_LENGTH = 20;
@@ -808,6 +810,9 @@ export const EGG_BURST_CHIPS = 7;
 export const SPRITE_NIGHT_GLOW_PX = 8;
 /** On tall (portrait) screens, zoom in up to this multiple of "fit width" and let the player pan sideways. */
 export const PORTRAIT_ZOOM = 2.1;
+/** Fish are this much bigger on phone-width portrait screens (≤ the width below), where the zoomed scene makes them small. */
+export const PORTRAIT_FISH_BOOST = 1.2;
+export const PORTRAIT_FISH_BOOST_MAX_WIDTH = 560;
 /** On tall screens, the share of extra height shown above the world (more water) vs. below (more sand). */
 export const EXTRA_HEIGHT_ABOVE = 0.6;
 /** localStorage flag: the one-time "drag to look around" tip has been shown. */

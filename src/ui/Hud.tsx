@@ -109,10 +109,10 @@ export function Hud() {
       </div>
 
       <div className="hud-right">
-      <button type="button" className="hud-tank" onClick={() => openPanel('tanks')} aria-label={`${tankName}. Open tanks`}>
+      <button type="button" className="hud-tank" onClick={() => openPanel('tanks')} aria-label={capacity ? `${tankName} ${capacity.used}/${capacity.max}. Open tanks` : `${tankName}. Open tanks`}>
         <span className="hud-tank-name">{tankName}</span>
         {capacity && (
-          <span className={`hud-cap${capacity.used >= capacity.max ? ' hud-cap-full' : ''}`} aria-label={`${capacity.used} of ${capacity.max} spots`}>
+          <span className={`hud-cap${capacity.used >= capacity.max ? ' hud-cap-full' : ''}`} aria-label={`${capacity.used}/${capacity.max} spots`}>
             🐟 {capacity.used}/{capacity.max}
             {capacity.used >= capacity.max && ' full'}
           </span>

@@ -153,6 +153,15 @@ export function Toolbar() {
         <ToolButton icon="🏠" label="Tanks" active={panel === 'tanks'} hidden={!open} onClick={() => togglePanel('tanks')} />
         <ToolButton icon="☕" label="Break" active={panel === 'break'} hidden={!open} onClick={() => togglePanel('break')} />
       </div>
+      {/* Feeding is the most common action, so it stays one tap away while the rest of the tools are tucked in. */}
+      {!open && mode !== 'feed' && (
+        <button type="button" className="tool dock-feed" onClick={() => setMode('feed')} aria-label="Feed">
+          <span className="tool-icon" aria-hidden="true">
+            🍤
+          </span>
+          <span className="tool-label">Feed</span>
+        </button>
+      )}
       <button
         type="button"
         className={`tool dock-handle${!open && activeMode ? ' tool-active' : ''}${!open && questTool ? ' quest-pulse' : ''}`}

@@ -428,6 +428,36 @@ describe('clean mode', () => {
   });
 });
 
+describe('sell with Undo', () => {
+  it('offers an Undo toast that brings the fish back', () => {
+    const fish = makeFish({ name: 'Mochi', stage: 'adult', growth: 99999 });
+    load(makeState({ fish: [fish], overrides: { shells: 100 } }));
+    expect(store().sellFish(fish.id)).toBe(true);
+    expect(game().fish).toHaveLength(0);
+    const toast = store().toasts.find((t) => t.action?.label === 'Undo')!;
+    expect(toast.text).toMatch(/Sold Mochi/);
+    toast.action!.run();
+    expect(game().fish.map((f) => f.name)).toEqual(['Mochi']);
+    expect(game().shells).toBe(100);
+  });
+
+  it('says so when the undo is no longer possible', () => {
+    const fish = makeFish({ name: 'Mochi', stage: 'adult', growth: 99999 });
+    load(makeState({ fish: [fish], overrides: { shells: 100 } }));
+    store().sellFish(fish.id);
+    useGameStore.setState((s) => ({ game: { ...s.game, shells: 0 } }));
+    store().toasts.find((t) => t.action)!.action!.run();
+    expect(game().fish).toHaveLength(0);
+    expect(store().toasts.some((t) => /Couldn't bring/.test(t.text))).toBe(true);
+  });
+
+  it('action toasts are never merged away', () => {
+    const a = mergeToast([], 'Sold X for 5 🐚', 1, { label: 'Undo', run: () => undefined });
+    const b = mergeToast(a, 'Sold X for 5 🐚', 2, { label: 'Undo', run: () => undefined });
+    expect(b).toHaveLength(2);
+  });
+});
+
 describe('daily gift (store)', () => {
   it('can be claimed once per local day, with no streak tracking', () => {
     load(makeState({ overrides: { shells: 0, lastDailyGift: '2001-01-01' } }));

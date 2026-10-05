@@ -1,7 +1,7 @@
 // Notification budget: one toast at a time above the toolbar; the rest wait their turn (the store merges
 // duplicates and "+N" amounts). Each toast auto-dismisses; tapping it dismisses early.
 import { useEffect } from 'react';
-import { MAX_VISIBLE_TOASTS, TOAST_DURATION_MS } from '../game/constants';
+import { MAX_VISIBLE_TOASTS, TOAST_DURATION_MS, UNDO_TOAST_MS } from '../game/constants';
 import { useGameStore, type Toast as ToastData } from '../store/gameStore';
 import { Toast } from './kit';
 
@@ -9,10 +9,26 @@ function ToastItem({ toast }: { toast: ToastData }) {
   const dismiss = useGameStore((s) => s.dismissToast);
   // A merged duplicate bumps `rev`, which restarts the timer.
   useEffect(() => {
-    const handle = window.setTimeout(() => dismiss(toast.id), TOAST_DURATION_MS);
+    const handle = window.setTimeout(() => dismiss(toast.id), toast.action ? UNDO_TOAST_MS : TOAST_DURATION_MS);
     return () => window.clearTimeout(handle);
-  }, [toast.id, toast.rev, dismiss]);
-  return <Toast key={toast.rev} text={toast.text} onDismiss={() => dismiss(toast.id)} />;
+  }, [toast.id, toast.rev, toast.action, dismiss]);
+  const { action } = toast;
+  return (
+    <Toast
+      key={toast.rev}
+      text={toast.text}
+      actionLabel={action?.label}
+      onAction={
+        action
+          ? () => {
+              dismiss(toast.id);
+              action.run();
+            }
+          : undefined
+      }
+      onDismiss={() => dismiss(toast.id)}
+    />
+  );
 }
 
 export function Toasts() {

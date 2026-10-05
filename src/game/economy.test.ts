@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { BREEDING, DECOR_LIMIT, FEED_XP_MAX_PER_HOUR, HOUR_MS, TANK_BASE_CAPACITY, XP } from './constants';
 import {
   collectDrop,
+  restoreSoldDecor,
+  restoreSoldFish,
   applyTheme,
   buyCapacityUpgrade,
   moveFromNursery,
@@ -432,5 +434,41 @@ describe('collectDrop', () => {
     expect(collectDrop(state, 'nope')).toBeNull();
     collectDrop(state, 's1');
     expect(state).toEqual(snapshot);
+  });
+});
+
+describe('undoing a sale', () => {
+  it('a sold fish comes back for the same money, with its bond and name intact', () => {
+    const fish = { ...makeFish({ name: 'Mochi', stage: 'adult', growth: 99999 }), bondPoints: 50, bondLevel: 2 as const };
+    const state = makeState({ fish: [fish], overrides: { shells: 100 } });
+    const sold = sellFish(state, fish.id);
+    if (!sold.ok) throw new Error('should sell');
+    const value = sold.state.shells - 100;
+    const back = restoreSoldFish(sold.state, fish, value)!;
+    expect(back.shells).toBe(100);
+    expect(back.fish.find((f) => f.id === fish.id)).toMatchObject({ name: 'Mochi', bondPoints: 50, bondLevel: 2 });
+  });
+
+  it('cannot undo once the money is spent or the tank has filled up', () => {
+    const fish = makeFish({ stage: 'adult', growth: 99999 });
+    const state = makeState({ fish: [fish], overrides: { shells: 100 } });
+    const sold = sellFish(state, fish.id);
+    if (!sold.ok) throw new Error('should sell');
+    const value = sold.state.shells - 100;
+    expect(restoreSoldFish({ ...sold.state, shells: 0 }, fish, value)).toBeNull();
+    const full = { ...sold.state, tanks: sold.state.tanks.map((t) => ({ ...t, capacity: 0 })) };
+    expect(restoreSoldFish(full, fish, value)).toBeNull();
+  });
+
+  it('a sold decor piece goes back exactly where it was, for its refund', () => {
+    const placed = { id: 'd1', decorId: 'rock' as const, x: 321, flipped: true, size: 'L' as const, depth: 'front' as const };
+    const state = makeState({ tank: { decor: [placed] }, overrides: { shells: 50 } });
+    const sold = sellDecor(state, 'tank-1', 'd1');
+    if (!sold.ok) throw new Error('should sell');
+    const refund = decorRefund('rock');
+    const back = restoreSoldDecor(sold.state, 'tank-1', placed, refund)!;
+    expect(back.shells).toBe(50);
+    expect(back.tanks[0]!.decor).toEqual([placed]);
+    expect(restoreSoldDecor({ ...sold.state, shells: 0 }, 'tank-1', placed, refund)).toBeNull();
   });
 });

@@ -397,3 +397,12 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
 - **Analytics:** see CLAUDE.md. Optional env: `VITE_ANALYTICS_KEY`, `VITE_ANALYTICS_HOST` (default `https://eu.i.posthog.com`).
 - **Credits/legal:** `CREDITS.md` (art provenance still blank, owner must fill), Settings → About & credits, `public/privacy.html` updated (analytics, deletion, retention, self-hosted fonts). Third-party game names removed from comments.
 - **Bug found by e2e:** `TabLock.dispose()` did not release the Web Lock, so a React StrictMode remount (dev) or hot reload locked the game behind "Open in another tab". Fixed: dispose releases; `claim()` retries (`TAB_CLAIM_RETRIES`); a torn-down mount can't set the lock.
+
+## Batch 4 (UX polish and accessibility)
+- **Layout vars:** `ui/useLayoutVars.ts` measures the HUD and dock into `--hud-stack` / `--dock-h` on `.app`; banners, toasts, tips and docked cards use them (no hard-coded offsets). Phone-portrait compact banners sit below the HUD; with a card docked right (≥ 641px) top banners move into the free space beside it (`--hud-left-w`, `--inline-sheet-w`). `scripts/audit/layout.mjs` is the overlap/clipping audit (see "UX Rules" in CLAUDE.md).
+- **Toasts with actions:** `addToast(text, { label, run })`; they last `UNDO_TOAST_MS`, never merge. Selling a fish or decor shows Undo (`economy.restoreSoldFish` / `restoreSoldDecor`).
+- **Goals after Lv20:** `game/goals.ts` (`goalOfTheDay`: collections, Soulmate, shiny, species, fill tanks), rotated by calendar day; the chip remembers a dismissal per goal per day.
+- **Dock:** a permanent Feed button beside the Tools handle (hidden while the dock is open or in Feed mode). Opening tools on phones puts a fish card away. The pan tip waits for the first-run tips to finish.
+- **Phones:** `PORTRAIT_FISH_BOOST` (1.2 ≤ 560px wide) via `setFishViewBoost`, applied inside `fishScale` so art, hitboxes and mouths stay consistent. Decor shop folds where/price/owned filters into "More filters".
+- **Keyboard:** ←/→ nudge the selected decor piece (Shift = 40 units) in Decorate mode.
+- **A11y:** `.locked-tag` contrast fixed, accessible names start with visible text (tank chip, Box tab), min text 12px, rename inputs 44px.

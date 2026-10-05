@@ -640,8 +640,9 @@
   padding: 2px var(--space-2);
   font-size: var(--text-label);
   font-weight: 800;
-  color: var(--color-text-muted);
-  background: var(--color-surface-sunken);
+  /* Opaque, high-contrast: it sits on a greyed-out tool button, where the old translucent pair measured 2.4:1. */
+  color: #2b3548;
+  background: #eef1f8;
   border-radius: var(--radius-pill);
   white-space: nowrap;
 }
@@ -936,6 +937,7 @@
 .namefield input {
   flex: 1;
   min-width: 0;
+  min-height: var(--tap-min);
   padding: 0;
   font-family: var(--font-display);
   font-size: var(--text-lg);

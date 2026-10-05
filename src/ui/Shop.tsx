@@ -1,57 +1,126 @@
 // Shop with Fish / Food / Decor / Tanks tabs. Locked items show 🔒 "Unlocks at Lv X"; items you can't
 // afford say how far away you are; every blocked Buy explains why on tap.
-import { useEffect, useState, type ReactNode } from 'react';
-import { CAPACITY_UPGRADE, COLLECTION_LIST, DECOR_SEEN_KEY, DECOR, DECOR_LIST, PREMIUM_FOOD_PACK, SET_BONUS_ITEMS, THEMES, UNLOCK_LEVEL } from '../game/constants';
-import { maxDecor, activeSets, collectionInSeason, collectionProgress, decorHappinessGain, setBonusNeeds, setProgress } from '../game/decor';
-import * as economy from '../game/economy';
-import { tankOccupancy } from '../game/sim';
-import { SPECIES_LIST } from '../game/species';
-import type { CollectionDef, CollectionId, DecorDef, DecorPlacement, GameState, Price, Tank, ThemeId } from '../game/types';
-import { StylePicker } from './StylePicker';
-import { sound } from '../audio/sound';
-import { eventClock, useGameStore, type ShopTab } from '../store/gameStore';
-import { formatCount, formatMinutes } from './format';
-import { DecorPreview, FishPreview } from './Preview';
-import { RichText } from './Icon';
-import { Badge, Button, ConfirmDialog, CurrencyTag, EmptyState, LockedOverlay, Sheet, Tabs, type TabItem } from './kit';
+import { useEffect, useState, type ReactNode } from "react";
+import {
+  CAPACITY_UPGRADE,
+  COLLECTION_LIST,
+  DECOR_SEEN_KEY,
+  DECOR,
+  DECOR_LIST,
+  PREMIUM_FOOD_PACK,
+  SET_BONUS_ITEMS,
+  THEMES,
+  UNLOCK_LEVEL,
+} from "../game/constants";
+import {
+  maxDecor,
+  activeSets,
+  collectionInSeason,
+  collectionProgress,
+  decorHappinessGain,
+  setBonusNeeds,
+  setProgress,
+} from "../game/decor";
+import * as economy from "../game/economy";
+import { tankOccupancy } from "../game/sim";
+import { SPECIES_LIST } from "../game/species";
+import type {
+  CollectionDef,
+  CollectionId,
+  DecorDef,
+  DecorPlacement,
+  GameState,
+  Price,
+  Tank,
+  ThemeId,
+} from "../game/types";
+import { StylePicker } from "./StylePicker";
+import { sound } from "../audio/sound";
+import { eventClock, useGameStore, type ShopTab } from "../store/gameStore";
+import { formatCount, formatMinutes } from "./format";
+import { DecorPreview, FishPreview } from "./Preview";
+import { RichText } from "./Icon";
+import {
+  Badge,
+  Button,
+  ConfirmDialog,
+  CurrencyTag,
+  EmptyState,
+  LockedOverlay,
+  Sheet,
+  Tabs,
+  type TabItem,
+} from "./kit";
 
 const TABS: TabItem<ShopTab>[] = [
-  { id: 'fish', label: '🐟 Fish' },
-  { id: 'food', label: '🍤 Food' },
-  { id: 'decor', label: '🪴 Decor' },
-  { id: 'styles', label: '✨ Styles' },
-  { id: 'tanks', label: '🏠 Tanks' },
+  { id: "fish", label: "🐟 Fish" },
+  { id: "food", label: "🍤 Food" },
+  { id: "decor", label: "🪴 Decor" },
+  { id: "styles", label: "✨ Styles" },
+  { id: "tanks", label: "🏠 Tanks" },
 ];
 
 /** A price tag (kept as a named export for the other panels). */
-export function PriceTag({ price, short = false }: { price: Price; short?: boolean }) {
-  return <CurrencyTag currency={price.currency} amount={price.amount} short={short} />;
+export function PriceTag({
+  price,
+  short = false,
+}: {
+  price: Price;
+  short?: boolean;
+}) {
+  return (
+    <CurrencyTag
+      currency={price.currency}
+      amount={price.amount}
+      short={short}
+    />
+  );
 }
 
 /** How many more shells/pearls the player needs for `price` (0 when affordable). */
 function shortfall(game: GameState, price: Price | null): number {
   if (!price) return 0;
-  return Math.max(0, price.amount - (price.currency === 'shells' ? game.shells : game.pearls));
+  return Math.max(
+    0,
+    price.amount - (price.currency === "shells" ? game.shells : game.pearls),
+  );
 }
 
 /** Button text + tap explanation for a blocked purchase. */
-function blocked(error: economy.PurchaseError, price: Price | null, game: GameState): { label: string; reason: string } {
+function blocked(
+  error: economy.PurchaseError,
+  price: Price | null,
+  game: GameState,
+): { label: string; reason: string } {
   switch (error) {
-    case 'cost': {
+    case "cost": {
       const need = shortfall(game, price);
-      const unit = price?.currency === 'pearls' ? '⚪' : '🐚';
-      return { label: `Need ${formatCount(need)} more ${unit}`, reason: 'Collect shells from the sand, or wait for the daily gift 🎁' };
+      const unit = price?.currency === "pearls" ? "⚪" : "🐚";
+      return {
+        label: `Need ${formatCount(need)} more ${unit}`,
+        reason: "Collect shells from the sand, or wait for the daily gift 🎁",
+      };
     }
-    case 'full':
-      return { label: 'Tank is full', reason: 'Make room, or get a bigger tank in Tanks 🏠' };
-    case 'max':
-      return { label: 'Maxed out', reason: 'You already have the most you can get' };
-    case 'owned':
-      return { label: 'Owned', reason: 'Already yours' };
-    case 'event':
-      return { label: 'Back next October 🎃', reason: 'Halloween decor is only in the shop during October. Pieces you own stay forever.' };
+    case "full":
+      return {
+        label: "Tank is full",
+        reason: "Make room, or get a bigger tank in Tanks 🏠",
+      };
+    case "max":
+      return {
+        label: "Maxed out",
+        reason: "You already have the most you can get",
+      };
+    case "owned":
+      return { label: "Owned", reason: "Already yours" };
+    case "event":
+      return {
+        label: "Back next October 🎃",
+        reason:
+          "Halloween decor is only in the shop during October. Pieces you own stay forever.",
+      };
     default:
-      return { label: 'Unavailable', reason: 'Not available right now' };
+      return { label: "Unavailable", reason: "Not available right now" };
   }
 }
 
@@ -74,20 +143,44 @@ interface ItemProps {
   badge?: ReactNode;
 }
 
-function ShopItem({ title, art, price, unlockLevel, error, game, blockedOverride, buyLabel = 'Buy', note, onBuy, extra, badge }: ItemProps) {
-  const locked = error === 'locked';
-  const block = error && !locked ? (blockedOverride ?? blocked(error, price, game)) : null;
+function ShopItem({
+  title,
+  art,
+  price,
+  unlockLevel,
+  error,
+  game,
+  blockedOverride,
+  buyLabel = "Buy",
+  note,
+  onBuy,
+  extra,
+  badge,
+}: ItemProps) {
+  const locked = error === "locked";
+  const block =
+    error && !locked ? (blockedOverride ?? blocked(error, price, game)) : null;
   return (
-    <div className={`tile shop-item${locked ? ' shop-item-locked' : ''}`}>
+    <div className={`tile shop-item${locked ? " shop-item-locked" : ""}`}>
       <div className="shop-art">
-        {locked ? <LockedOverlay level={unlockLevel}>{art}</LockedOverlay> : art}
+        {locked ? (
+          <LockedOverlay level={unlockLevel}>{art}</LockedOverlay>
+        ) : (
+          art
+        )}
         {badge && <span className="shop-badge">{badge}</span>}
       </div>
       <div className="shop-title">{title}</div>
       {note && <div className="shop-note">{note}</div>}
-      {price && <PriceTag price={price} short={error === 'cost'} />}
+      {price && <PriceTag price={price} short={error === "cost"} />}
       {!locked && (
-        <Button variant="primary" size="sm" block disabledReason={block?.reason} onClick={() => onBuy() && sound.play('coin')}>
+        <Button
+          variant="primary"
+          size="sm"
+          block
+          disabledReason={block?.reason}
+          onClick={() => onBuy() && sound.play("coin")}
+        >
           {block ? block.label : buyLabel}
         </Button>
       )}
@@ -102,7 +195,8 @@ function FishTab({ game }: { game: GameState }) {
   return (
     <>
       <p className="lead">
-        Buying for <strong>{tank.name}</strong> · 🐟 {tankOccupancy(game, tank.id)}/{tank.capacity}
+        Buying for <strong>{tank.name}</strong> · 🐟{" "}
+        {tankOccupancy(game, tank.id)}/{tank.capacity}
       </p>
       <div className="shop-grid">
         {SPECIES_LIST.map((s) => {
@@ -117,8 +211,19 @@ function FishTab({ game }: { game: GameState }) {
               unlockLevel={s.unlockLevel}
               error={error}
               game={game}
-              blockedOverride={error === 'theme' && theme ? { label: `Needs ${theme}`, reason: `Lives only in a ${theme} tank` } : undefined}
-              note={<RichText text={`Grows in ${formatMinutes(s.growMinutes)} · drops ${s.dropValue} 🐚`} />}
+              blockedOverride={
+                error === "theme" && theme
+                  ? {
+                      label: `Needs ${theme}`,
+                      reason: `Lives only in a ${theme} tank`,
+                    }
+                  : undefined
+              }
+              note={
+                <RichText
+                  text={`Grows in ${formatMinutes(s.growMinutes)} · drops ${s.dropValue} 🐚`}
+                />
+              }
               onBuy={() => buyFish(s.id)}
             />
           );
@@ -133,7 +238,8 @@ function FoodTab({ game }: { game: GameState }) {
   return (
     <>
       <p className="lead">
-        You have <strong>{game.inventory.premiumFood}</strong> premium food. Premium pellets fill +25 hunger and give a 3-minute 2× growth boost.
+        You have <strong>{game.inventory.premiumFood}</strong> premium food.
+        Premium pellets fill +25 hunger and give a 3-minute 2× growth boost.
       </p>
       <div className="shop-grid">
         <ShopItem
@@ -156,7 +262,13 @@ function PlacedDecor({ game }: { game: GameState }) {
   const [selling, setSelling] = useState<string | null>(null);
   const placed = tank.decor.find((d) => d.id === selling);
   if (tank.decor.length === 0) {
-    return <EmptyState icon="🪴" title="No decor yet" body="Pick something above. Each piece makes your fish a little happier." />;
+    return (
+      <EmptyState
+        icon="🪴"
+        title="No decor yet"
+        body="Pick something above. Each piece makes your fish a little happier."
+      />
+    );
   }
   return (
     <>
@@ -175,7 +287,9 @@ function PlacedDecor({ game }: { game: GameState }) {
           title={`Sell ${DECOR[placed.decorId].name}?`}
           body={
             <p>
-              You'll get back <PriceTag price={economy.decorRefund(placed.decorId)} /> (half its price).
+              You'll get back{" "}
+              <PriceTag price={economy.decorRefund(placed.decorId)} /> (half its
+              price).
             </p>
           }
           confirmLabel="Sell back"
@@ -193,7 +307,17 @@ function PlacedDecor({ game }: { game: GameState }) {
 }
 
 /** One decor item in the shop: price, what it adds to this tank's happiness, and Buy. */
-function DecorItem({ d, game, tank, isNew }: { d: DecorDef; game: GameState; tank: Tank; isNew: boolean }) {
+function DecorItem({
+  d,
+  game,
+  tank,
+  isNew,
+}: {
+  d: DecorDef;
+  game: GameState;
+  tank: Tank;
+  isNew: boolean;
+}) {
   const buyDecor = useGameStore((s) => s.buyDecor);
   const startTry = useGameStore((s) => s.startTry);
   const error = economy.checkBuyDecor(game, d.id, eventClock());
@@ -202,10 +326,20 @@ function DecorItem({ d, game, tank, isNew }: { d: DecorDef; game: GameState; tan
   const boxed = game.decorInventory[d.id] ?? 0;
   return (
     <ShopItem
-      badge={isNew ? 'New' : boxed > 0 ? `📦 ${boxed}` : undefined}
+      badge={isNew ? "New" : boxed > 0 ? `📦 ${boxed}` : undefined}
       extra={
         error === null && (
-          <Button size="sm" variant="ghost" block disabledReason={full ? 'This tank is full of decor — Buy puts it in your decor box' : null} onClick={() => startTry(d.id)}>
+          <Button
+            size="sm"
+            variant="ghost"
+            block
+            disabledReason={
+              full
+                ? "This tank is full of decor — Buy puts it in your decor box"
+                : null
+            }
+            onClick={() => startTry(d.id)}
+          >
             👀 Try it
           </Button>
         )
@@ -223,7 +357,15 @@ function DecorItem({ d, game, tank, isNew }: { d: DecorDef; game: GameState; tan
 }
 
 /** A collection's header: progress, a ✓ when complete, the set bonus in this tank, and the event tag. */
-function CollectionHeader({ c, game, tank }: { c: CollectionDef; game: GameState; tank: Tank }) {
+function CollectionHeader({
+  c,
+  game,
+  tank,
+}: {
+  c: CollectionDef;
+  game: GameState;
+  tank: Tank;
+}) {
   const { owned, total } = collectionProgress(game, c.id);
   const inTank = setProgress(tank, c.id);
   const active = activeSets(tank).includes(c.id);
@@ -236,45 +378,65 @@ function CollectionHeader({ c, game, tank }: { c: CollectionDef; game: GameState
         {owned}/{total} collected
       </span>
       {owned === total && <Badge tone="gold">✓ Complete</Badge>}
-      {c.event === 'october' && <Badge tone="love">🎃 October event</Badge>}
+      {c.event === "october" && <Badge tone="love">🎃 October event</Badge>}
       {active ? (
         <Badge tone="good">✨ Set bonus active in {tank.name}</Badge>
       ) : (
         <span className="meta collection-hint">
-          {Math.min(inTank, setBonusNeeds(c.id))}/{setBonusNeeds(c.id)} different in {tank.name} for the set bonus
+          {Math.min(inTank, setBonusNeeds(c.id))}/{setBonusNeeds(c.id)}{" "}
+          different in {tank.name} for the set bonus
         </span>
       )}
     </div>
   );
 }
 
-type CollectionFilter = 'all' | CollectionId | 'classic';
-type PlacementFilter = 'all' | DecorPlacement;
-type PriceFilter = 'all' | 'low' | 'mid' | 'high' | 'pearls';
-type OwnedFilter = 'all' | 'owned' | 'notOwned';
+type CollectionFilter = "all" | CollectionId | "classic";
+type PlacementFilter = "all" | DecorPlacement;
+type PriceFilter = "all" | "low" | "mid" | "high" | "pearls";
+type OwnedFilter = "all" | "owned" | "notOwned";
 
 const PRICE_TEST: Record<PriceFilter, (p: Price) => boolean> = {
   all: () => true,
-  low: (p) => p.currency === 'shells' && p.amount <= 50,
-  mid: (p) => p.currency === 'shells' && p.amount > 50 && p.amount <= 150,
-  high: (p) => p.currency === 'shells' && p.amount > 150,
-  pearls: (p) => p.currency === 'pearls',
+  low: (p) => p.currency === "shells" && p.amount <= 50,
+  mid: (p) => p.currency === "shells" && p.amount > 50 && p.amount <= 150,
+  high: (p) => p.currency === "shells" && p.amount > 150,
+  pearls: (p) => p.currency === "pearls",
 };
 
 /** Decor the player has already seen in the shop (UI convenience, per browser). */
 function readSeen(): Set<string> {
   try {
-    return new Set(JSON.parse(localStorage.getItem(DECOR_SEEN_KEY) ?? '[]') as string[]);
+    return new Set(
+      JSON.parse(localStorage.getItem(DECOR_SEEN_KEY) ?? "[]") as string[],
+    );
   } catch {
     return new Set();
   }
 }
 
-function FilterChips<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: { id: T; label: string }[]; onChange: (v: T) => void }) {
+function FilterChips<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: { id: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
   return (
     <div className="filter-row" role="radiogroup" aria-label={label}>
       {options.map((o) => (
-        <button key={o.id} type="button" role="radio" aria-checked={value === o.id} className={`chip${value === o.id ? ' chip-on' : ''}`} onClick={() => onChange(o.id)}>
+        <button
+          key={o.id}
+          type="button"
+          role="radio"
+          aria-checked={value === o.id}
+          className={`chip${value === o.id ? " chip-on" : ""}`}
+          onClick={() => onChange(o.id)}
+        >
           {o.label}
         </button>
       ))}
@@ -286,97 +448,149 @@ function DecorTab({ game }: { game: GameState }) {
   const tank = game.tanks.find((t) => t.id === game.activeTankId)!;
   useGameStore((s) => s.eventForced);
   const now = new Date(eventClock());
-  const [collection, setCollection] = useState<CollectionFilter>('all');
-  const [placement, setPlacement] = useState<PlacementFilter>('all');
-  const [price, setPrice] = useState<PriceFilter>('all');
-  const [owned, setOwned] = useState<OwnedFilter>('all');
+  const [collection, setCollection] = useState<CollectionFilter>("all");
+  const [placement, setPlacement] = useState<PlacementFilter>("all");
+  const [price, setPrice] = useState<PriceFilter>("all");
+  const [owned, setOwned] = useState<OwnedFilter>("all");
+  // Only the collection row is always shown; where / price / owned fold into one "More filters" button so the items stay on screen.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const activeMore = [placement, price, owned].filter(
+    (f) => f !== "all",
+  ).length;
   // "New" = not seen before this visit; everything shown now counts as seen next time.
   const [seen] = useState(readSeen);
   useEffect(() => {
     try {
-      localStorage.setItem(DECOR_SEEN_KEY, JSON.stringify(DECOR_LIST.map((d) => d.id)));
+      localStorage.setItem(
+        DECOR_SEEN_KEY,
+        JSON.stringify(DECOR_LIST.map((d) => d.id)),
+      );
     } catch {
       // Not critical.
     }
   }, []);
-  const ownedIds = new Set<string>([...game.tanks.flatMap((t) => t.decor.map((d) => d.decorId)), ...Object.keys(game.decorInventory)]);
+  const ownedIds = new Set<string>([
+    ...game.tanks.flatMap((t) => t.decor.map((d) => d.decorId)),
+    ...Object.keys(game.decorInventory),
+  ]);
   const keep = (d: DecorDef) =>
-    (placement === 'all' || d.placement === placement) &&
+    (placement === "all" || d.placement === placement) &&
     PRICE_TEST[price](d.cost) &&
-    (owned === 'all' || (owned === 'owned') === ownedIds.has(d.id));
-  const showCollection = (id: CollectionFilter) => collection === 'all' || collection === id;
+    (owned === "all" || (owned === "owned") === ownedIds.has(d.id));
+  const showCollection = (id: CollectionFilter) =>
+    collection === "all" || collection === id;
   const classic = DECOR_LIST.filter((d) => d.collection === null && keep(d));
   return (
     <>
       <p className="lead">
-        Different pieces make fish happier than duplicates, and {SET_BONUS_ITEMS} different pieces from one collection unlock its set bonus. 🪸 {tank.decor.length}/{maxDecor(tank)} in {tank.name}.
+        Different pieces make fish happier than duplicates, and{" "}
+        {SET_BONUS_ITEMS} different pieces from one collection unlock its set
+        bonus. 🪸 {tank.decor.length}/{maxDecor(tank)} in {tank.name}.
       </p>
       <div className="filters">
         <FilterChips<CollectionFilter>
           label="Collection"
           value={collection}
           onChange={setCollection}
-          options={[{ id: 'all', label: 'All' }, ...COLLECTION_LIST.map((c) => ({ id: c.id, label: `${c.icon} ${c.name}` })), { id: 'classic', label: '🪸 Classic' }]}
-        />
-        <FilterChips<PlacementFilter>
-          label="Where it goes"
-          value={placement}
-          onChange={setPlacement}
           options={[
-            { id: 'all', label: 'Anywhere' },
-            { id: 'sand', label: '🏖️ Sand' },
-            { id: 'surface', label: '🌊 Surface' },
-            { id: 'mid', label: '🫧 Mid-water' },
+            { id: "all", label: "All" },
+            ...COLLECTION_LIST.map((c) => ({
+              id: c.id,
+              label: `${c.icon} ${c.name}`,
+            })),
+            { id: "classic", label: "🪸 Classic" },
           ]}
         />
-        <FilterChips<PriceFilter>
-          label="Price"
-          value={price}
-          onChange={setPrice}
-          options={[
-            { id: 'all', label: 'Any price' },
-            { id: 'low', label: '≤ 50 🐚' },
-            { id: 'mid', label: '51–150 🐚' },
-            { id: 'high', label: '150+ 🐚' },
-            { id: 'pearls', label: '⚪ Pearls' },
-          ]}
-        />
-        <FilterChips<OwnedFilter>
-          label="Owned"
-          value={owned}
-          onChange={setOwned}
-          options={[
-            { id: 'all', label: 'All' },
-            { id: 'owned', label: 'Owned' },
-            { id: 'notOwned', label: 'Not owned' },
-          ]}
-        />
+        <button
+          type="button"
+          className={`chip filters-more${activeMore > 0 ? " chip-on" : ""}`}
+          aria-expanded={moreOpen}
+          onClick={() => setMoreOpen((o) => !o)}
+        >
+          ⚙️ More filters{activeMore > 0 ? ` (${activeMore})` : ""}{" "}
+          {moreOpen ? "▴" : "▾"}
+        </button>
+        {moreOpen && (
+          <>
+            <FilterChips<PlacementFilter>
+              label="Where it goes"
+              value={placement}
+              onChange={setPlacement}
+              options={[
+                { id: "all", label: "Anywhere" },
+                { id: "sand", label: "🏖️ Sand" },
+                { id: "surface", label: "🌊 Surface" },
+                { id: "mid", label: "🫧 Mid-water" },
+              ]}
+            />
+            <FilterChips<PriceFilter>
+              label="Price"
+              value={price}
+              onChange={setPrice}
+              options={[
+                { id: "all", label: "Any price" },
+                { id: "low", label: "≤ 50 🐚" },
+                { id: "mid", label: "51–150 🐚" },
+                { id: "high", label: "150+ 🐚" },
+                { id: "pearls", label: "⚪ Pearls" },
+              ]}
+            />
+            <FilterChips<OwnedFilter>
+              label="Owned"
+              value={owned}
+              onChange={setOwned}
+              options={[
+                { id: "all", label: "All" },
+                { id: "owned", label: "Owned" },
+                { id: "notOwned", label: "Not owned" },
+              ]}
+            />
+          </>
+        )}
       </div>
       {COLLECTION_LIST.map((c) => {
         if (!showCollection(c.id)) return null;
-        const items = DECOR_LIST.filter((d) => d.collection === c.id && keep(d));
+        const items = DECOR_LIST.filter(
+          (d) => d.collection === c.id && keep(d),
+        );
         if (items.length === 0) return null;
         // Out of season, event items only show if you own some (so the collection can still be completed later).
-        if (!collectionInSeason(c, now) && collectionProgress(game, c.id).owned === 0) return null;
+        if (
+          !collectionInSeason(c, now) &&
+          collectionProgress(game, c.id).owned === 0
+        )
+          return null;
         return (
           <section key={c.id} className="collection" aria-label={c.name}>
             <CollectionHeader c={c} game={game} tank={tank} />
             <div className="shop-grid">
               {items.map((d) => (
-                <DecorItem key={d.id} d={d} game={game} tank={tank} isNew={!seen.has(d.id)} />
+                <DecorItem
+                  key={d.id}
+                  d={d}
+                  game={game}
+                  tank={tank}
+                  isNew={!seen.has(d.id)}
+                />
               ))}
             </div>
           </section>
         );
       })}
-      {showCollection('classic') && classic.length > 0 && (
+      {showCollection("classic") && classic.length > 0 && (
         <section className="collection" aria-label="Classic">
           <div className="collection-head">
             <h3 className="section-title">🪸 Classic</h3>
           </div>
           <div className="shop-grid">
             {classic.map((d) => (
-              <DecorItem key={d.id} d={d} game={game} tank={tank} isNew={!seen.has(d.id)} />
+              <DecorItem
+                key={d.id}
+                d={d}
+                game={game}
+                tank={tank}
+                isNew={!seen.has(d.id)}
+              />
             ))}
           </div>
         </section>
@@ -408,7 +622,13 @@ function TanksTab({ game }: { game: GameState }) {
           onBuy={store.buyCapacityUpgrade}
         />
         <ShopItem
-          title={nextTank ? (game.tanks.length === 1 ? 'Second tank' : 'Third tank') : 'All tanks owned'}
+          title={
+            nextTank
+              ? game.tanks.length === 1
+                ? "Second tank"
+                : "Third tank"
+              : "All tanks owned"
+          }
           art={<span className="shop-emoji">🏠</span>}
           price={nextTank?.price ?? null}
           unlockLevel={nextTank?.unlockLevel ?? 0}
@@ -427,17 +647,30 @@ function TanksTab({ game }: { game: GameState }) {
               art={<span className={`shop-swatch theme-${id}`} />}
               price={owned ? null : theme.price}
               unlockLevel={theme.unlockLevel}
-              error={owned ? (inUse ? 'owned' : null) : economy.checkBuyTheme(game, id)}
+              error={
+                owned
+                  ? inUse
+                    ? "owned"
+                    : null
+                  : economy.checkBuyTheme(game, id)
+              }
               game={game}
-              blockedOverride={inUse ? { label: 'In use', reason: `${tank.name} already uses this theme` } : undefined}
-              buyLabel={owned ? 'Use here' : 'Buy'}
+              blockedOverride={
+                inUse
+                  ? {
+                      label: "In use",
+                      reason: `${tank.name} already uses this theme`,
+                    }
+                  : undefined
+              }
+              buyLabel={owned ? "Use here" : "Buy"}
               onBuy={() => (owned ? store.applyTheme(id) : store.buyTheme(id))}
             />
           );
         })}
       </div>
       <div className="shop-more">
-        <Button size="sm" onClick={() => store.openPanel('tanks')}>
+        <Button size="sm" onClick={() => store.openPanel("tanks")}>
           🏠 Switch &amp; rename tanks
         </Button>
       </div>
@@ -450,7 +683,7 @@ export function Shop() {
   const tab = useGameStore((s) => s.shopTab);
   const game = useGameStore((s) => s.game);
   const openPanel = useGameStore((s) => s.openPanel);
-  if (panel !== 'shop') return null;
+  if (panel !== "shop") return null;
 
   return (
     <Sheet
@@ -466,17 +699,26 @@ export function Shop() {
         </span>
       }
     >
-      <Tabs items={TABS} value={tab} onChange={(t) => openPanel('shop', t)} ariaLabel="Shop sections" />
-      {tab === 'fish' && <FishTab game={game} />}
-      {tab === 'food' && <FoodTab game={game} />}
-      {tab === 'decor' && <DecorTab game={game} />}
-      {tab === 'styles' && (
+      <Tabs
+        items={TABS}
+        value={tab}
+        onChange={(t) => openPanel("shop", t)}
+        ariaLabel="Shop sections"
+      />
+      {tab === "fish" && <FishTab game={game} />}
+      {tab === "food" && <FoodTab game={game} />}
+      {tab === "decor" && <DecorTab game={game} />}
+      {tab === "styles" && (
         <>
-          <p className="lead">Make {game.tanks.find((t) => t.id === game.activeTankId)?.name} yours. Tap an option to preview it; styles you buy work on every tank.</p>
+          <p className="lead">
+            Make {game.tanks.find((t) => t.id === game.activeTankId)?.name}{" "}
+            yours. Tap an option to preview it; styles you buy work on every
+            tank.
+          </p>
           <StylePicker />
         </>
       )}
-      {tab === 'tanks' && <TanksTab game={game} />}
+      {tab === "tanks" && <TanksTab game={game} />}
     </Sheet>
   );
 }

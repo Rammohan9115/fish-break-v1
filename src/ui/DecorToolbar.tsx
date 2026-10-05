@@ -12,6 +12,9 @@ import { PriceTag } from './Shop';
 const GAP_PX = 12;
 const EDGE_PX = 8;
 const SIZES: DecorSize[] = ['S', 'M', 'L'];
+/** Keyboard nudge in tank units (Shift = a bigger step). */
+const NUDGE = 10;
+const NUDGE_BIG = 40;
 
 export function DecorToolbar() {
   const mode = useGameStore((s) => s.mode);
@@ -23,6 +26,25 @@ export function DecorToolbar() {
   const tankId = useGameStore((s) => s.game.activeTankId);
   const [selling, setSelling] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const moveDecor = useGameStore((s) => s.moveDecor);
+  const placedX = placed?.x;
+
+  // Keyboard path for moving a piece: ←/→ nudge the selected piece (Shift for bigger steps).
+  useEffect(() => {
+    if (mode !== 'decorate' || !selectedId || placedX === undefined) return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      const t = e.target;
+      if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return;
+      // Arrows inside tab lists / sliders keep their own meaning.
+      if (t instanceof HTMLElement && t.closest('[role=tablist], [role=slider]')) return;
+      e.preventDefault();
+      const step = e.shiftKey ? NUDGE_BIG : NUDGE;
+      moveDecor(selectedId, placedX + (e.key === 'ArrowLeft' ? -step : step));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mode, selectedId, placedX, moveDecor]);
 
   // Follow the piece (it may bob or drift); flip below it when there's no room above.
   useEffect(() => {

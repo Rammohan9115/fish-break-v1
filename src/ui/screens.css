@@ -1431,7 +1431,7 @@
   top: 2px;
   right: 2px;
   padding: 0 6px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   color: var(--color-gold-text);
   background: var(--color-gold);
@@ -1591,4 +1591,22 @@
   min-height: var(--tap-min);
   color: var(--color-brand);
   font-weight: 700;
+}
+
+/* The always-visible Feed button beside the tool handle. */
+.app .dock-feed {
+  flex: none;
+}
+@media (max-width: 560px) and (orientation: portrait) {
+  .app .dock-feed {
+    width: 56px;
+    align-self: flex-end;
+  }
+  .app .toolbar:has(.dock-feed) {
+    gap: 6px;
+  }
+}
+
+.filters-more {
+  align-self: flex-start;
 }

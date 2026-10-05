@@ -72,6 +72,8 @@ export interface Toast {
   text: string;
   /** Bumped when a duplicate merges in, so a visible toast restarts its timer. */
   rev: number;
+  /** An Undo-style button; such a toast stays longer and is never merged with another. */
+  action?: { label: string; run: () => void };
 }
 
 /** "+5 🐚" → { amount: 5, unit: "🐚" } (merged by adding amounts). */
@@ -81,7 +83,8 @@ const AMOUNT_TOAST = /^\+(\d+) (.+)$/u;
  * Notification budget: an identical toast already waiting or showing is refreshed instead of repeated,
  * and "+N thing" toasts add up ("+3 🐚" ×4 → "+12 🐚"). The queue keeps at most TOAST_QUEUE_MAX.
  */
-export function mergeToast(toasts: Toast[], text: string, id: number): Toast[] {
+export function mergeToast(toasts: Toast[], text: string, id: number, action?: Toast['action']): Toast[] {
+  if (action) return [...toasts, { id, text, rev: 0, action }].slice(-TOAST_QUEUE_MAX);
   const m = AMOUNT_TOAST.exec(text);
   if (m) {
     const unit = m[2];
@@ -187,7 +190,7 @@ export interface GameStore {
   wipeAlgae: (spotId: string) => boolean;
   renameFish: (fishId: string, name: string) => void;
   toggleMute: () => void;
-  addToast: (text: string) => void;
+  addToast: (text: string, action?: Toast['action']) => void;
   dismissToast: (id: number) => void;
   dismissLevelUp: () => void;
   /** Switches tool. Premium with no food left shows a toast and stays put. */
@@ -600,10 +603,10 @@ export const useGameStore = create<GameStore>()((set, get) => {
     toggleMute: () =>
       set((s) => ({ game: { ...s.game, settings: { ...s.game.settings, muted: !s.game.settings.muted } } })),
 
-    addToast: (text) => {
+    addToast: (text, action) => {
       toastSeq += 1;
       const toast = { id: toastSeq, text };
-      set((s) => ({ toasts: mergeToast(s.toasts, toast.text, toast.id) }));
+      set((s) => ({ toasts: mergeToast(s.toasts, toast.text, toast.id, action) }));
     },
 
     dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
@@ -719,8 +722,19 @@ export const useGameStore = create<GameStore>()((set, get) => {
     sellFish: (fishId) => {
       const fish = get().game.fish.find((f) => f.id === fishId);
       const value = fish ? economy.sellValue(fish) : null;
-      const sold = commitResult(economy.sellFish(get().game, fishId), fish && value !== null ? `Sold ${fish.name} for ${value} 🐚` : undefined);
-      if (sold && get().selectedFishId === fishId) set({ selectedFishId: null });
+      const sold = commitResult(economy.sellFish(get().game, fishId));
+      if (!sold || !fish || value === null) return sold;
+      if (get().selectedFishId === fishId) set({ selectedFishId: null });
+      get().addToast(`Sold ${fish.name} for ${value} 🐚`, {
+        label: 'Undo',
+        run: () => {
+          const back = economy.restoreSoldFish(get().game, fish, value);
+          if (back) {
+            set({ game: back });
+            get().addToast(`${fish.name} is back! 🐟`);
+          } else get().addToast(`Couldn't bring ${fish.name} back (the shells were spent or the tank filled up).`);
+        },
+      });
       return sold;
     },
 
@@ -732,13 +746,21 @@ export const useGameStore = create<GameStore>()((set, get) => {
     sellDecor: (tankId, placedId) => {
       const placed = get().game.tanks.find((t) => t.id === tankId)?.decor.find((d) => d.id === placedId);
       const refund = placed ? economy.decorRefund(placed.decorId) : null;
-      const sold = commitResult(
-        economy.sellDecor(get().game, tankId, placedId),
-        refund ? `Sold for ${refund.amount} ${refund.currency === 'shells' ? '🐚' : 'pearls'}` : undefined,
-      );
+      const sold = commitResult(economy.sellDecor(get().game, tankId, placedId));
       if (sold && get().selectedDecorId === placedId) set({ selectedDecorId: null });
-      // Money changes can't be undone (it would bring the piece back for free), so the undo history starts over.
+      // Money changes can't be undone through the Decorate history (it would bring the piece back for free), so
+      // that history starts over. The Undo toast below takes the refund back instead.
       if (sold) set({ decorHistory: { past: [], future: [] } });
+      if (sold && placed && refund) {
+        get().addToast(`Sold for ${refund.amount} ${refund.currency === 'shells' ? '🐚' : 'pearls'}`, {
+          label: 'Undo',
+          run: () => {
+            const back = economy.restoreSoldDecor(get().game, tankId, placed, refund);
+            if (back) set({ game: back });
+            else get().addToast("Couldn't bring it back (the money was spent or the tank is full).");
+          },
+        });
+      }
       return sold;
     },
     buyCapacityUpgrade: () => commitResult(economy.buyCapacityUpgrade(get().game), '🏠 More room in the tank!'),

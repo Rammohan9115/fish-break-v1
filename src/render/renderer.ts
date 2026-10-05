@@ -24,6 +24,8 @@ import {
   PUFF_ATTACK_MS,
   PUFF_DURATION_MS,
   PUFF_RELEASE_MS,
+  PORTRAIT_FISH_BOOST,
+  PORTRAIT_FISH_BOOST_MAX_WIDTH,
   PORTRAIT_ZOOM,
   REDUCED_WAVE,
   REDUCED_WOBBLE,
@@ -59,7 +61,7 @@ import {
 } from './behavior';
 import type { JellyDrawState } from './drawJelly';
 import { jellySize } from './jellyMotion';
-import { drawFish, drawStar, fishHalfHeight, FISH_ART, fishScale, mouthOffset } from './drawFish';
+import { drawFish, drawStar, fishHalfHeight, FISH_ART, fishScale, mouthOffset, setFishViewBoost } from './drawFish';
 import { eatSquash, pokeBounce, speedFraction } from './fishMotion';
 import { dropShadow } from './paint';
 import {
@@ -269,6 +271,8 @@ export class Renderer {
     const fitW = cssWidth / TANK_WIDTH;
     const wide = cssWidth / cssHeight >= TANK_WIDTH / TANK_HEIGHT;
     this.scale = wide ? fitH : Math.min(fitH, fitW * PORTRAIT_ZOOM);
+    // Tall phone screens show a zoomed slice of the tank, where fish read small: make them a bit bigger.
+    setFishViewBoost(!wide && cssWidth <= PORTRAIT_FISH_BOOST_MAX_WIDTH ? PORTRAIT_FISH_BOOST : 1);
     const vw = cssWidth / this.scale;
     const vh = cssHeight / this.scale;
     this.viewW = vw;

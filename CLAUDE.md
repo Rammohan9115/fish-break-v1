@@ -473,5 +473,17 @@ Bright, glossy, chunky cartoon, like classic casual aquarium games. This superse
 - **Delete account:** Settings → "Delete my account & data" calls the `delete-account` Edge Function (service role, caller identified by their JWT; cascades to `saves`). The game on the device is kept and the player carries on as a guest.
 - **Analytics:** `src/lib/analytics.ts` (PostHog EU capture API, no SDK, no cookies, anonymous random id, honors Do Not Track, opt-out in Settings). It only runs when `VITE_ANALYTICS_KEY` is set. Events are detected from store diffs in `store/analyticsWiring.ts`; never send names, emails or ids.
 
+## UX Rules
+These keep the interface calm on every screen. `src/ui/kit/index.ts` points here.
+1. **One thing at a time.** The first run shows only the onboarding tip: the goal chip, daily gift, pan tip and toasts wait until it is done. Nothing stacks on top of anything else.
+2. **Nothing overlaps, on any screen.** Banners, toasts, tips and cards sit in the space between the HUD and the dock. Never hard-code those offsets: `useLayoutVars` measures them into `--hud-stack` and `--dock-h` (the CSS values are only first-paint fallbacks). Cards docked at the right (≥ 641px) push top banners into the free space beside them.
+3. **Check it at 320×568, 375×667, 390×844, 844×390 (landscape), 768×1024 and 1366×768** before shipping a UI change. `node scripts/audit/layout.mjs` (dev server running) reports overlaps, off-screen elements and clipped text; its screenshots are the proof.
+4. **Tap targets are at least 44px** (`--tap-min`) and text is at least 12px. A small visual (like a ✕ or a dot) gets an invisible 44px hit area.
+5. **Frequent actions are one tap.** Feed stays visible next to the Tools handle; everything else lives in the tucked-away dock.
+6. **Destructive actions confirm, and sales can be undone.** Selling a fish or decor shows a 6-second Undo toast (the money is taken back, nothing else is lost). Reset and delete-account use a confirm dialog.
+7. **Never rely on colour or sound alone.** Meters have icon + word; every action has a visible label; accessible names start with the visible text.
+8. **Everything works without a mouse.** Arrow keys pick fish and nudge decor (Shift = bigger steps), Space pets, Esc closes the top layer.
+9. **Quiet and kind.** Sound starts muted, no streaks, no guilt, motion respects `prefers-reduced-motion`.
+
 ## Out of scope (for now)
 Custom backend servers, multiplayer/visiting friends, payments, leaderboards.

@@ -91,8 +91,14 @@ export const FISH_ART: Record<SpeciesId, { mouthX: number; halfHeight: number; s
   koi: { mouthX: 34, halfHeight: 14, spriteLen: 74 },
 };
 
+/** Phone portrait zooms the scene but leaves the fish small; this multiplies every fish (art, hit areas, mouths) alike. */
+let viewBoost = 1;
+export function setFishViewBoost(boost: number): void {
+  viewBoost = boost;
+}
+
 export function fishScale(stage: Stage): number {
-  return STAGE_SCALE[stage] * FISH_ART_SCALE;
+  return STAGE_SCALE[stage] * FISH_ART_SCALE * viewBoost;
 }
 
 /** Distance from the fish center to its mouth, in tank units. */

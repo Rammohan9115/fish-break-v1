@@ -293,7 +293,8 @@ Read CLAUDE.md, CONTEXT.md and ASSESSMENT.md (LAUNCH-1, LAUNCH-2, BUG-2, SYNC-2.
 Tests for every change.
 ```
 
-### Batch 4: UX polish and accessibility
+### Batch 4: UX polish and accessibility ✅ Done 2026-10-05
+_UX-1, 4..9, A11Y-1..4 and BAL-8 done. Layout audit (11 viewports × 13 states): genuine overlap kinds 7 → 1 (a phone's bottom-sheet card over the tucked dock, by design), no off-screen or clipped elements. Lighthouse accessibility 91 → 100. 528 unit + 12 e2e tests pass._
 ```
 Read CLAUDE.md, CONTEXT.md and ASSESSMENT.md (UX-1, UX-4..9, A11Y-1..4, BAL-8).
 Use Playwright MCP at 390x844, 375x667, 844x390 and 1440x900 to verify every fix with screenshots in qa/.

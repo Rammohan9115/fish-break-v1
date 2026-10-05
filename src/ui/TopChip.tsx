@@ -6,6 +6,7 @@ import { BREEDING_QUEST_REWARD, DECOR, GOAL_DISMISSED_KEY, MODE_IDLE_EXIT_MS, SE
 import { maxDecor } from '../game/decor';
 import { sound } from '../audio/sound';
 import type { QuestStep } from '../game/breeding';
+import { goalOfTheDay } from '../game/goals';
 import { nextUnlock, xpToNext } from '../game/levels';
 import { useGameStore } from '../store/gameStore';
 import { formatClock, formatCount } from './format';
@@ -122,38 +123,55 @@ function TryBanner() {
   );
 }
 
-function readDismissed(): number | null {
+function readDismissed(): string | null {
   try {
-    const v = localStorage.getItem(GOAL_DISMISSED_KEY);
-    return v === null ? null : Number(v);
+    return localStorage.getItem(GOAL_DISMISSED_KEY);
   } catch {
     return null;
   }
 }
 
-/** "Next: Lv 5 unlocks Breeding · 40 XP to go". Dismissed per level. */
+/**
+ * "Next: Lv 5 unlocks Breeding · 40 XP to go", dismissed per level. Once everything is unlocked it becomes a
+ * long-term goal of the day ("Complete the Ruins collection · 2/4 pieces"), dismissed for that day.
+ */
 function GoalChip() {
   const level = useGameStore((s) => s.game.level);
   const xp = useGameStore((s) => s.game.xp);
-  const [dismissedAt, setDismissedAt] = useState(readDismissed);
+  const game = useGameStore((s) => s.game);
+  const [dismissed, setDismissed] = useState(readDismissed);
   const next = nextUnlock(level);
-  if (!next || dismissedAt === level) return null;
-  const first = next.unlocks[0];
-  if (!first) return null;
-  const what = first.label.replace(/\s*\(.*\)$/, '');
-  const toGo = formatCount(Math.max(0, xpToNext(level) - xp));
-  const sub = next.level === level + 1 ? `${toGo} XP to go` : `Lv ${level + 1} in ${toGo} XP`;
+
+  let key: string;
+  let text: string;
+  let sub: string;
+  if (next) {
+    const first = next.unlocks[0];
+    if (!first) return null;
+    const toGo = formatCount(Math.max(0, xpToNext(level) - xp));
+    key = String(level);
+    text = `⭐ Next: Lv ${next.level} unlocks ${first.label.replace(/\s*\(.*\)$/, '')}`;
+    sub = next.level === level + 1 ? `${toGo} XP to go` : `Lv ${level + 1} in ${toGo} XP`;
+  } else {
+    const today = new Date();
+    const goal = goalOfTheDay(game, today);
+    if (!goal) return null;
+    key = `${goal.id}@${today.toDateString()}`;
+    text = goal.text;
+    sub = goal.sub;
+  }
+  if (dismissed === key) return null;
   const dismiss = () => {
-    setDismissedAt(level);
+    setDismissed(key);
     try {
-      localStorage.setItem(GOAL_DISMISSED_KEY, String(level));
+      localStorage.setItem(GOAL_DISMISSED_KEY, key);
     } catch {
       // Not critical.
     }
   };
   return (
     <Banner className="goal-chip" onClose={dismiss} closeLabel="Hide goal" sub={sub}>
-      ⭐ Next: Lv {next.level} unlocks {what}
+      {text}
     </Banner>
   );
 }

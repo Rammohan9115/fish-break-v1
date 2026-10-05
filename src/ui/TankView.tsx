@@ -317,8 +317,19 @@ export function TankView() {
     if (renderer.canPan) {
       try {
         if (!localStorage.getItem(PAN_TIP_KEY)) {
-          localStorage.setItem(PAN_TIP_KEY, '1');
-          window.setTimeout(() => useGameStore.getState().addToast('👆 Drag the water to look around the tank'), 1200);
+          // Not while the first-run tips are up: a new player is asked for one thing at a time.
+          const show = () => {
+            localStorage.setItem(PAN_TIP_KEY, '1');
+            window.setTimeout(() => useGameStore.getState().addToast('👆 Drag the water to look around the tank'), 1200);
+          };
+          if (useGameStore.getState().onboardingStep === null) show();
+          else {
+            const stopWaiting = useGameStore.subscribe((st) => {
+              if (st.onboardingStep !== null) return;
+              stopWaiting();
+              show();
+            });
+          }
         }
       } catch {
         // Storage unavailable: skip the tip.

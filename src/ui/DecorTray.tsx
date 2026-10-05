@@ -225,7 +225,7 @@ export function DecorTray() {
         value={tab}
         onChange={setTab}
         items={[
-          { id: 'box', label: `📦 Box${boxed > 0 ? ` (${boxed})` : ''}`, title: 'Decor box' },
+          { id: 'box', label: `📦 Box${boxed > 0 ? ` (${boxed})` : ''}`, title: `Box${boxed > 0 ? ` (${boxed})` : ''}: your decor box` },
           { id: 'layouts', label: '💾 Layouts' },
           { id: 'style', label: '✨ Tank Style' },
         ]}
