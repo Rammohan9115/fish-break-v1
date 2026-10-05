@@ -278,7 +278,8 @@ Read CLAUDE.md, CONTEXT.md and ASSESSMENT.md (PERF-1, PERF-2, PERF-5, PERF-6, PE
 Measure before/after with Lighthouse on `vite preview` and report payload, LCP, TBT, TTI.
 ```
 
-### Batch 3: PWA and sync robustness
+### Batch 3: PWA and sync robustness ✅ Done 2026-10-05
+_LAUNCH-1/2, BUG-2..5, SYNC-2..5 and SYNC-7 fixed with tests (491 passing). Offline start and the two-tab handover were verified in Chrome. The size-limit migration (`002_saves_size_limit.sql`) still has to be run in Supabase._
 ```
 Read CLAUDE.md, CONTEXT.md and ASSESSMENT.md (LAUNCH-1, LAUNCH-2, BUG-2, SYNC-2..5, SYNC-7, BUG-3..5).
 - vite-plugin-pwa: precache shell + WebP assets, offline start, "New version — tap to update" toast.
@@ -306,7 +307,8 @@ Use Playwright MCP at 390x844, 375x667, 844x390 and 1440x900 to verify every fix
 Add the missing "UX Rules" section to CLAUDE.md.
 ```
 
-### Batch 5: Launch plumbing (analytics, account, legal, CI)
+### Batch 5: Launch plumbing (analytics, account, legal, CI) ✅ Done 2026-10-05 (needs owner actions, see below)
+_LAUNCH-3/5, SEC-3/4, CODE-1/2/5, PRIV-1 done: 515 unit tests + 8 e2e pass, lint clean. Owner actions: deploy the `delete-account` function, add `{{ .Token }}` to the Supabase magic-link email template, run migration 002, set `VITE_ANALYTICS_KEY` in Vercel to enable analytics, fill the art section of CREDITS.md._
 ```
 Read CLAUDE.md, CONTEXT.md and ASSESSMENT.md (LAUNCH-3..5, SEC-3, SEC-4, CODE-1, CODE-2, CODE-5, PRIV-1).
 - Privacy-friendly analytics (PostHog EU or Plausible) with the ~12 events listed in LAUNCH-3, opt-out in Settings.

@@ -1,11 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CORRUPT_SAVE_PREFIX, HOUR_MS, MINUTE_MS, SAVE_INTERVAL_MS, SAVE_KEY, SAVE_VERSION } from '../game/constants';
+import { CORRUPT_BACKUPS_KEPT, CORRUPT_SAVE_PREFIX, HOUR_MS, MINUTE_MS, SAVE_INTERVAL_MS, SAVE_KEY, SAVE_VERSION } from '../game/constants';
 import type { OfflineSummary } from '../game/sim';
 import { makeFish, makeState, seededRng, T0 } from '../game/testUtils';
-import { formatOfflineSummary, isValidGameState, loadGame, loadOnboarding, migrate, saveGame, saveOnboarding, startAutosave } from './save';
+import {
+  formatOfflineSummary,
+  isValidGameState,
+  listCorruptBackups,
+  loadGame,
+  loadOnboarding,
+  migrate,
+  restoreCorruptBackup,
+  saveGame,
+  saveOnboarding,
+  startAutosave,
+} from './save';
+import { setSaveLock } from './saveLock';
 import { fakeEnv, MemoryStorage } from './testEnv';
 
 const rng = () => seededRng(1);
+
+afterEach(() => setSaveLock(null));
 
 describe('saveGame / loadGame', () => {
   it('starts a fresh game when there is no save', () => {
@@ -51,12 +65,39 @@ describe('saveGame / loadGame', () => {
 
   it('swallows storage errors when saving', () => {
     const storage = {
+      ...new MemoryStorage(),
       getItem: () => null,
       setItem: () => {
         throw new Error('QuotaExceeded');
       },
+      removeItem: () => undefined,
+      length: 0,
+      key: () => null,
     };
     expect(() => saveGame(makeState(), storage)).not.toThrow();
+    expect(saveGame(makeState(), storage)).toBe(false);
+  });
+
+  it('a full storage drops old corrupt backups and retries', () => {
+    const storage = new MemoryStorage();
+    storage.setItem(`${CORRUPT_SAVE_PREFIX}1`, 'x'.repeat(10));
+    const realSet = storage.setItem.bind(storage);
+    storage.setItem = (k, v) => {
+      if (k === SAVE_KEY && storage.data.has(`${CORRUPT_SAVE_PREFIX}1`)) throw new Error('QuotaExceeded');
+      realSet(k, v);
+    };
+    expect(saveGame(makeState(), storage)).toBe(true);
+    expect(storage.getItem(SAVE_KEY)).not.toBeNull();
+    expect(storage.getItem(`${CORRUPT_SAVE_PREFIX}1`)).toBeNull();
+  });
+
+  it('writes nothing while the save is locked', () => {
+    const storage = new MemoryStorage();
+    setSaveLock('other-tab');
+    expect(saveGame(makeState(), storage)).toBe(false);
+    expect(storage.getItem(SAVE_KEY)).toBeNull();
+    setSaveLock(null);
+    expect(saveGame(makeState(), storage)).toBe(true);
   });
 });
 
@@ -65,7 +106,6 @@ describe('corrupt saves', () => {
     ['invalid JSON', '{not json'],
     ['a non-object', '42'],
     ['missing fields', JSON.stringify({ version: SAVE_VERSION, shells: 5 })],
-    ['a future version', JSON.stringify({ ...makeState(), version: SAVE_VERSION + 1 })],
     ['an unknown activeTankId', JSON.stringify({ ...makeState(), activeTankId: 'nope' })],
   ];
 
@@ -78,6 +118,52 @@ describe('corrupt saves', () => {
     expect(storage.getItem(`${CORRUPT_SAVE_PREFIX}${T0}`)).toBe(raw);
     expect(state.shells).toBe(30);
     expect(state.fish).toHaveLength(2);
+  });
+});
+
+describe('a save from a newer version', () => {
+  it('is left untouched (not backed up, not corrupt) and flagged tooNew', () => {
+    const storage = new MemoryStorage();
+    const raw = JSON.stringify({ ...makeState(), version: SAVE_VERSION + 1 });
+    storage.setItem(SAVE_KEY, raw);
+    const r = loadGame(storage, T0, { rng: rng() });
+    expect(r.tooNew).toBe(true);
+    expect(r.corrupt).toBe(false);
+    expect(storage.getItem(SAVE_KEY)).toBe(raw);
+    expect(listCorruptBackups(storage)).toHaveLength(0);
+  });
+});
+
+describe('corrupt-save backups', () => {
+  it('keeps only the newest few', () => {
+    const storage = new MemoryStorage();
+    for (let i = 1; i <= 5; i++) {
+      storage.setItem(SAVE_KEY, `{bad ${i}`);
+      loadGame(storage, T0 + i, { rng: rng() });
+    }
+    const kept = listCorruptBackups(storage);
+    expect(kept).toHaveLength(CORRUPT_BACKUPS_KEPT);
+    expect(kept.map((b) => b.at)).toEqual([T0 + 5, T0 + 4]);
+  });
+
+  it('restores a backup that is usable again, keeping the replaced save as a backup', () => {
+    const storage = new MemoryStorage();
+    const good = makeState({ overrides: { shells: 777 } });
+    storage.setItem(`${CORRUPT_SAVE_PREFIX}${T0}`, JSON.stringify(good));
+    storage.setItem(SAVE_KEY, JSON.stringify(makeState({ overrides: { shells: 1 } })));
+    const restored = restoreCorruptBackup(storage, `${CORRUPT_SAVE_PREFIX}${T0}`, T0 + 5);
+    expect(restored?.shells).toBe(777);
+    expect(JSON.parse(storage.getItem(SAVE_KEY)!).shells).toBe(777);
+    const backups = listCorruptBackups(storage);
+    expect(backups).toHaveLength(1);
+    expect(JSON.parse(storage.getItem(backups[0]!.key)!).shells).toBe(1);
+  });
+
+  it('refuses a backup that is still unreadable', () => {
+    const storage = new MemoryStorage();
+    storage.setItem(`${CORRUPT_SAVE_PREFIX}${T0}`, '{nope');
+    expect(restoreCorruptBackup(storage, `${CORRUPT_SAVE_PREFIX}${T0}`, T0)).toBeNull();
+    expect(storage.getItem(SAVE_KEY)).toBeNull();
   });
 });
 
@@ -133,6 +219,43 @@ describe('formatOfflineSummary', () => {
 
   it('has a friendly fallback when nothing happened', () => {
     expect(formatOfflineSummary({ ...base, elapsedMs: 5 * MINUTE_MS })).toBe('While you were away (5m), your fish missed you!');
+  });
+});
+
+describe('startAutosave failures and locks', () => {
+  it('reports a failed save once per failure streak', () => {
+    const { env, storage } = fakeEnv();
+    const failed = vi.fn();
+    env.onSaveFailed = failed;
+    vi.useFakeTimers();
+    let broken = true;
+    const real = storage.setItem.bind(storage);
+    storage.setItem = (k, v) => {
+      if (broken) throw new Error('QuotaExceeded');
+      real(k, v);
+    };
+    const stop = startAutosave(() => makeState(), env);
+    vi.advanceTimersByTime(SAVE_INTERVAL_MS * 3);
+    expect(failed).toHaveBeenCalledTimes(1);
+    broken = false;
+    vi.advanceTimersByTime(SAVE_INTERVAL_MS);
+    broken = true;
+    vi.advanceTimersByTime(SAVE_INTERVAL_MS);
+    expect(failed).toHaveBeenCalledTimes(2);
+    stop();
+    vi.useRealTimers();
+  });
+
+  it('does not save while locked', () => {
+    const { env, storage } = fakeEnv();
+    vi.useFakeTimers();
+    setSaveLock('newer');
+    const stop = startAutosave(() => makeState(), env);
+    vi.advanceTimersByTime(SAVE_INTERVAL_MS * 2);
+    expect(storage.getItem(SAVE_KEY)).toBeNull();
+    stop();
+    setSaveLock(null);
+    vi.useRealTimers();
   });
 });
 

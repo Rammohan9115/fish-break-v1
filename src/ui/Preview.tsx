@@ -22,6 +22,8 @@ function useCanvas(draw: (ctx: CanvasRenderingContext2D) => void, deps: unknown[
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
     draw(ctx);
+    // `deps` is the caller's list of what the drawing depends on; `draw` is intentionally not one of them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
   return ref;
 }

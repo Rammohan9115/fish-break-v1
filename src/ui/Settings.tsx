@@ -2,9 +2,10 @@
 import { useState } from 'react';
 import { AUTH_GOOGLE_ENABLED } from '../game/constants';
 import { createInitialState } from '../game/sim';
-import { logOut, sendMagicLink, signInWithGoogle, useCloudStore } from '../store/cloudSave';
+import { analytics } from '../lib/analytics';
+import { deleteAccount, logOut, sendMagicLink, signInWithGoogle, useCloudStore, verifyEmailCode } from '../store/cloudSave';
 import { useGameStore } from '../store/gameStore';
-import { saveGame } from '../store/save';
+import { listCorruptBackups, restoreCorruptBackup, saveGame } from '../store/save';
 import { SyncBadge } from './SyncIndicator';
 import { breedingUnlocked } from '../game/breeding';
 import { sound } from '../audio/sound';
@@ -28,6 +29,17 @@ function LoginForm({ onBack }: { onBack: () => void }) {
   const [email, setEmail] = useState('');
   const [state, setState] = useState<'idle' | 'sending' | 'sent' | 'redirecting'>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+  const [verifying, setVerifying] = useState(false);
+
+  const submitCode = async () => {
+    setError(null);
+    setVerifying(true);
+    const result = await verifyEmailCode(email.trim(), code);
+    setVerifying(false);
+    if (result.ok) onBack();
+    else setError(result.message);
+  };
 
   const submit = async () => {
     const trimmed = email.trim();
@@ -64,9 +76,35 @@ function LoginForm({ onBack }: { onBack: () => void }) {
         </div>
         <h3>Check your inbox!</h3>
         <p>
-          We sent a magic link to <strong>{email.trim()}</strong>. Tap it on this device and your fish will be saved to the cloud.
+          We sent a magic link to <strong>{email.trim()}</strong>. Open it in this browser and your fish will be saved to the cloud.
         </p>
-        <Button onClick={onBack}>Back</Button>
+        <p className="meta">On another device or browser? Type the 6-digit code from the same email instead.</p>
+        <form
+          className="login-code"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submitCode();
+          }}
+        >
+          <input
+            className="login-input"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            pattern="[0-9]*"
+            maxLength={8}
+            placeholder="123456"
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+            aria-label="6-digit code from the email"
+          />
+          {error && <p className="login-error">{error}</p>}
+          <Button type="submit" variant="primary" block busy={verifying} disabledReason={code.length < 6 ? "Enter the 6-digit code" : null}>
+            {verifying ? 'Checking…' : 'Use this code'}
+          </Button>
+        </form>
+        <Button variant="ghost" onClick={onBack}>
+          Back
+        </Button>
       </div>
     );
   }
@@ -180,6 +218,125 @@ function Help() {
   );
 }
 
+/** Backups of saves that couldn't be read. Shown only when there are any; restoring one makes it the current game. */
+function RestoreBackup() {
+  const openPanel = useGameStore((s) => s.openPanel);
+  const [backups, setBackups] = useState(() => listCorruptBackups(window.localStorage));
+  if (backups.length === 0) return null;
+  const restore = (key: string) => {
+    const state = restoreCorruptBackup(window.localStorage, key, Date.now());
+    if (state) {
+      useGameStore.getState().loadState(state);
+      useGameStore.getState().addToast('Backup restored 🐟');
+      openPanel(null);
+    } else {
+      useGameStore.getState().addToast("That backup still can't be read.");
+      setBackups(listCorruptBackups(window.localStorage));
+    }
+  };
+  return (
+    <div className="restore-backup">
+      <p className="meta">A save that couldn't be read was set aside. You can try to bring it back:</p>
+      {backups.map((b) => (
+        <Button key={b.key} onClick={() => restore(b.key)}>
+          Restore backup · {b.at > 0 ? new Date(b.at).toLocaleString() : 'unknown date'}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+/** Required by app stores and GDPR: the player can erase their account and cloud save. The game on this device stays. */
+function DeleteAccount() {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const run = async () => {
+    setBusy(true);
+    const result = await deleteAccount();
+    setBusy(false);
+    if (result.ok) setConfirming(false);
+    else setError(result.message);
+  };
+  return (
+    <>
+      <Button variant="danger" size="sm" onClick={() => setConfirming(true)}>
+        Delete my account & data…
+      </Button>
+      {confirming && (
+        <ConfirmDialog
+          title="Delete your account?"
+          body={
+            <>
+              <p>This permanently deletes your account, your email address and your cloud save from our servers. It can't be undone.</p>
+              <p>The game on this device is kept, so you can carry on as a guest.</p>
+              {error && <p className="login-error">{error}</p>}
+            </>
+          }
+          confirmLabel={busy ? 'Deleting…' : 'Yes, delete everything'}
+          cancelLabel="Keep my account"
+          tone="danger"
+          onCancel={() => {
+            setConfirming(false);
+            setError(null);
+          }}
+          onConfirm={() => void run()}
+        />
+      )}
+    </>
+  );
+}
+
+/** Anonymous usage statistics: shown only when analytics is configured. */
+function PrivacySettings() {
+  const a = analytics();
+  const [optedOut, setOptedOut] = useState(a.isOptedOut());
+  return (
+    <section className="settings-section">
+      <h3 className="section-title">Privacy</h3>
+      {a.configured && (
+        <Switch
+          checked={!optedOut}
+          onChange={(on) => {
+            a.setOptOut(!on);
+            setOptedOut(!on);
+          }}
+          hint="Anonymous counts of what's used (like feeding or decorating) help improve the game. No names, no email."
+        >
+          Share anonymous usage stats
+        </Switch>
+      )}
+      <div className="settings-row">
+        <a className="settings-link" href="/privacy.html" target="_blank" rel="noopener">
+          Privacy policy
+        </a>
+      </div>
+    </section>
+  );
+}
+
+/** Open-source and font credits. The full list, including the art, is in CREDITS.md. */
+function About() {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="settings-section">
+      <h3 className="section-title">About</h3>
+      <Button size="sm" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        {open ? 'Hide credits' : 'About & credits'}
+      </Button>
+      {open && (
+        <div className="about">
+          <p>Fishbowl Break is a cozy fish tank for your 5-minute breaks.</p>
+          <p className="meta">
+            Fonts: Fredoka and Nunito (SIL Open Font License). Built with React, Zustand, Vite and Supabase (MIT / Apache-2.0).
+            Sounds are generated in your browser. Full credits and licenses are in CREDITS.md in the project.
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function ResetGame() {
   const [confirming, setConfirming] = useState(false);
   const openPanel = useGameStore((s) => s.openPanel);
@@ -256,6 +413,7 @@ export function Settings() {
                   >
                     {loggingOut ? 'Saving…' : 'Log out'}
                   </Button>
+                  <DeleteAccount />
                   {confirmingLogout && (
                     <ConfirmDialog
                       title="Log out without saving?"
@@ -280,8 +438,11 @@ export function Settings() {
           )}
           <Preferences />
           <Help />
+          <PrivacySettings />
+          <About />
           <section className="settings-section">
             <h3 className="section-title">Game</h3>
+            <RestoreBackup />
             <ResetGame />
           </section>
         </>

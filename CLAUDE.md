@@ -18,7 +18,7 @@ A cozy, cartoonish virtual fish tank in the browser. Players feed fish, watch th
 - React is used ONLY for UI overlays (HUD, shop, modals, toolbar), never for drawing fish.
 - State: Zustand, persisted to localStorage via a custom save module (plus optional Supabase cloud saves, see below)
 - Accounts & cloud saves: Supabase (`@supabase/supabase-js` used directly from the client; no custom backend)
-- Tests: Vitest for all simulation logic
+- Tests: Vitest for all simulation logic (`npm test`); Playwright end-to-end flows in `e2e/` (`npm run test:e2e`, uses the dev server). Lint: `npm run lint`. CI (`.github/workflows/ci.yml`) runs tsc, lint, tests, build and e2e on every push.
 - Styling: plain CSS modules or a single `styles.css`; no UI library
 - All art is drawn in code (Canvas paths). No external image assets.
 - Sound: Web Audio API, synthesized (no audio files)
@@ -404,7 +404,7 @@ Once per local calendar day, on first open: 20 shells + 3 premium food, with a 1
 - Esc exits anytime.
 
 ## Art Style
-Bright, glossy, chunky cartoon, like classic Facebook-era aquarium games. This supersedes the "pastel colors" wording elsewhere in this file.
+Bright, glossy, chunky cartoon, like classic casual aquarium games. This supersedes the "pastel colors" wording elsewhere in this file.
 - Saturated candy colors, not pastels. Thick 3-4px dark outlines (a darker shade of the fill, never black).
 - Every shape gets lighting: a radial/linear gradient fill (lighter top, darker bottom),
   a white glossy highlight ellipse at top-left, and a soft drop shadow on the sand.
@@ -436,7 +436,10 @@ Bright, glossy, chunky cartoon, like classic Facebook-era aquarium games. This s
 ## Persistence
 - Save to localStorage key `fishbowl-save` every 10s, on `visibilitychange`, and on `beforeunload`.
 - Save includes `version`. `save.ts` has a `migrations` map for future changes.
-- If the save is corrupt, back it up to `fishbowl-save-corrupt-<timestamp>` and start fresh with a toast.
+- If the save is corrupt, back it up to `fishbowl-save-corrupt-<timestamp>` and start fresh with a toast. Only the newest 2 backups are kept, and Settings offers "Restore backup".
+- A save written by a *newer* version is not corrupt: it is left untouched, saving is locked, and the player is asked to reload.
+- Only one tab saves (Web Lock `fishbowl-leader-tab`). Other tabs show "Open in another tab — Play here?"; Play here makes the leader save first, then takes over. If storage is full, one toast says so.
+- The app is a PWA (vite-plugin-pwa): the shell and sprites are precached, so it starts offline, and a new version asks before reloading. Icons come from `npm run build:icons`.
 - Settings menu has a "Reset game" option with a confirmation dialog.
 
 ## Conventions
@@ -451,21 +454,24 @@ Bright, glossy, chunky cartoon, like classic Facebook-era aquarium games. This s
 - **Client-only Supabase.** The app is a static Vite build on Vercel. `src/lib/supabase.ts` reads `VITE_SUPABASE_URL` and
   `VITE_SUPABASE_ANON_KEY` (the anon key is public by design; Row Level Security protects data). Keys live in `.env.local`
   (gitignored) and in Vercel env vars. Never commit keys.
-- **Login:** a "Save progress ☁️" button in the Settings panel (HUD ⚙️) opens a cartoon login modal with an email magic link.
+- **Login (PKCE):** the magic-link redirect carries a one-time `?code=` that is exchanged on load; opening the link in another browser can't work, so after sending the link the form also takes the 6-digit code from the same email (the Supabase email template must include `{{ .Token }}`). A "Save progress ☁️" button in the Settings panel (HUD ⚙️) opens a cartoon login modal with an email magic link.
   A "Continue with Google" button (Supabase OAuth) sits above the email form, behind the `AUTH_GOOGLE_ENABLED` flag (on). Settings shows the logged-in email and Log out. The magic-link redirect
   is handled on load.
 - **Table `saves`:** `user_id` uuid PK → `auth.users` (on delete cascade), `data` jsonb, `version` int, `updated_at` timestamptz
   (set by the server on every write). RLS: users can only select/insert/update their own row. SQL lives in `supabase/migrations/`.
 - **Sync (`src/store/cloudSave.ts`):**
   - When logged in, load the cloud save on startup, then run the usual offline catch-up.
-  - Save to the cloud debounced (every 30s while the state changes) and when the tab is hidden. localStorage stays as the cache and fallback.
+  - Save to the cloud debounced (every 10s while the state changes), when the tab is hidden and on `pagehide`. Nothing is written while the save is locked (newer version / another tab leads). localStorage stays as the cache and fallback.
   - First login with existing local progress: if the cloud is empty, upload local. If both exist, show a modal comparing them
     (level, shells, fish count, last played) and let the player pick one.
   - Cross-device conflicts: writes are conditional on the last known `updated_at`. If the cloud is newer than our last sync,
-    reload the cloud data instead of overwriting it.
+    show the same compare modal as the first login and let the player choose; nothing is overwritten silently.
   - Log out: save once more; only if that push is confirmed, clear the local cache and start a fresh guest game. If it can't be confirmed (offline), warn and let the player cancel or log out anyway.
   - A small HUD indicator shows ☁️✓ synced / ⟳ saving / ⚠ offline. Network calls never block gameplay.
   - Cloud data is validated with the same save version and migrations as local saves before it's loaded.
+
+- **Delete account:** Settings → "Delete my account & data" calls the `delete-account` Edge Function (service role, caller identified by their JWT; cascades to `saves`). The game on the device is kept and the player carries on as a guest.
+- **Analytics:** `src/lib/analytics.ts` (PostHog EU capture API, no SDK, no cookies, anonymous random id, honors Do Not Track, opt-out in Settings). It only runs when `VITE_ANALYTICS_KEY` is set. Events are detected from store diffs in `store/analyticsWiring.ts`; never send names, emails or ids.
 
 ## Out of scope (for now)
 Custom backend servers, multiplayer/visiting friends, payments, leaderboards.

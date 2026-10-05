@@ -82,6 +82,12 @@ export function Toolbar() {
     if (onboardingStep === 0) setOpen(true);
   }, [onboardingStep]);
 
+  // On phones a fish/decor card is a bottom sheet over the dock: opening the tools puts the card away first.
+  const selectFish = useGameStore((s) => s.selectFish);
+  useEffect(() => {
+    if (open && window.matchMedia('(max-width: 640px)').matches) selectFish(null);
+  }, [open, selectFish]);
+
   const pick = (action: () => void) => {
     action();
     setOpen(false);

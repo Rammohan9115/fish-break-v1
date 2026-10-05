@@ -1462,3 +1462,133 @@
 .tray-fold {
   margin-left: auto;
 }
+
+/* Settings → restore a set-aside save */
+.restore-backup {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+/* ==== Responsive fixes (assessment batch 4) ==== */
+
+/* Tap targets: every control is at least --tap-min (44px). */
+.mini-btn {
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+}
+.size-btn {
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+}
+.chip {
+  min-height: var(--tap-min);
+}
+.guide-dot {
+  width: var(--tap-min);
+  margin-inline: -8px;
+}
+
+/* Phones (portrait): the HUD is two rows tall, so compact banners (feed / clean / decorate) go below it
+   instead of overlapping the pearls and settings buttons. --hud-stack is measured in useLayoutVars. */
+@media (max-width: 560px) and (orientation: portrait) {
+  .banner-compact {
+    top: calc(var(--hud-stack, 112px) + env(safe-area-inset-top));
+    max-width: calc(100vw - 24px);
+  }
+}
+
+/* Cards docked at the right (tablet, desktop, landscape phones) must not run into a top banner:
+   the banner moves into the free space left of the card, clear of the HUD's left column. */
+@media (min-width: 641px) {
+  .app:has(.sheet-inline) .banner-top,
+  .app:has(.sheet-inline) .banner-compact {
+    left: calc(var(--hud-left-w, 170px) + env(safe-area-inset-left));
+    transform: none;
+    max-width: max(180px, calc(100vw - var(--inline-sheet-w, 340px) - var(--hud-left-w, 170px) - 32px));
+  }
+  .app:has(.sheet-inline) .banner-compact .banner-main {
+    max-width: 100%;
+  }
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  .app {
+    --inline-sheet-w: 300px;
+    /* Phones hide the sound and fullscreen buttons, so the HUD's left column is narrower. */
+    --hud-left-w: 118px;
+  }
+  .sheet-inline {
+    --sheet-w: 300px;
+  }
+}
+
+/* The inline card sits below whatever the HUD reaches (measured), never under the top-right tank chip. */
+@media (min-width: 641px) {
+  .sheet-layer-inline {
+    padding-top: calc(var(--hud-stack, 66px) + 2px + env(safe-area-inset-top));
+  }
+}
+
+/* The frame's nameplate lives on the bottom edge: out of the way while the dock or a card is up. */
+.app:has(.dock-open) .nameplate,
+.app:has(.sheet-inline) .nameplate {
+  opacity: 0;
+  transition: opacity var(--motion-base, 160ms) ease;
+}
+
+/* Very narrow phones (≤ 360px): a slimmer HUD so the XP bar never runs into the tank chip. */
+@media (max-width: 360px) {
+  .hud {
+    gap: 4px;
+    padding-inline: calc(6px + env(safe-area-inset-left)) calc(6px + env(safe-area-inset-right));
+  }
+  .app .hud-bar {
+    min-width: 76px;
+    font-size: 14px;
+  }
+  .app .hud-pearls {
+    min-width: 60px;
+  }
+  .app .hud-xpbar {
+    width: 84px;
+  }
+  .app .hud-xpwrap {
+    padding-right: 14px;
+  }
+  .app .hud-star {
+    width: 36px;
+    height: 36px;
+  }
+  .app .hud-star::before {
+    font-size: 40px;
+    line-height: 36px;
+  }
+  .app .hud-tank {
+    padding-left: 6px;
+    gap: 4px;
+    font-size: 13px;
+  }
+}
+
+/* A tap target the HUD tank chip can always meet. */
+.hud-tank {
+  min-height: var(--tap-min);
+}
+
+/* Settings: login code, privacy link, credits */
+.login-code {
+  display: grid;
+  gap: var(--space-2);
+}
+.about {
+  margin-top: var(--space-2);
+  display: grid;
+  gap: var(--space-2);
+}
+.settings-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap-min);
+  color: var(--color-brand);
+  font-weight: 700;
+}

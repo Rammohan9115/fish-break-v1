@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { sound } from './audio/sound';
 import { DEV_TOOLS_IN_PRODUCTION, DEV_TOOLS_KEY } from './game/constants';
+import { startAnalytics } from './store/analyticsWiring';
 import { startCloudSync } from './store/cloudSave';
 import { startGame, useGameStore, type GameStore } from './store/gameStore';
 import { BreakMode } from './ui/BreakMode';
@@ -10,6 +11,9 @@ import { FishCard } from './ui/FishCard';
 import { Hud } from './ui/Hud';
 import { IosInstallHint } from './ui/IosInstallHint';
 import { LoadingScreen, useArtPreload } from './ui/LoadingScreen';
+import { useLayoutVars } from './ui/useLayoutVars';
+import { SaveLockPrompt } from './ui/SaveLockPrompt';
+import { UpdatePrompt } from './ui/UpdatePrompt';
 import { LevelUpModal } from './ui/LevelUpModal';
 import { Onboarding } from './ui/Onboarding';
 import { Settings } from './ui/Settings';
@@ -99,6 +103,8 @@ function useLandscapeFullscreen() {
 
 export function App() {
   useEffect(() => startGame(), []);
+  // Anonymous product analytics (a no-op unless a key is configured; players can opt out in Settings).
+  useEffect(() => startAnalytics(useGameStore.getState().onboardingStep === 0), []);
   // After the local load: restores a Supabase session (incl. a magic-link redirect) and keeps the cloud in sync.
   useEffect(() => startCloudSync(), []);
   useSoundSync();
@@ -106,6 +112,7 @@ export function App() {
   useMotionTokens();
   const onBreak = useGameStore((s) => s.breakSession !== null);
   const art = useArtPreload();
+  useLayoutVars(art.ready && !onBreak);
 
   // Esc ends a break, or closes cards/panels and leaves Feed/Premium/Clean mode.
   useEffect(() => {
@@ -161,6 +168,8 @@ export function App() {
           <BreedingGuide />
           <LevelUpModal />
           <Settings />
+          <UpdatePrompt />
+          <SaveLockPrompt />
           {DevPanel && (
             <Suspense fallback={null}>
               <DevPanel />

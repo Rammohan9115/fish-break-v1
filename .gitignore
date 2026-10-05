@@ -11,3 +11,7 @@ dist
 # UX audit screenshots (large; regenerate with the QA script)
 qa/**/*.png
 qa/**/report.json
+
+# Playwright
+test-results
+playwright-report

@@ -15,6 +15,8 @@ import {
 } from '../game/constants';
 import { createInitialState, simulateOffline } from '../game/sim';
 import type { GameState } from '../game/types';
+import { analytics } from '../lib/analytics';
+import { isSaveLocked } from './saveLock';
 import { cloudConfigured, getSupabase, needsSupabaseAtStart } from '../lib/supabase';
 import { useGameStore } from './gameStore';
 import { formatOfflineSummary, parseSaveData, saveGame } from './save';
@@ -153,6 +155,8 @@ export interface SyncHooks {
   storage: MetaStorage;
   setTimeout(fn: () => void, ms: number): unknown;
   clearTimeout(handle: unknown): void;
+  /** True while this tab must not write (another tab leads, or the save is from a newer version). */
+  isLocked?(): boolean;
 }
 
 export class CloudSync {
@@ -282,7 +286,7 @@ export class CloudSync {
 
   /** Debounced save: at most one cloud write per CLOUD_SAVE_DEBOUNCE_MS while the game keeps changing. */
   scheduleSave(): void {
-    if (!this.userId || this.timer !== null) return;
+    if (!this.userId || this.timer !== null || this.hooks.isLocked?.()) return;
     this.timer = this.hooks.setTimeout(() => {
       this.timer = null;
       void this.saveNow();
@@ -295,7 +299,7 @@ export class CloudSync {
       this.hooks.clearTimeout(this.timer);
       this.timer = null;
     }
-    if (!this.userId || !this.ready || this.conflictPending) return;
+    if (!this.userId || !this.ready || this.conflictPending || this.hooks.isLocked?.()) return;
     await this.push(false);
   }
 
@@ -329,12 +333,21 @@ export class CloudSync {
         const at = force || !lastKnown ? await this.backend.upsert(userId, state) : await this.backend.updateIf(userId, state, lastKnown);
         if (this.userId !== userId) return;
         if (at === null) {
-          // Someone else (another device) saved since our last sync: load theirs instead of overwriting.
+          // Another device saved since our last sync. Never pick a winner silently: show the same compare
+          // dialog as the first login and let the player choose (both sides' progress is on screen).
           const row = await this.backend.fetch(userId);
-          if (row && !this.loadCloud(row, '☁️ Loaded newer progress from another device')) {
+          if (this.userId !== userId) return;
+          const cloud = row ? parseSaveData(row.data) : null;
+          if (row && cloud) {
+            this.conflictPending = true;
+            this.hooks.setStatus('conflict');
+            this.hooks.setConflict({ local: state, cloud, cloudUpdatedAt: row.updatedAt });
+          } else {
+            // The row vanished or can't be read here: forget the stale marker so the next save writes it afresh.
+            writeMeta(this.hooks.storage, { userId, lastSyncedAt: null });
             this.hooks.setStatus('error');
-            return;
           }
+          return;
         } else {
           writeMeta(this.hooks.storage, { userId, lastSyncedAt: at });
         }
@@ -349,6 +362,18 @@ export class CloudSync {
       this.saving = null;
     });
     return this.saving;
+  }
+
+  /** The account was deleted on the server: stop syncing and forget the user, but keep the game on this device. */
+  forget(): void {
+    if (this.timer !== null) this.hooks.clearTimeout(this.timer);
+    this.timer = null;
+    this.userId = null;
+    this.ready = false;
+    this.conflictPending = false;
+    this.hooks.setConflict(null);
+    writeMeta(this.hooks.storage, null);
+    this.hooks.setStatus('off');
   }
 
   /**
@@ -441,14 +466,19 @@ function attachCloudSync(client: SupabaseClient): () => void {
     },
     toast: (text) => useGameStore.getState().addToast(text),
     setStatus: (status) => useCloudStore.setState({ status }),
-    setConflict: (conflict) => useCloudStore.setState({ conflict }),
+    setConflict: (conflict) => {
+      if (conflict) analytics().track('cloud_conflict');
+      useCloudStore.setState({ conflict });
+    },
     now: () => Date.now(),
     storage: window.localStorage,
     setTimeout: (fn, ms) => window.setTimeout(fn, ms),
     clearTimeout: (handle) => window.clearTimeout(handle as number),
+    isLocked: isSaveLocked,
   });
   activeSync = sync;
 
+  let loginTracked = false;
   const onSession = (user: { id: string; email?: string | null } | null) => {
     if (!user) return;
     useCloudStore.setState({ user: { id: user.id, email: user.email ?? null } });
@@ -463,6 +493,10 @@ function attachCloudSync(client: SupabaseClient): () => void {
   }
   void client.auth.getSession().then(({ data }) => onSession(data.session?.user ?? null));
   const { data: authSub } = client.auth.onAuthStateChange((event, session) => {
+    if (event === 'SIGNED_IN' && !loginTracked) {
+      loginTracked = true;
+      analytics().track('login');
+    }
     if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') onSession(session?.user ?? null);
   });
 
@@ -473,13 +507,17 @@ function attachCloudSync(client: SupabaseClient): () => void {
     if (document.visibilityState === 'hidden') void sync.saveNow();
   };
   const onOnline = () => void sync.retry();
+  // Phones often freeze a page before a fetch can finish; pagehide fires earlier than unload and visibility alone isn't enough.
+  const onPageHide = () => void sync.saveNow();
   document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('pagehide', onPageHide);
   window.addEventListener('online', onOnline);
 
   return () => {
     authSub.subscription.unsubscribe();
     unsubscribeGame();
     document.removeEventListener('visibilitychange', onVisibility);
+    window.removeEventListener('pagehide', onPageHide);
     window.removeEventListener('online', onOnline);
     sync.dispose();
     if (activeSync === sync) activeSync = null;
@@ -506,6 +544,30 @@ export async function signInWithGoogle(): Promise<{ ok: true } | { ok: false; me
 }
 
 /** Returns false (and stays logged in) when unsynced progress would be lost and `force` isn't set. */
+/** Signs in with the 6-digit code from the email (works from any browser, unlike the magic link under PKCE). */
+export async function verifyEmailCode(email: string, token: string): Promise<{ ok: true } | { ok: false; message: string }> {
+  const supabase = await getSupabase();
+  if (!supabase) return { ok: false, message: 'Cloud saves are not set up.' };
+  const { error } = await supabase.auth.verifyOtp({ email, token: token.trim(), type: 'email' });
+  return error ? { ok: false, message: 'That code did not work. Check it and try again, or request a new one.' } : { ok: true };
+}
+
+/**
+ * Deletes the player's account and cloud save (the `delete-account` Edge Function does it with the service role).
+ * The game on this device is kept: they simply carry on as a guest.
+ */
+export async function deleteAccount(): Promise<{ ok: true } | { ok: false; message: string }> {
+  const supabase = await getSupabase();
+  if (!supabase) return { ok: false, message: 'Cloud saves are not set up.' };
+  const { error } = await supabase.functions.invoke('delete-account');
+  if (error) return { ok: false, message: "We couldn't delete your account right now. Please try again in a moment." };
+  activeSync?.forget();
+  await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+  useCloudStore.setState({ user: null, status: 'off', conflict: null });
+  useGameStore.getState().addToast('Your account and cloud save were deleted. Your game stays on this device 🐟');
+  return { ok: true };
+}
+
 export async function logOut(force = false): Promise<boolean> {
   const supabase = await getSupabase();
   if (!supabase) return true;

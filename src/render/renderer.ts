@@ -307,6 +307,7 @@ export class Renderer {
   }
 
   start(): void {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- the app looks up the one running renderer (see currentRenderer)
     activeRenderer = this;
     if (this.raf) return;
     this.last = performance.now();

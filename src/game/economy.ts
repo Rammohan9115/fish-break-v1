@@ -556,3 +556,20 @@ export function completeBreak(state: GameState, now: number): Result & { xp: num
   const { state: next, levelsGained } = grantXp({ ...state, lastBreakXpAt: now }, XP.breakComplete);
   return { ...ok(next, levelsGained), xp: XP.breakComplete };
 }
+
+// ---------------------------------------------------------------------------
+// Collecting drops (the sand shells and pearls)
+// ---------------------------------------------------------------------------
+
+/** Picks up a drop from the sand: its value goes to shells or pearls. Null if there is no such drop. XP is the caller's. */
+export function collectDrop(state: GameState, dropId: string): GameState | null {
+  const tank = state.tanks.find((t) => t.shells.some((d) => d.id === dropId));
+  const drop = tank?.shells.find((d) => d.id === dropId);
+  if (!tank || !drop) return null;
+  return {
+    ...state,
+    shells: drop.pearl ? state.shells : state.shells + drop.value,
+    pearls: drop.pearl ? state.pearls + drop.value : state.pearls,
+    tanks: state.tanks.map((t) => (t.id === tank.id ? { ...t, shells: t.shells.filter((d) => d.id !== dropId) } : t)),
+  };
+}

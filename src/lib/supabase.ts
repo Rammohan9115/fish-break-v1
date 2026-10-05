@@ -18,7 +18,9 @@ export function getSupabase(): Promise<SupabaseClient | null> {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
-        // Parses the magic-link tokens from the URL on load and cleans them up.
+        // PKCE: the redirect carries a one-time ?code= (not the tokens themselves in the URL hash). It's exchanged on load
+        // and cleaned up. The link must be opened in the same browser; "enter the code from the email" covers other devices.
+        flowType: 'pkce',
         detectSessionInUrl: true,
       },
     }),

@@ -177,7 +177,10 @@ function QuestChip({ step }: { step: QuestStep }) {
 export function TopChip() {
   const mode = useGameStore((s) => s.mode);
   const tryDecor = useGameStore((s) => s.tryDecor !== null);
-  const busy = useGameStore((s) => s.panel !== null || s.pairingFishId !== null || s.pairSheet !== null || s.onboardingStep === 0);
+  // Open panels, a fish/decor card, pairing and the first onboarding step all own the screen: the goal chip steps aside.
+  const busy = useGameStore(
+    (s) => s.panel !== null || s.pairingFishId !== null || s.pairSheet !== null || s.onboardingStep === 0 || s.selectedFishId !== null || s.selectedDecorId !== null,
+  );
   const quest = useQuestStep();
   if (tryDecor) return <TryBanner />;
   if (mode === 'decorate') return <DecorateBanner />;

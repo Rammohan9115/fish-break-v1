@@ -1,10 +1,8 @@
 // Zustand store: holds GameState, runs the fixed 1-second sim tick, exposes player actions.
 import { create } from 'zustand';
 import {
-  ALGAE_WIPE_CLEANLINESS,
   BREEDING,
   THEMES,
-  CLEANLINESS_MAX,
   FEED_COOLDOWN_MS,
   TOAST_QUEUE_MAX,
   FISH_NAME_MAX_LENGTH,
@@ -51,6 +49,7 @@ import {
   simulateOffline,
   tankOccupancy,
   tick,
+  wipeAlgae as wipeAlgaeRule,
   type SimEvent,
 } from '../game/sim';
 import type { BondLevel, DecorId, GameState, PlacedDecor, TankStyle, Rng, SpeciesId, Stage, ThemeId } from '../game/types';
@@ -63,7 +62,10 @@ import {
   saveOnboarding,
   startAutosave,
   type AutosaveEnv,
+  type SaveStorage,
 } from './save';
+import { isSaveLocked, setSaveLock } from './saveLock';
+import { browserTabLockHooks, TabLock } from './tabLock';
 
 export interface Toast {
   id: number;
@@ -575,38 +577,16 @@ export const useGameStore = create<GameStore>()((set, get) => {
     },
 
     collectDrop: (dropId) => {
-      const { game } = get();
-      const tank = game.tanks.find((t) => t.shells.some((d) => d.id === dropId));
-      const drop = tank?.shells.find((d) => d.id === dropId);
-      if (!tank || !drop) return false;
-      const next: GameState = {
-        ...game,
-        shells: drop.pearl ? game.shells : game.shells + drop.value,
-        pearls: drop.pearl ? game.pearls + drop.value : game.pearls,
-        tanks: game.tanks.map((t) => (t.id === tank.id ? { ...t, shells: t.shells.filter((d) => d.id !== dropId) } : t)),
-      };
+      const next = economy.collectDrop(get().game, dropId);
+      if (!next) return false;
       commitWithXp(next, XP.shellCollected);
       get().completeOnboardingStep(2);
       return true;
     },
 
     wipeAlgae: (spotId) => {
-      const { game } = get();
-      const tank = game.tanks.find((t) => t.algaeSpots.some((a) => a.id === spotId));
-      if (!tank) return false;
-      const next: GameState = {
-        ...game,
-        stats: { ...game.stats, cleaned: game.stats.cleaned + 1 },
-        tanks: game.tanks.map((t) =>
-          t.id === tank.id
-            ? {
-                ...t,
-                cleanliness: Math.min(CLEANLINESS_MAX, t.cleanliness + ALGAE_WIPE_CLEANLINESS),
-                algaeSpots: t.algaeSpots.filter((a) => a.id !== spotId),
-              }
-            : t,
-        ),
-      };
+      const next = wipeAlgaeRule(get().game, spotId);
+      if (!next) return false;
       commitWithXp(next, XP.algaeWiped);
       return true;
     },
@@ -1099,10 +1079,35 @@ export const useGameStore = create<GameStore>()((set, get) => {
  * Boots the game: load + offline catch-up, then the 1s tick loop and autosave.
  * Returns a stop function that also saves once.
  */
+let activeTabLock: TabLock | null = null;
+let activeStorage: SaveStorage | null = null;
+
+/**
+ * "Play here": this tab takes over from the tab that leads (which saves first), then loads the freshly saved game.
+ * The previous leader's progress is therefore never lost.
+ */
+export async function playHere(): Promise<void> {
+  if (!activeTabLock || !activeStorage) return;
+  await activeTabLock.takeOver();
+  setSaveLock(null);
+  const result = loadGame(activeStorage, Date.now());
+  if (result.tooNew) setSaveLock('newer');
+  useGameStore.getState().loadState(result.state);
+  if (result.summary) useGameStore.getState().addToast(formatOfflineSummary(result.summary));
+}
+
 export function startGame(env: AutosaveEnv = browserEnv()): () => void {
   const store = useGameStore.getState();
-  const { state, summary, corrupt, isNew } = loadGame(env.storage, Date.now());
+  const { state, summary, corrupt, tooNew, isNew } = loadGame(env.storage, Date.now());
+  // A save from a newer version stays untouched: nothing may write over it until the player reloads into that version.
+  if (tooNew) setSaveLock('newer');
   store.loadState(state);
+  activeStorage = env.storage;
+  const saveEnv: AutosaveEnv = {
+    ...env,
+    onSaveFailed:
+      env.onSaveFailed ?? (() => useGameStore.getState().addToast("⚠️ Couldn't save — your device storage is full. Free some space to keep your progress.")),
+  };
   const onboardingStep = loadOnboarding(env.storage, isNew);
   // Persist immediately so a remount (or reload) right after the first save still counts as onboarding.
   if (isNew) saveOnboarding(env.storage, onboardingStep);
@@ -1121,12 +1126,29 @@ export function startGame(env: AutosaveEnv = browserEnv()): () => void {
     if (fishIds.length > 0) globalThis.setTimeout(() => emitBond({ type: 'greet', fishIds }), GREET_START_DELAY_MS);
   }
 
-  const loop = env.setInterval(() => useGameStore.getState().advanceTo(Date.now()), SIM_TICK_MS);
-  const stopAutosave = startAutosave(() => useGameStore.getState().game, env);
+  // Only one tab may save (two tabs would overwrite each other); the others wait behind a "Play here" prompt.
+  const tabLock = new TabLock(
+    browserTabLockHooks(
+      () => void saveGame(useGameStore.getState().game, env.storage),
+      () => setSaveLock('other-tab'),
+    ),
+  );
+  activeTabLock = tabLock;
+  void tabLock.claim().then((leads) => {
+    // A mount that was already torn down (React StrictMode, hot reload) must not lock the one that replaced it.
+    if (activeTabLock === tabLock && !leads && !isSaveLocked()) setSaveLock('other-tab');
+  });
+
+  const loop = env.setInterval(() => {
+    if (!isSaveLocked()) useGameStore.getState().advanceTo(Date.now());
+  }, SIM_TICK_MS);
+  const stopAutosave = startAutosave(() => useGameStore.getState().game, saveEnv);
   return () => {
     env.clearInterval(loop);
     stopAutosave();
     unsubscribe();
     saveGame(useGameStore.getState().game, env.storage);
+    tabLock.dispose();
+    if (activeTabLock === tabLock) activeTabLock = null;
   };
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BREEDING, DECOR_LIMIT, FEED_XP_MAX_PER_HOUR, HOUR_MS, TANK_BASE_CAPACITY, XP } from './constants';
 import {
+  collectDrop,
   applyTheme,
   buyCapacityUpgrade,
   moveFromNursery,
@@ -401,5 +402,35 @@ describe('nursery', () => {
     const s = okState(rehomeNurseryBaby(withNursery([b]), b.id));
     expect(s.nursery).toHaveLength(0);
     expect(s.shells).toBe(rich().shells + 16);
+  });
+});
+
+describe('collectDrop', () => {
+  const drops = [
+    { id: 's1', x: 100, value: 4, pearl: false },
+    { id: 'p1', x: 200, value: 1, pearl: true },
+  ];
+
+  it('a shell drop adds its value to shells and leaves the sand', () => {
+    const state = makeState({ tank: { shells: drops }, overrides: { shells: 10, pearls: 2 } });
+    const next = collectDrop(state, 's1')!;
+    expect(next.shells).toBe(14);
+    expect(next.pearls).toBe(2);
+    expect(next.tanks[0]!.shells.map((d) => d.id)).toEqual(['p1']);
+  });
+
+  it('a pearl drop adds to pearls instead', () => {
+    const state = makeState({ tank: { shells: drops }, overrides: { shells: 10, pearls: 2 } });
+    const next = collectDrop(state, 'p1')!;
+    expect(next.pearls).toBe(3);
+    expect(next.shells).toBe(10);
+  });
+
+  it('an unknown drop is a no-op (null) and the state is not mutated', () => {
+    const state = makeState({ tank: { shells: drops } });
+    const snapshot = structuredClone(state);
+    expect(collectDrop(state, 'nope')).toBeNull();
+    collectDrop(state, 's1');
+    expect(state).toEqual(snapshot);
   });
 });

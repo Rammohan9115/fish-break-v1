@@ -186,20 +186,99 @@ describe('CloudSync saving', () => {
     expect((backend.rows.get('u1')!.data as GameState).shells).toBe(222);
   });
 
-  it('loads the newer cloud copy instead of overwriting another device', async () => {
+  function twoDevices() {
     const backend = new FakeBackend();
     const a = setup(progressed(100), backend, new MemoryStorage());
-    await a.sync.login('u1');
     const b = setup(fresh(), backend, new MemoryStorage());
+    return { backend, a, b };
+  }
+
+  it('shows the compare dialog instead of silently dropping this device\'s progress', async () => {
+    const { backend, a, b } = twoDevices();
+    await a.sync.login('u1');
     await b.sync.login('u1');
     b.h.game = { ...b.h.game, shells: 5000 };
     await b.sync.saveNow();
-    // Device A still thinks the old row is current: its save must not clobber B's.
+    // Device A still thinks the old row is current: its save must not clobber B's, nor discard A's own work.
     a.h.game = { ...a.h.game, shells: 1 };
     await a.sync.saveNow();
     expect((backend.rows.get('u1')!.data as GameState).shells).toBe(5000);
-    expect(a.h.game.shells).toBe(5000);
-    expect(a.h.toasts.join()).toMatch(/another device/);
+    expect(a.h.game.shells).toBe(1); // not replaced yet
+    expect(a.status()).toBe('conflict');
+    expect(a.h.conflict).toMatchObject({ local: { shells: 1 }, cloud: { shells: 5000 } });
+  });
+
+  it('keeping this device overwrites the cloud; keeping the cloud loads it', async () => {
+    const mk = async () => {
+      const t = twoDevices();
+      await t.a.sync.login('u1');
+      await t.b.sync.login('u1');
+      t.b.h.game = { ...t.b.h.game, shells: 5000 };
+      await t.b.sync.saveNow();
+      t.a.h.game = { ...t.a.h.game, shells: 1 };
+      await t.a.sync.saveNow();
+      return t;
+    };
+    const keepLocal = await mk();
+    await keepLocal.a.sync.resolveConflict('local');
+    expect((keepLocal.backend.rows.get('u1')!.data as GameState).shells).toBe(1);
+    const keepCloud = await mk();
+    await keepCloud.a.sync.resolveConflict('cloud');
+    expect(keepCloud.a.h.game.shells).toBe(5000);
+    expect(keepCloud.a.status()).toBe('synced');
+  });
+
+  it('does not push while conflict is pending', async () => {
+    const { backend, a, b } = twoDevices();
+    await a.sync.login('u1');
+    await b.sync.login('u1');
+    b.h.game = { ...b.h.game, shells: 5000 };
+    await b.sync.saveNow();
+    await a.sync.saveNow();
+    const writes = backend.writes;
+    a.h.game = { ...a.h.game, shells: 7 };
+    await a.sync.saveNow();
+    expect(backend.writes).toBe(writes);
+  });
+});
+
+describe('CloudSync write lock (another tab leads / save from a newer version)', () => {
+  it('never schedules or pushes while locked', async () => {
+    const backend = new FakeBackend();
+    let locked = false;
+    const { sync, h } = setup(progressed(100), backend);
+    (sync as unknown as { hooks: { isLocked?: () => boolean } }).hooks.isLocked = () => locked;
+    await sync.login('u1');
+    const writes = backend.writes;
+    locked = true;
+    h.game = { ...h.game, shells: 9 };
+    sync.scheduleSave();
+    expect(h.timers.filter((t) => t.ms === CLOUD_SAVE_DEBOUNCE_MS && !t.cleared)).toHaveLength(0);
+    await sync.saveNow();
+    expect(backend.writes).toBe(writes);
+    locked = false;
+    await sync.saveNow();
+    expect(backend.writes).toBe(writes + 1);
+  });
+
+  it('debounces cloud writes to 10 seconds', () => {
+    expect(CLOUD_SAVE_DEBOUNCE_MS).toBe(10_000);
+  });
+});
+
+describe('CloudSync forget (account deleted)', () => {
+  it('stops syncing and clears the sync marker but keeps the game on the device', async () => {
+    const { sync, h, backend, storage, status } = setup(progressed(100));
+    await sync.login('u1');
+    h.game = { ...h.game, shells: 4242 };
+    const writes = backend.writes;
+    sync.forget();
+    expect(storage.getItem(CLOUD_META_KEY)).toBeNull();
+    expect(h.game.shells).toBe(4242);
+    expect(status()).toBe('off');
+    await sync.saveNow();
+    expect(backend.writes).toBe(writes);
+    expect(sync.currentUser).toBeNull();
   });
 });
 

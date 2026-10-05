@@ -836,14 +836,24 @@ export const SAVE_KEY = 'fishbowl-save';
 /** localStorage: which user this device last synced with, and the cloud updated_at it last saw. */
 export const CLOUD_META_KEY = 'fishbowl-cloud-meta';
 /** Cloud saves are debounced: at most one write per this interval while the game changes. */
-export const CLOUD_SAVE_DEBOUNCE_MS = 30 * SECOND_MS;
+/** While the game keeps changing, at most one cloud write per this long (short, so little is at risk if the page freezes). */
+export const CLOUD_SAVE_DEBOUNCE_MS = 10 * SECOND_MS;
 /** Logging out waits at most this long for the final cloud save. */
 export const CLOUD_FINAL_SAVE_TIMEOUT_MS = 5 * SECOND_MS;
 /** Feature flag: show "Continue with Google" on the login modal (needs the Google provider configured in Supabase). */
 export const AUTH_GOOGLE_ENABLED = true;
 export const ONBOARDING_KEY = 'fishbowl-onboarding';
 export const CORRUPT_SAVE_PREFIX = 'fishbowl-save-corrupt-';
+/** Backups of unreadable saves kept on the device (the rest are deleted). */
+export const CORRUPT_BACKUPS_KEPT = 2;
 export const SAVE_INTERVAL_MS = 10 * SECOND_MS;
+/** Web Lock + BroadcastChannel name that elects the one tab allowed to save. */
+export const TAB_LOCK_NAME = 'fishbowl-leader-tab';
+/** "Play here": how long to wait for the old leader to confirm it saved before taking over anyway. */
+export const TAB_HANDOVER_TIMEOUT_MS = 800;
+/** Before deciding another tab leads, look again this many times (a reload releases the old page's lock a beat late). */
+export const TAB_CLAIM_RETRIES = 4;
+export const TAB_CLAIM_RETRY_MS = 150;
 /** Only show the "While you were away" summary after at least this long. */
 export const OFFLINE_SUMMARY_MIN_MS = 60 * SECOND_MS;
 

@@ -14,7 +14,7 @@ export interface ThemePalette {
   haze: string;
   /** Distant ridge / rock-spire silhouettes. */
   far: string;
-  /** Big background rock arches and pillars (FishVille-style). */
+  /** Big background rock arches and pillars (a classic aquarium look). */
   rock: string;
   /** Background grass: dark base and lit tip. */
   grassDark: string;
@@ -152,7 +152,7 @@ function slotRand(slot: number, salt: number): () => number {
 // Baked back layer: water, light pool, rock arches & pillars, back sand bank, blurred plants, coral
 // ---------------------------------------------------------------------------
 
-/** A big rock arch (outer blob minus an inner hole), FishVille-style. */
+/** A big rock arch (outer blob minus an inner hole). */
 function archPath(cx: number, baseY: number, w: number, h: number, rand: () => number): Path2D {
   const p = new Path2D();
   const outer = blobPath(cx, baseY - h * 0.5, w * 0.5, h * 0.55, rand, 11, 0.18);
@@ -451,7 +451,10 @@ export function bakeFrontLayer(ctx: Ctx, pal: ThemePalette, px: number, ext: Ext
   ctx.restore();
   // Glossy lip where the sand meets the water.
   const lip = new Path2D();
-  for (let x = ext.x0; x <= ext.x1 + 10; x += 10) (x === ext.x0 ? lip.moveTo(x, sandLineY(x)) : lip.lineTo(x, sandLineY(x)));
+  for (let x = ext.x0; x <= ext.x1 + 10; x += 10) {
+    if (x === ext.x0) lip.moveTo(x, sandLineY(x));
+    else lip.lineTo(x, sandLineY(x));
+  }
   ctx.strokeStyle = mix(pal.sandShadow, '#1a1030', 0.25);
   ctx.lineWidth = 3 * px;
   ctx.stroke(lip);

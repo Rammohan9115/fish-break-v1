@@ -17,6 +17,7 @@ import {
   XP,
 } from './constants';
 import {
+  wipeAlgae,
   algaeNeeded,
   algaeTouchedBySponge,
   cleanlinessDecayPerMin,
@@ -690,5 +691,33 @@ describe('algaeTouchedBySponge', () => {
 
   it('does not hit spots beyond the segment ends', () => {
     expect(algaeTouchedBySponge(spots, { x: 150, y: 100 }, { x: 250, y: 100 }, 18)).toEqual([]);
+  });
+});
+
+describe('wipeAlgae', () => {
+  const spots = [
+    { id: 'a1', x: 100, y: 100, size: 20 },
+    { id: 'a2', x: 200, y: 100, size: 20 },
+  ];
+
+  it('removes the spot, adds ALGAE_WIPE_CLEANLINESS and counts it as cleaned', () => {
+    const state = makeState({ tank: { cleanliness: 40, algaeSpots: spots } });
+    const next = wipeAlgae(state, 'a1')!;
+    expect(tankOf(next).algaeSpots.map((a) => a.id)).toEqual(['a2']);
+    expect(tankOf(next).cleanliness).toBe(40 + ALGAE_WIPE_CLEANLINESS);
+    expect(next.stats.cleaned).toBe(state.stats.cleaned + 1);
+  });
+
+  it('never goes above 100', () => {
+    const state = makeState({ tank: { cleanliness: 98, algaeSpots: spots } });
+    expect(tankOf(wipeAlgae(state, 'a1')!).cleanliness).toBe(100);
+  });
+
+  it('an unknown spot is null and the input is untouched', () => {
+    const state = makeState({ tank: { algaeSpots: spots } });
+    const snapshot = structuredClone(state);
+    expect(wipeAlgae(state, 'nope')).toBeNull();
+    wipeAlgae(state, 'a1');
+    expect(state).toEqual(snapshot);
   });
 });

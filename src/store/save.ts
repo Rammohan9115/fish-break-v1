@@ -2,6 +2,7 @@
 import {
   BREEDING_QUEST_REWARD,
   CAPACITY_UPGRADE,
+  CORRUPT_BACKUPS_KEPT,
   CORRUPT_SAVE_PREFIX,
   DEFAULT_TANK_STYLE,
   LAYOUT_PRESET_SLOTS,
@@ -17,11 +18,15 @@ import {
 import { baseCapacity } from '../game/economy';
 import { createInitialState, simulateOffline, type OfflineSummary } from '../game/sim';
 import type { GameState, Rng } from '../game/types';
+import { isSaveLocked } from './saveLock';
 
 /** The subset of the Storage API we use (injectable for tests). */
 export interface SaveStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+  readonly length: number;
+  key(index: number): string | null;
 }
 
 type SaveData = Record<string, unknown>;
@@ -157,11 +162,79 @@ export function isValidGameState(v: unknown): v is GameState {
 // Save / load
 // ---------------------------------------------------------------------------
 
-export function saveGame(state: GameState, storage: SaveStorage): void {
+/**
+ * Writes the save. Returns false when nothing was written: the save is locked (newer version / another tab leads)
+ * or storage failed. A full storage first drops old corrupt-save backups (the only expendable data) and retries once.
+ */
+export function saveGame(state: GameState, storage: SaveStorage): boolean {
+  if (isSaveLocked()) return false;
+  const json = JSON.stringify(state);
   try {
-    storage.setItem(SAVE_KEY, JSON.stringify(state));
+    storage.setItem(SAVE_KEY, json);
+    return true;
   } catch {
-    // Storage full or unavailable (private mode). Nothing useful to do; the game keeps running.
+    // Storage full or unavailable (private mode).
+  }
+  try {
+    for (const backup of listCorruptBackups(storage)) storage.removeItem(backup.key);
+    storage.setItem(SAVE_KEY, json);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Corrupt-save backups
+// ---------------------------------------------------------------------------
+
+export interface CorruptBackup {
+  key: string;
+  /** When the unreadable save was set aside (ms). */
+  at: number;
+}
+
+/** Backups of unreadable saves, newest first. */
+export function listCorruptBackups(storage: SaveStorage): CorruptBackup[] {
+  const found: CorruptBackup[] = [];
+  for (let i = 0; i < storage.length; i++) {
+    const key = storage.key(i);
+    if (!key || !key.startsWith(CORRUPT_SAVE_PREFIX)) continue;
+    const at = Number(key.slice(CORRUPT_SAVE_PREFIX.length));
+    found.push({ key, at: Number.isFinite(at) ? at : 0 });
+  }
+  return found.sort((a, b) => b.at - a.at);
+}
+
+/** Keeps only the newest `keep` backups so they can't eat the storage quota. */
+export function pruneCorruptBackups(storage: SaveStorage, keep = CORRUPT_BACKUPS_KEPT): void {
+  for (const backup of listCorruptBackups(storage).slice(keep)) {
+    try {
+      storage.removeItem(backup.key);
+    } catch {
+      // ignore
+    }
+  }
+}
+
+/**
+ * Tries to bring a backup back: migrates and validates it, and on success makes it the current save (the save it
+ * replaces is kept as a backup itself, so a restore can be undone). Null if the backup is still unusable.
+ */
+export function restoreCorruptBackup(storage: SaveStorage, key: string, now: number): GameState | null {
+  try {
+    const raw = storage.getItem(key);
+    if (raw === null) return null;
+    const state = parseSaveData(JSON.parse(raw));
+    if (!state) return null;
+    const current = storage.getItem(SAVE_KEY);
+    if (current !== null) storage.setItem(`${CORRUPT_SAVE_PREFIX}${now}`, current);
+    storage.setItem(SAVE_KEY, JSON.stringify(state));
+    storage.removeItem(key);
+    pruneCorruptBackups(storage);
+    return state;
+  } catch {
+    return null;
   }
 }
 
@@ -197,6 +270,8 @@ export interface LoadResult {
   summary: OfflineSummary | null;
   /** True if an unreadable save was backed up and replaced with a fresh game. */
   corrupt: boolean;
+  /** True if the save was written by a newer version: it is left untouched and the game starts fresh, unsaved. */
+  tooNew: boolean;
   /** True only for a brand-new player (there was no save at all). */
   isNew: boolean;
 }
@@ -210,12 +285,16 @@ export interface LoadOptions {
 export function loadGame(storage: SaveStorage, now: number, opts: LoadOptions = {}): LoadResult {
   const rng = opts.rng ?? Math.random;
   const raw = storage.getItem(SAVE_KEY);
-  if (raw === null) return { state: createInitialState(now, rng), summary: null, corrupt: false, isNew: true };
+  if (raw === null) return { state: createInitialState(now, rng), summary: null, corrupt: false, tooNew: false, isNew: true };
 
   let loaded: GameState;
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!isObject(parsed)) throw new Error('Save is not an object');
+    // A newer game wrote this (e.g. after a rollback): not corrupt, so don't touch it.
+    if (isNum(parsed.version) && parsed.version > SAVE_VERSION) {
+      return { state: createInitialState(now, rng), summary: null, corrupt: false, tooNew: true, isNew: false };
+    }
     const migrated = migrate(parsed, opts.migrations);
     if (!isValidGameState(migrated)) throw new Error('Save failed validation');
     loaded = migrated;
@@ -225,12 +304,13 @@ export function loadGame(storage: SaveStorage, now: number, opts: LoadOptions = 
     } catch {
       // Couldn't back it up; still start fresh rather than crash.
     }
-    return { state: createInitialState(now, rng), summary: null, corrupt: true, isNew: false };
+    pruneCorruptBackups(storage);
+    return { state: createInitialState(now, rng), summary: null, corrupt: true, tooNew: false, isNew: false };
   }
 
   const offline = simulateOffline(loaded, now, rng);
   const summary = offline.summary.elapsedMs >= OFFLINE_SUMMARY_MIN_MS ? offline.summary : null;
-  return { state: offline.state, summary, corrupt: false, isNew: false };
+  return { state: offline.state, summary, corrupt: false, tooNew: false, isNew: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -295,6 +375,8 @@ export interface AutosaveEnv {
   document: EventSource & { visibilityState: string };
   setInterval: (fn: () => void, ms: number) => unknown;
   clearInterval: (handle: unknown) => void;
+  /** Called (once per failure streak) when a save couldn't be written because storage is full or unavailable. */
+  onSaveFailed?: () => void;
 }
 
 export function browserEnv(): AutosaveEnv {
@@ -309,7 +391,13 @@ export function browserEnv(): AutosaveEnv {
 
 /** Saves every 10s, when the page is hidden, and before unload. Returns a stop function. */
 export function startAutosave(getState: () => GameState, env: AutosaveEnv): () => void {
-  const save = () => saveGame(getState(), env.storage);
+  let failing = false;
+  const save = () => {
+    if (isSaveLocked()) return;
+    const ok = saveGame(getState(), env.storage);
+    if (!ok && !failing) env.onSaveFailed?.();
+    failing = !ok;
+  };
   const onVisibility = () => {
     if (env.document.visibilityState === 'hidden') save();
   };

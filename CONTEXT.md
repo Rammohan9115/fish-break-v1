@@ -95,8 +95,8 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
 - **Palettes in `species.ts` are natural and earthy.** Variant keys are unchanged, so saves still work.
 - **`DEV_TOOLS_IN_PRODUCTION`** (constants.ts) is `false`: players never see the dev panel. Open the production site with `?dev=1` to unlock it on that device (remembered under `DEV_TOOLS_KEY`; `?dev=0` forgets). Always on in `npm run dev`.
 
-## Layout and camera (full-bleed, FishVille-style)
-- **The canvas fills the whole screen on every device.** There's no room, frame or stand anymore: the user rejected them and supplied FishVille reference shots.
+## Layout and camera (full-bleed)
+- **The canvas fills the whole screen on every device.** There's no room, frame or stand anymore: the user rejected them and supplied reference shots.
   The HUD and tool dock float over the water.
 - **Camera (`Renderer.resize`):**
   - **Wide screens** fit the world's height and extend scenery sideways.
@@ -381,3 +381,19 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
 - **supabase-js is lazy:** `lib/supabase.ts` exports `cloudConfigured`, `getSupabase()` (dynamic import) and `needsSupabaseAtStart()` (stored `sb-*-auth-token` or login redirect in the URL). Guests never download it; `cloudSave.test.ts` now runs on Node 20 even with `.env.local` keys (SYNC-7 done).
 - **Fonts:** `@fontsource-variable/nunito` (family name `Nunito Variable`) and `@fontsource/fredoka` (latin 500/600/700), imported in `main.tsx`.
 - Measured on `vite preview` (Lighthouse 12, mobile): Performance 41 → 95, LCP 5.0 → 2.6s, TBT 6.6s → 0, TTI 11.5 → 2.7s, payload 43.4 → 2.6 MB. Main JS 719 → 492 KB (supabase 228 KB is its own chunk).
+
+## Batch 3 (PWA, tabs, sync robustness)
+- **PWA:** `vite-plugin-pwa` (generateSW, `registerType: 'prompt'`) in `vite.config.ts`; manifest is generated there (the old `public/manifest.webmanifest` is gone), `display: standalone`. 79 files are precached (non-latin font subsets and the DevPanel chunk are excluded); `/privacy.html` is not served as the SPA fallback. `src/pwa.ts` registers the worker (prod only) and holds the "new version" state; `UpdatePrompt` asks before reloading. Icons: `npm run build:icons` (`scripts/build-icons.ts`) → `public/icons/` (192, 512, maskable, apple-touch 180).
+- **Save lock:** `store/saveLock.ts` (`'newer' | 'other-tab'`); `saveGame` returns false and `startAutosave` skips while locked; `CloudSync` has an optional `isLocked` hook. `loadGame` returns `tooNew` (untouched save, fresh unsaved game) instead of treating it as corrupt. `SaveLockPrompt` shows the matching dialog.
+- **Tabs:** `store/tabLock.ts` (`TabLock`, injectable locks + BroadcastChannel). `startGame` claims leadership; followers are locked and their sim is paused. `playHere()` asks the leader to flush, steals the lock, then reloads the saved game. Without Web Locks every tab leads (old behavior).
+- **Backups:** `CORRUPT_BACKUPS_KEPT = 2`, `listCorruptBackups`, `pruneCorruptBackups`, `restoreCorruptBackup` (the replaced save becomes a backup); Settings → Restore backup. A full storage first deletes backups and retries; `AutosaveEnv.onSaveFailed` toasts once per failure streak.
+- **Sync:** a conditional-write miss now sets the conflict (compare modal) instead of loading the other device's save; `CLOUD_SAVE_DEBOUNCE_MS` 10s; push on `pagehide`. Run `supabase/migrations/002_saves_size_limit.sql` in the Supabase SQL editor (not applied automatically).
+- `SaveStorage` now also needs `removeItem`, `length`, `key()` (real `localStorage` has them; `MemoryStorage` was extended).
+
+## Batch 5 (launch plumbing)
+- **Tooling:** `npm run lint` (ESLint 9 flat config, typescript-eslint + react-hooks), `npm run test:e2e` (`playwright.config.cjs`, specs in `e2e/`, CommonJS because Playwright 1.63 can't load TS under ESM on Node 20.4; pinned `@playwright/test@1.49`). The e2e dev server runs with a fake Supabase URL that every test mocks. CI: `.github/workflows/ci.yml` (Node 22: tsc, lint, vitest, build; then e2e with Chromium).
+- **Rules moved into `src/game`:** `economy.collectDrop`, `sim.wipeAlgae` (pure, tested); the store only commits them and awards XP.
+- **Auth:** `flowType: 'pkce'`; `verifyEmailCode` for the emailed code. `deleteAccount()` + `CloudSync.forget()`; Edge Function in `supabase/functions/delete-account/` (deploy with `supabase functions deploy delete-account`).
+- **Analytics:** see CLAUDE.md. Optional env: `VITE_ANALYTICS_KEY`, `VITE_ANALYTICS_HOST` (default `https://eu.i.posthog.com`).
+- **Credits/legal:** `CREDITS.md` (art provenance still blank, owner must fill), Settings → About & credits, `public/privacy.html` updated (analytics, deletion, retention, self-hosted fonts). Third-party game names removed from comments.
+- **Bug found by e2e:** `TabLock.dispose()` did not release the Web Lock, so a React StrictMode remount (dev) or hot reload locked the game behind "Open in another tab". Fixed: dispose releases; `claim()` retries (`TAB_CLAIM_RETRIES`); a torn-down mount can't set the lock.

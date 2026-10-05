@@ -18,6 +18,7 @@ import { makeFish, makeState, seededRng, T0 } from '../game/testUtils';
 import type { GameState, Pellet } from '../game/types';
 import { breedingToasts, mergeToast, startGame, subscribeBondEvents, subscribeSimEvents, useGameStore, type BondEvent, type Toast } from './gameStore';
 import { saveGame } from './save';
+import { isSaveLocked, setSaveLock } from './saveLock';
 import { fakeEnv } from './testEnv';
 
 const store = () => useGameStore.getState();
@@ -359,6 +360,42 @@ describe('onboarding', () => {
     saveGame(makeState(), returning.storage);
     startGame(returning.env)();
     expect(store().onboardingStep).toBeNull();
+  });
+});
+
+describe('startGame remounting (React StrictMode / hot reload)', () => {
+  afterEach(() => setSaveLock(null));
+
+  it('a torn-down mount never locks the one that replaced it', async () => {
+    vi.useRealTimers();
+    const env = fakeEnv();
+    const stopFirst = startGame(env.env);
+    stopFirst();
+    const stopSecond = startGame(env.env);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(isSaveLocked()).toBe(false);
+    stopSecond();
+  });
+});
+
+describe('startGame with a save from a newer version', () => {
+  afterEach(() => setSaveLock(null));
+
+  it('leaves that save untouched, locks saving, and tells nothing to overwrite it', () => {
+    const env = fakeEnv();
+    const raw = JSON.stringify({ ...makeState(), version: 999 });
+    env.storage.setItem('fishbowl-save', raw);
+    const stop = startGame(env.env);
+    expect(isSaveLocked()).toBe(true);
+    stop(); // the final save on shutdown must not overwrite it either
+    expect(env.storage.getItem('fishbowl-save')).toBe(raw);
+  });
+
+  it('a normal save leaves saving unlocked', () => {
+    const env = fakeEnv();
+    saveGame(makeState(), env.storage);
+    startGame(env.env)();
+    expect(isSaveLocked()).toBe(false);
   });
 });
 

@@ -9,6 +9,7 @@ import '@fontsource/fredoka/latin-700.css';
 import './styles.css';
 import './ui/kit/kit.css';
 import './ui/screens.css';
+import { registerServiceWorker } from './pwa';
 import { applyTokens } from './ui/tokens';
 
 // Dev-only test hooks for e2e/screenshot scripts (stripped from production builds).
@@ -20,6 +21,8 @@ if (import.meta.env.DEV) {
 
 // Tokens go on :root before the first paint; App re-applies them when the reduced-motion setting changes.
 applyTokens(document.documentElement, window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+registerServiceWorker();
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Missing #root element');

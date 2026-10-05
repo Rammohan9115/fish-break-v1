@@ -645,3 +645,18 @@ export function algaeTouchedBySponge(
     })
     .map((spot) => spot.id);
 }
+
+/** Wipes one algae spot: it disappears, the tank gets ALGAE_WIPE_CLEANLINESS cleaner, and the cleaned counter ticks. Null if no such spot. XP is the caller's. */
+export function wipeAlgae(state: GameState, spotId: string): GameState | null {
+  const tank = state.tanks.find((t) => t.algaeSpots.some((a) => a.id === spotId));
+  if (!tank) return null;
+  return {
+    ...state,
+    stats: { ...state.stats, cleaned: state.stats.cleaned + 1 },
+    tanks: state.tanks.map((t) =>
+      t.id === tank.id
+        ? { ...t, cleanliness: Math.min(CLEANLINESS_MAX, t.cleanliness + ALGAE_WIPE_CLEANLINESS), algaeSpots: t.algaeSpots.filter((a) => a.id !== spotId) }
+        : t,
+    ),
+  };
+}

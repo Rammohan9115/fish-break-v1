@@ -1,0 +1,31 @@
+# Credits & licenses
+
+Everything the game ships with, and where it comes from. Keep this file current when art, fonts or libraries change.
+The in-game **Settings → About & credits** screen shows the same information.
+
+## Fonts
+| Font | License | Source |
+|---|---|---|
+| Fredoka (500, 600, 700) | SIL Open Font License 1.1 | https://fonts.google.com/specimen/Fredoka, self-hosted via `@fontsource/fredoka` |
+| Nunito (variable) | SIL Open Font License 1.1 | https://fonts.google.com/specimen/Nunito, self-hosted via `@fontsource-variable/nunito` |
+
+## Code
+React, Zustand, Vite, vite-plugin-pwa, Workbox, Supabase JS (all MIT or Apache-2.0). Dev tooling (TypeScript, Vitest,
+ESLint, Playwright, sharp) is not shipped to players.
+
+## Art
+**To be completed by the project owner before a wider launch.** For each family below, record who made it, the tool or
+source used, the license or terms, and where the proof is kept (receipt, generation-tool terms page, license file).
+
+| Asset family | Files (originals in `art-src/`, built into `public/assets-webp/`) | Source / author | License / terms |
+|---|---|---|---|
+| Fish sprites | `art-src/fish/*` (11 species, adult + baby) | _unrecorded_ | _unrecorded_ |
+| Tank backgrounds | `art-src/coral/*` (classic, coral, night, pond) | _unrecorded_ | _unrecorded_ |
+| Decor sheets and pieces | `art-src/elements/*` | _unrecorded_ | _unrecorded_ |
+| App icon | `public/icon.svg` | Drawn in code for this project | Project license |
+
+If any art came from an AI image generator, note the tool and confirm its terms allow commercial use and do not require
+attribution beyond what is listed here. Third-party store policies (Apple, Google) may ask for this.
+
+## Sound
+Generated at runtime with the Web Audio API. No audio files.
