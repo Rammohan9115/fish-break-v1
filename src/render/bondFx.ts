@@ -348,7 +348,7 @@ export class BondFx {
       const f = fish.find((ff) => ff.id === pet.fishId);
       if (!actor || !f) return;
       ctx.save();
-      ctx.font = `800 15px Nunito, system-ui, sans-serif, ${emojiFont}`;
+      ctx.font = `800 15px 'Nunito Variable', Nunito, system-ui, sans-serif, ${emojiFont}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.lineJoin = 'round';

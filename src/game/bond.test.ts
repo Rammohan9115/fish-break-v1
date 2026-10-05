@@ -23,8 +23,8 @@ const stateWith = (fish: Fish[], o: Partial<GameState> = {}) => makeState({ fish
 const fishOf = (s: GameState, id: string) => s.fish.find((f) => f.id === id)!;
 
 describe('bond levels', () => {
-  it('uses the thresholds 0 / 10 / 30 / 60 / 100 / 160', () => {
-    expect([0, 9.9, 10, 29, 30, 59, 60, 99, 100, 159, 160, 999].map(bondLevelFor)).toEqual([0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
+  it('uses the thresholds 0 / 15 / 45 / 100 / 180 / 300', () => {
+    expect([0, 14.9, 15, 44, 45, 99, 100, 179, 180, 299, 300, 999].map(bondLevelFor)).toEqual([0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
   });
 
   it('new fish start as Strangers with empty logs', () => {
@@ -33,9 +33,9 @@ describe('bond levels', () => {
   });
 
   it('describes the next level and what it unlocks', () => {
-    const f = { ...makeFish({ speciesId: 'goldfish' }), bondPoints: 48, bondLevel: 2 as BondLevel };
-    expect(nextBondLevel(f)).toMatchObject({ level: 3, name: 'Buddy', toGo: 12, unlock: 'Trick: Bubble Hoop' });
-    expect(nextBondLevel(f)!.fraction).toBeCloseTo(18 / 30);
+    const f = { ...makeFish({ speciesId: 'goldfish' }), bondPoints: 90, bondLevel: 2 as BondLevel };
+    expect(nextBondLevel(f)).toMatchObject({ level: 3, name: 'Buddy', toGo: 10, unlock: 'Trick: Bubble Hoop' });
+    expect(nextBondLevel(f)!.fraction).toBeCloseTo(45 / 55);
     expect(nextBondLevel(setBondLevel(f, 4))!.unlock).toBe('Trick: Heart Bubble');
     expect(nextBondLevel(setBondLevel(f, 5))).toBeNull();
   });
@@ -63,15 +63,15 @@ describe('pet sessions', () => {
     expect(fishOf(completePetSession(stateWith([f]), f.id, T0).state, f.id).happiness).toBe(100);
   });
 
-  it('caps rewarded sessions at 3 per rolling hour; later sessions only make the fish content', () => {
+  it('caps rewarded sessions at 2 per rolling hour; later sessions only make the fish content', () => {
     const f = makeFish({ happiness: 40 });
     let s = stateWith([f]);
-    for (let i = 0; i < 3; i++) s = completePetSession(s, f.id, T0 + i * 5 * MINUTE_MS).state;
+    for (let i = 0; i < BOND.sessionsPerHour; i++) s = completePetSession(s, f.id, T0 + i * 5 * MINUTE_MS).state;
     expect(sessionsLeft(fishOf(s, f.id), T0 + 10 * MINUTE_MS)).toBe(0);
     const capped = completePetSession(s, f.id, T0 + 20 * MINUTE_MS);
     expect(capped.rewarded).toBe(false);
-    expect(fishOf(capped.state, f.id).bondPoints).toBe(9);
-    expect(fishOf(capped.state, f.id).happiness).toBe(40 + 3 * BOND.petHappiness + BOND.contentHappiness);
+    expect(fishOf(capped.state, f.id).bondPoints).toBe(BOND.sessionsPerHour * BOND.petSession);
+    expect(fishOf(capped.state, f.id).happiness).toBe(40 + BOND.sessionsPerHour * BOND.petHappiness + BOND.contentHappiness);
     expect(capped.state.xp).toBe(s.xp);
     // Rolling: one hour after the first session, one frees up.
     expect(nextSessionAt(fishOf(s, f.id), T0 + 20 * MINUTE_MS)).toBe(T0 + HOUR_MS);
@@ -80,7 +80,7 @@ describe('pet sessions', () => {
   });
 
   it('reports a bond level-up', () => {
-    const f = { ...makeFish(), bondPoints: 8, bondLevel: 0 as BondLevel };
+    const f = { ...makeFish(), bondPoints: 13, bondLevel: 0 as BondLevel };
     const r = completePetSession(stateWith([f]), f.id, T0);
     expect(r.levelUp).toEqual({ fishId: f.id, from: 0, to: 1 });
     expect(fishOf(r.state, f.id).bondLevel).toBe(1);
@@ -138,7 +138,7 @@ describe('baby starting bond', () => {
     expect(laid.eggs[0]!.startBond).toBe(BOND.levels[1]);
     const hatched = simulateOffline(laid, T0 + HOUR_MS, seededRng(2)).state;
     const baby = hatched.fish.find((f) => f.id !== a.id && f.id !== b.id)!;
-    expect(baby).toMatchObject({ bondPoints: 10, bondLevel: 1 });
+    expect(baby).toMatchObject({ bondPoints: BOND.levels[1], bondLevel: 1 });
   });
 });
 

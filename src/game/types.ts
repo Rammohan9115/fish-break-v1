@@ -193,6 +193,8 @@ export interface Egg {
   x?: number;
   /** Bond points the baby starts with (decided when laid, from its parents' bond). */
   startBond?: number;
+  /** Ready to hatch, but the tank and the Nursery are full: it waits (set once, for a one-time notice). */
+  waiting?: boolean;
 }
 
 /** Two fish swimming their heart loop; an egg is laid (guaranteed) at `x` when it ends. */

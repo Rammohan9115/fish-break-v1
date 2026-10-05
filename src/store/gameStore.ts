@@ -340,6 +340,8 @@ export function breedingToasts(events: SimEvent[], game: GameState): string[] {
       if (e.shiny) texts.push(`✨ Shiny! ✨ Say hi to ${name(e.fishId)} the ${species} (+${BREEDING.shinyHatchPearls} ⚪)`);
       else texts.push(`🐣 ${name(e.fishId)} the ${species} hatched!`);
       if (e.destination === 'nursery') texts.push('🍼 Baby moved to the Nursery — make room or upgrade your tank.');
+    } else if (e.type === 'eggWaiting') {
+      texts.push('🥚 An egg is ready, but the tank and the Nursery are full. It will wait until there’s room.');
     } else if (e.type === 'questComplete') {
       texts.push(`🎉 Your first baby! +${e.shells} 🐚 +${e.pearls} ⚪`);
     }
@@ -641,9 +643,10 @@ export const useGameStore = create<GameStore>()((set, get) => {
       if (mode === 'clean') {
         const { game } = get();
         const tank = game.tanks.find((t) => t.id === game.activeTankId);
-        // Nothing to wipe: say so and stay in look mode instead of entering an empty mode.
+        // Nothing to wipe: say so and stay in look mode instead of entering an empty mode. (A tank below
+        // ALGAE_FLOOR_CLEANLINESS always has spots, so this only happens when it's actually clean enough.)
         if (tank && tank.algaeSpots.length === 0) {
-          get().addToast('✨ Sparkling clean! Nothing to wipe right now.');
+          get().addToast(`✨ Looking good (${Math.round(tank.cleanliness)}% clean). Nothing to wipe right now.`);
           return;
         }
       }

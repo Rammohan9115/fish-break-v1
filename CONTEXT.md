@@ -93,7 +93,7 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
   - Fins are translucent gradients with rays (`paintFin`). Eyes have a golden iris (`eye`), and fish get gill covers and a mouth notch.
   - Shading tones come from each variant (`shadesFor`): cool blue-violet shadows, warm cream light.
 - **Palettes in `species.ts` are natural and earthy.** Variant keys are unchanged, so saves still work.
-- **`DEV_TOOLS_IN_PRODUCTION`** (constants.ts) is currently `true`, so the dev panel ships to production, collapsed. Set it to false to remove it.
+- **`DEV_TOOLS_IN_PRODUCTION`** (constants.ts) is `false`: players never see the dev panel. Open the production site with `?dev=1` to unlock it on that device (remembered under `DEV_TOOLS_KEY`; `?dev=0` forgets). Always on in `npm run dev`.
 
 ## Layout and camera (full-bleed, FishVille-style)
 - **The canvas fills the whole screen on every device.** There's no room, frame or stand anymore: the user rejected them and supplied FishVille reference shots.
@@ -232,7 +232,7 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
 - **The other components:** Hud (level/XP/shells/pearls/tank chip/mute), Toolbar, FishCard (name edit, meters, growth ETA, breeding status,
   Move to tank, sell with confirm), DecorCard, Shop (four tabs, `PriceTag`), TankSwitcher, LevelUpModal, DailyGift (DOM overlay
   inside the tank), Onboarding, Toasts (at most 3), BreakMode (setup + active + end), Preview (static canvas fish/decor).
-- **`DevPanel.tsx`:** dev-only, lazy-loaded behind `import.meta.env.DEV`, so it's stripped from production. Phase 11 says to remove it from prod; that's already true.
+- **`DevPanel.tsx`:** lazy-loaded; shown in `npm run dev`, or in production only after `?dev=1` (see `DEV_TOOLS_IN_PRODUCTION`). Its chunk is still built but never fetched for players.
 
 **`src/audio/sound.ts`**
 - `SoundEngine` with a `sound` singleton: `play('plop'|'coin'|'chime'|'squeak'|'bubble')`, `setMuted`, `unlock`, `setAmbience`.
@@ -365,3 +365,19 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
 - **Every balance number lives in `constants.ts`/`species.ts`.** No `any`. Strict TypeScript, including `noUncheckedIndexedAccess`.
 - **After each change:** `npm test` and `npm run build` must pass.
 - **Commits:** the user commits themselves unless they ask. Keep commits on `main`, with attribution lines per the harness.
+
+
+## Batch 1 rule changes (ASSESSMENT.md)
+- **Drops:** `MAX_DROPS_PER_TANK` 20. An overflow drop is auto-collected at `AUTO_COLLECT_FRACTION_ONLINE` (0.5) while playing and lost offline (`AUTO_COLLECT_FRACTION_OFFLINE` 0, `tick(..., { offline: true })`). The offline summary counts only drops still on the sand ("waiting on the sand"); the `drop` event carries a `dropId` for that.
+- **Cleaning:** below `ALGAE_FLOOR_CLEANLINESS` (60) a tank always gets `algaeNeeded(c)` spots (topped up at most one per sim minute), so wiping everything (+6 each) always gets back to 60. Clean mode refuses only when there are no spots.
+- **Nursery:** `NURSERY_MAX` 12. A ready egg with no room anywhere stays in `eggs` with `waiting: true` (one `eggWaiting` event, toast, and a note in the Breeding panel) and hatches when room appears.
+- **Pacing:** `BOND.levels` `[0, 15, 45, 100, 180, 300]`, `BOND.sessionsPerHour` 2, `XP_CURVE_BASE` 30.
+- **Logout:** `CloudSync.logout(force)` returns `{ ok }`; it only clears the local save after a confirmed push, otherwise `{ ok: false }` and Settings shows a "Log out anyway?" confirm.
+- `cloudSave.test.ts` still needs `VITE_SUPABASE_URL=` / `VITE_SUPABASE_ANON_KEY=` blanked on Node 20 (SYNC-7, Batch 3).
+
+## Batch 2 (load speed)
+- **Art pipeline:** originals in `art-src/` (outside `public/`, not shipped); `npm run build:assets` writes `public/assets-webp/` (44 MB → 2.5 MB). The cleanup (baked-background removal, `removeIslands`/`erodeAlpha`/`defringe`, trim) now runs offline; at runtime `assets.ts`/`sprites.ts` only decode and copy onto a canvas. Decor sheets are cut per item (`decor/<id>.webp`); icons are `icons/<id>.webp`; `artConfig` `file`/`rect` are now build inputs only. Needs `sharp@0.33` (newer sharp doesn't run on Node 20.4).
+- **Loading:** `preloadAssets(onProgress, priority)`: the loading screen waits only for the active theme's background, the icons, and the species/decor found in the local save (`savedArtPriority`); everything else loads afterwards, two files at a time. Until a file arrives the renderer uses its code-art fallback.
+- **supabase-js is lazy:** `lib/supabase.ts` exports `cloudConfigured`, `getSupabase()` (dynamic import) and `needsSupabaseAtStart()` (stored `sb-*-auth-token` or login redirect in the URL). Guests never download it; `cloudSave.test.ts` now runs on Node 20 even with `.env.local` keys (SYNC-7 done).
+- **Fonts:** `@fontsource-variable/nunito` (family name `Nunito Variable`) and `@fontsource/fredoka` (latin 500/600/700), imported in `main.tsx`.
+- Measured on `vite preview` (Lighthouse 12, mobile): Performance 41 → 95, LCP 5.0 → 2.6s, TBT 6.6s → 0, TTI 11.5 → 2.7s, payload 43.4 → 2.6 MB. Main JS 719 → 492 KB (supabase 228 KB is its own chunk).

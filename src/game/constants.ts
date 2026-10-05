@@ -99,6 +99,11 @@ export const CLEANLINESS_DECAY_PER_FISH_PER_MIN = 0.1;
 /** Crossing below each of these spawns an algae spot. */
 export const ALGAE_THRESHOLDS = [80, 60, 40, 20] as const;
 export const MAX_ALGAE_SPOTS = 12;
+/**
+ * Below this cleanliness the tank always has enough algae to wipe it back up: at least
+ * ceil((ALGAE_FLOOR_CLEANLINESS − cleanliness) / ALGAE_WIPE_CLEANLINESS) spots, topped up at most one per sim minute.
+ */
+export const ALGAE_FLOOR_CLEANLINESS = 60;
 export const ALGAE_WIPE_CLEANLINESS = 6;
 /** Sponge reach in Clean mode (tank units, added to the spot radius). */
 export const SPONGE_RADIUS = 18;
@@ -110,7 +115,15 @@ export const ALGAE_MAX_SIZE = 28;
 // ---------------------------------------------------------------------------
 export const DROP_PEARL_CHANCE = 0.02;
 export const PEARL_DROP_VALUE = 1;
-export const MAX_DROPS_PER_TANK = 10;
+export const MAX_DROPS_PER_TANK = 20;
+/**
+ * A drop beyond MAX_DROPS_PER_TANK pushes the oldest off the sand. While the game is open it's auto-collected at
+ * this fraction of its value; during offline catch-up it's lost (keeps passive income bounded).
+ */
+export const AUTO_COLLECT_FRACTION_ONLINE = 0.5;
+export const AUTO_COLLECT_FRACTION_OFFLINE = 0;
+/** Babies napping in the Nursery at most; when it's full, eggs wait (unhatched, never lost) until there's room. */
+export const NURSERY_MAX = 12;
 
 // ---------------------------------------------------------------------------
 // Offline catch-up
@@ -122,7 +135,7 @@ export const OFFLINE_STEP_MS = 60 * SECOND_MS;
 // Levels & XP
 // ---------------------------------------------------------------------------
 /** XP to next level = round(XP_CURVE_BASE * level ^ XP_CURVE_EXPONENT). */
-export const XP_CURVE_BASE = 40;
+export const XP_CURVE_BASE = 30;
 export const XP_CURVE_EXPONENT = 1.5;
 /** Each level-up grants level * LEVEL_UP_SHELLS_PER_LEVEL shells. */
 export const LEVEL_UP_SHELLS_PER_LEVEL = 10;
@@ -142,14 +155,14 @@ export const XP = {
 // ---------------------------------------------------------------------------
 export const BOND = {
   /** Points needed for each bond level 0..5. */
-  levels: [0, 10, 30, 60, 100, 160],
+  levels: [0, 15, 45, 100, 180, 300],
   names: ['Stranger', 'Curious', 'Friendly', 'Buddy', 'Best Friend', 'Soulmate'],
   /** A completed (rewarded) pet session. */
   petSession: 3,
   petHappiness: 5,
   petXp: 1,
   /** Rewarded sessions per fish per rolling hour; later sessions only give contentHappiness. */
-  sessionsPerHour: 3,
+  sessionsPerHour: 2,
   contentHappiness: 2,
   /** A fish eating a pellet the player dropped within feedRadius of it. */
   feedBond: 0.2,
@@ -418,8 +431,12 @@ export const AMBIENCE_BED_VOLUME = 0.06;
 // ---------------------------------------------------------------------------
 // Dev tools
 // ---------------------------------------------------------------------------
-/** Show the dev/art-preview panel in production builds too (it's always on in `npm run dev`). Set false to ship without it. */
-export const DEV_TOOLS_IN_PRODUCTION = true;
+/**
+ * The dev/art-preview panel: always on in `npm run dev`. In production it's hidden unless the page is opened
+ * with `?dev=1` (remembered on that device in localStorage; `?dev=0` turns it off again).
+ */
+export const DEV_TOOLS_IN_PRODUCTION = false;
+export const DEV_TOOLS_KEY = 'fishbowl-dev-tools';
 
 // ---------------------------------------------------------------------------
 // Interaction / UI

@@ -443,7 +443,7 @@ export class Particles {
     ctx.save();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '800 18px Nunito, system-ui, sans-serif';
+    ctx.font = "800 18px 'Nunito Variable', Nunito, system-ui, sans-serif";
     ctx.lineJoin = 'round';
     for (const p of this.pops) {
       const t = p.age / POP_LIFE_SEC;

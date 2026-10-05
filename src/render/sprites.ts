@@ -1,13 +1,8 @@
-// PNG fish sprites from /public/assets/fish (adult + baby per species). Preloaded once behind the
-// loading screen by assets.ts (preloadAssets), together with the other generated art. Any file that fails to load simply stays
-// missing and the renderer falls back to the code-drawn art for it.
-import {
-  SPRITE_ALPHA_TRIM,
-  SPRITE_BG_MAX_SPREAD,
-  SPRITE_BG_MIN_LIGHT,
-  SPRITE_LOAD_TIMEOUT_MS,
-  SPRITE_MAX_PX,
-} from '../game/constants';
+// Fish sprites from /public/assets-webp/fish (adult + baby per species), built from art-src/ by
+// scripts/build-assets.ts: background removed, trimmed and at most SPRITE_MAX_PX, so loading is just decoding.
+// Loaded by assets.ts (preloadAssets). Any file that fails to load simply stays missing and the renderer
+// falls back to the code-drawn art for it.
+import { SPRITE_ALPHA_TRIM, SPRITE_BG_MAX_SPREAD, SPRITE_BG_MIN_LIGHT, SPRITE_LOAD_TIMEOUT_MS } from '../game/constants';
 import type { SpeciesId, Stage } from '../game/types';
 
 /** A trimmed, downscaled sprite. Its art faces +x (right). */
@@ -17,14 +12,18 @@ export interface Sprite {
   h: number;
 }
 
-const BASE = `${import.meta.env.BASE_URL}assets/`;
+/** Where the pre-built WebP art lives (see scripts/build-assets.ts). */
+export const ASSET_BASE = `${import.meta.env.BASE_URL}assets-webp/`;
+
+/** The built WebP name for a source art file (`coral/Night.PNG` → `coral/Night.webp`). */
+export const webpName = (file: string): string => file.replace(/\.png$/i, '.webp');
 
 /**
- * Fish file names (case-sensitive on the server). Adults are also used for juveniles, scaled down.
- * Several files use short names (angel, axo, clown); tetrababy.PNG is a copy of the adult, so the
- * real baby art is tetrababy1.PNG. The jellyfish has one pink sprite per stage; its variants are hue rotations.
+ * Fish source file names under art-src/fish (the built files are the same names as .webp). Adults are also used
+ * for juveniles, scaled down. Several files use short names (angel, axo, clown); the tetra baby is tetrababy1.PNG.
+ * The jellyfish has one pink sprite per stage; its variants are hue rotations.
  */
-const FISH_FILES: Record<SpeciesId, { adult: string; baby: string }> = {
+export const FISH_FILES: Record<SpeciesId, { adult: string; baby: string }> = {
   danio: { adult: 'danio.PNG', baby: 'daniobaby.PNG' },
   guppy: { adult: 'guppy.PNG', baby: 'guppybaby.PNG' },
   goldfish: { adult: 'goldfish.PNG', baby: 'goldfishbaby.PNG' },
@@ -197,51 +196,27 @@ function makeCanvas(w: number, h: number): HTMLCanvasElement {
   return c;
 }
 
-/** Strips a baked background, trims to the art, and downscales (in halving steps, for quality). */
+/** Copies a pre-built (already trimmed and sized) sprite onto a canvas. */
 function prepareSprite(img: HTMLImageElement): Sprite | null {
-  const full = makeCanvas(img.naturalWidth, img.naturalHeight);
-  const fctx = full.getContext('2d', { willReadFrequently: true });
-  if (!fctx) return null;
-  fctx.drawImage(img, 0, 0);
-  const pixels = fctx.getImageData(0, 0, full.width, full.height);
-  if (removeBakedBackground(pixels.data, full.width, full.height)) fctx.putImageData(pixels, 0, 0);
-  const box = alphaBounds(pixels.data, full.width, full.height);
-  if (!box) return null;
-
-  const k = Math.min(1, SPRITE_MAX_PX / Math.max(box.w, box.h));
-  let src: HTMLCanvasElement = full;
-  let sx = box.x;
-  let sy = box.y;
-  let sw = box.w;
-  let sh = box.h;
-  while (sw * 0.5 > box.w * k * 1.0001) {
-    const half = makeCanvas(sw / 2, sh / 2);
-    const hctx = half.getContext('2d');
-    if (!hctx) break;
-    hctx.imageSmoothingQuality = 'high';
-    hctx.drawImage(src, sx, sy, sw, sh, 0, 0, half.width, half.height);
-    src = half;
-    sx = 0;
-    sy = 0;
-    sw = half.width;
-    sh = half.height;
-  }
-  const out = makeCanvas(box.w * k, box.h * k);
-  const octx = out.getContext('2d');
-  if (!octx) return null;
-  octx.imageSmoothingQuality = 'high';
-  octx.drawImage(src, sx, sy, sw, sh, 0, 0, out.width, out.height);
-  return { canvas: out, w: out.width, h: out.height };
+  if (img.naturalWidth <= 0 || img.naturalHeight <= 0) return null;
+  const canvas = makeCanvas(img.naturalWidth, img.naturalHeight);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.drawImage(img, 0, 0);
+  return { canvas, w: canvas.width, h: canvas.height };
 }
 
 /** One loader job per fish sprite file (run by preloadAssets). A job may reject; the fish then uses its drawn art. */
-export function fishPreloadJobs(): (() => Promise<void>)[] {
-  const jobs: (() => Promise<void>)[] = [];
+export function fishPreloadJobs(): { species: SpeciesId; run: () => Promise<void> }[] {
+  const jobs: { species: SpeciesId; run: () => Promise<void> }[] = [];
   for (const [speciesId, files] of Object.entries(FISH_FILES) as [SpeciesId, { adult: string; baby: string }][]) {
     for (const art of ['adult', 'baby'] as const) {
-      jobs.push(async () => {
-        const sprite = prepareSprite(await loadImage(`${BASE}fish/${files[art]}`));
-        if (sprite) fishSprites.set(fishKey(speciesId, art), sprite);
+      jobs.push({
+        species: speciesId,
+        run: async () => {
+          const sprite = prepareSprite(await loadImage(`${ASSET_BASE}fish/${webpName(files[art])}`));
+          if (sprite) fishSprites.set(fishKey(speciesId, art), sprite);
+        },
       });
     }
   }

@@ -1,22 +1,14 @@
 // Generated sprite assets: theme backgrounds, decor, icons (shell, pearl) and the egg cluster.
-// One typed manifest, preloaded (together with the fish sprites) behind the loading screen.
-// Each sprite is cleaned once on load: sprite-sheet leftovers removed, the light halo from background
-// removal defringed, transparent padding trimmed. Copies at the exact device-pixel size the tank needs
+// One typed manifest. The files in public/assets-webp are built offline by scripts/build-assets.ts (sprite-sheet
+// leftovers removed, halo defringed, padding trimmed), so loading is just decoding. What the first screen needs
+// (the saved theme, the species and decor in the save, the icons) loads behind the loading screen; the rest loads
+// in the background afterwards. Copies at the exact device-pixel size the tank needs
 // are made on demand (stepped downscaling) and cached. A file that fails to load stays missing and the
 // renderer falls back to the code-drawn art; nothing here ever throws to the caller.
-import {
-  ASSET_DEFRINGE_PX,
-  ASSET_ERODE_PX,
-  ASSET_FRINGE_MIN_LIGHT,
-  ASSET_MIN_ISLAND,
-  ASSET_SIZE_BUCKET_PX,
-  SPRITE_ALPHA_TRIM,
-} from '../game/constants';
-import type { DecorId, ThemeId } from '../game/types';
+import { ASSET_SIZE_BUCKET_PX, SPRITE_ALPHA_TRIM } from '../game/constants';
+import type { DecorId, SpeciesId, ThemeId } from '../game/types';
 import { DECOR_ART, ICON_ART, THEME_ART, type IconId } from './artConfig';
-import { alphaBounds, fishPreloadJobs, loadImage } from './sprites';
-
-const BASE = `${import.meta.env.BASE_URL}assets/`;
+import { ASSET_BASE, fishPreloadJobs, loadImage, webpName } from './sprites';
 
 /** A cleaned, trimmed sprite at its native resolution. */
 export interface AssetSprite {
@@ -25,17 +17,16 @@ export interface AssetSprite {
   h: number;
 }
 
-type Rect = [number, number, number, number];
-
+/** `file` is the built WebP under public/assets-webp (one per decor item and icon; backgrounds keep their names). */
 type Manifest =
   | { kind: 'background'; id: ThemeId; file: string }
-  | { kind: 'decor'; id: DecorId; file: string; rect?: Rect }
+  | { kind: 'decor'; id: DecorId; file: string }
   | { kind: 'icon'; id: IconId; file: string };
 
 export const ASSET_MANIFEST: Manifest[] = [
-  ...(Object.entries(THEME_ART) as [ThemeId, { file: string }][]).map(([id, a]) => ({ kind: 'background' as const, id, file: a.file })),
-  ...(Object.entries(DECOR_ART) as [DecorId, { file: string; rect?: Rect }][]).map(([id, a]) => ({ kind: 'decor' as const, id, file: a.file, rect: a.rect })),
-  ...(Object.entries(ICON_ART) as [IconId, { file: string }][]).map(([id, a]) => ({ kind: 'icon' as const, id, file: a.file })),
+  ...(Object.entries(THEME_ART) as [ThemeId, { file: string }][]).map(([id, a]) => ({ kind: 'background' as const, id, file: webpName(a.file) })),
+  ...(Object.keys(DECOR_ART) as DecorId[]).map((id) => ({ kind: 'decor' as const, id, file: `decor/${id}.webp` })),
+  ...(Object.keys(ICON_ART) as IconId[]).map((id) => ({ kind: 'icon' as const, id, file: `icons/${id}.webp` })),
 ];
 
 const backgrounds = new Map<ThemeId, HTMLImageElement>();
@@ -60,8 +51,8 @@ export function iconUrl(id: IconId): string | null {
   return iconUrls.get(id) ?? null;
 }
 
-/** The raw shell file, for the loading screen (shown before anything is processed). */
-export const LOADING_ICON_URL = `${BASE}${ICON_ART.shell.file}`;
+/** The shell file, for the loading screen (shown before anything is processed). */
+export const LOADING_ICON_URL = `${ASSET_BASE}icons/shell.webp`;
 
 // ---------------------------------------------------------------------------
 // Pixel cleanup (pure; unit-tested). Images are RGBA, row-major.
@@ -258,32 +249,12 @@ export function downscale(
   return out;
 }
 
-/**
- * Cleans a loaded sprite: leftovers removed, defringed, trimmed. Null if nothing is left. `rect` cuts one
- * item out of a sprite sheet first (clamped to the image).
- */
-function cleanSprite(img: HTMLImageElement, rect?: Rect): AssetSprite | null {
-  const [rx, ry, rw, rh] = rect ?? [0, 0, img.naturalWidth, img.naturalHeight];
-  const sx = Math.max(0, rx);
-  const sy = Math.max(0, ry);
-  const sw = Math.min(img.naturalWidth - sx, rw);
-  const sh = Math.min(img.naturalHeight - sy, rh);
-  if (sw <= 0 || sh <= 0) return null;
-  const full = makeCanvas(sw, sh);
-  const ctx = full.getContext('2d', { willReadFrequently: true });
-  if (!ctx) return null;
-  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
-  const pixels = ctx.getImageData(0, 0, full.width, full.height);
-  const { data, width: w, height: h } = pixels;
-  removeIslands(data, w, h, ASSET_MIN_ISLAND);
-  erodeAlpha(data, w, h, ASSET_ERODE_PX);
-  defringe(data, w, h, ASSET_DEFRINGE_PX, ASSET_FRINGE_MIN_LIGHT);
-  const box = alphaBounds(data, w, h);
-  if (!box) return null;
-  ctx.putImageData(pixels, 0, 0);
-  const out = makeCanvas(box.w, box.h);
-  out.getContext('2d')?.drawImage(full, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
-  return { canvas: out, w: box.w, h: box.h };
+/** Copies a pre-built (already cleaned and trimmed) image onto a canvas. Null for an empty image. */
+function spriteFromImage(img: HTMLImageElement): AssetSprite | null {
+  if (img.naturalWidth <= 0 || img.naturalHeight <= 0) return null;
+  const canvas = makeCanvas(img.naturalWidth, img.naturalHeight);
+  canvas.getContext('2d')?.drawImage(img, 0, 0);
+  return { canvas, w: canvas.width, h: canvas.height };
 }
 
 /** Rounds a device-pixel size up to the cache bucket. */
@@ -323,25 +294,13 @@ export function scaledSprite(
 // Preload
 // ---------------------------------------------------------------------------
 
-/** Each file is fetched once, even when several items are cut from the same sheet. */
-const images = new Map<string, Promise<HTMLImageElement>>();
-
-function loadOnce(file: string): Promise<HTMLImageElement> {
-  let p = images.get(file);
-  if (!p) {
-    p = loadImage(`${BASE}${file}`);
-    images.set(file, p);
-  }
-  return p;
-}
-
 async function loadAsset(entry: Manifest): Promise<void> {
-  const img = await loadOnce(entry.file);
+  const img = await loadImage(`${ASSET_BASE}${entry.file}`);
   if (entry.kind === 'background') {
     backgrounds.set(entry.id, img);
     return;
   }
-  const sprite = cleanSprite(img, entry.kind === 'decor' ? entry.rect : undefined);
+  const sprite = spriteFromImage(img);
   if (!sprite) return;
   if (entry.kind === 'decor') {
     decor.set(entry.id, sprite);
@@ -354,35 +313,67 @@ async function loadAsset(entry: Manifest): Promise<void> {
   if (url) iconUrls.set(entry.id, url);
 }
 
+/** What the first screen needs; everything else loads afterwards (see preloadAssets). */
+export interface PreloadPriority {
+  theme?: ThemeId;
+  species?: readonly SpeciesId[];
+  decor?: readonly DecorId[];
+}
+
 let preload: Promise<void> | null = null;
 const progress = { done: 0, total: 0 };
 const listeners = new Set<(done: number, total: number) => void>();
 
+const settle = (job: () => Promise<void>, report: () => void) =>
+  job()
+    .catch(() => undefined)
+    .finally(() => {
+      progress.done++;
+      report();
+    });
+
 /**
- * Loads the fish sprites and every manifest asset once (later calls share the promise). Never rejects:
- * failures are skipped. `onProgress(done, total)` fires now and as each file settles.
+ * Loads the assets the first screen needs (the `priority` theme background, the icons, the listed species and decor;
+ * all of them when no priority is given) and resolves when those are ready. Everything else keeps loading in the
+ * background (anything not there yet just draws as the code-art fallback until it arrives). Later calls share the
+ * promise. Never rejects: failures are skipped. `onProgress(done, total)` covers the priority files only.
  */
-export function preloadAssets(onProgress?: (done: number, total: number) => void): Promise<void> {
+export function preloadAssets(onProgress?: (done: number, total: number) => void, priority?: PreloadPriority): Promise<void> {
   if (onProgress) {
     listeners.add(onProgress);
     onProgress(progress.done, progress.total);
   }
   if (preload) return preload;
-  const jobs = [...fishPreloadJobs(), ...ASSET_MANIFEST.map((entry) => () => loadAsset(entry))];
-  progress.total = jobs.length;
+  const speciesFiles = (ids: readonly SpeciesId[]) => new Set(ids.map((id) => id));
+  const wantSpecies = priority?.species ? speciesFiles(priority.species) : null;
+  const wantDecor = priority?.decor ? new Set(priority.decor) : null;
+  const isFirst = (e: Manifest) =>
+    !priority ||
+    e.kind === 'icon' ||
+    (e.kind === 'background' && e.id === (priority.theme ?? 'classic')) ||
+    (e.kind === 'decor' && (wantDecor?.has(e.id) ?? false));
+  const fish = fishPreloadJobs();
+  const first = [
+    ...fish.filter((j) => !wantSpecies || wantSpecies.has(j.species)).map((j) => j.run),
+    ...ASSET_MANIFEST.filter(isFirst).map((entry) => () => loadAsset(entry)),
+  ];
+  const rest = [
+    ...fish.filter((j) => wantSpecies && !wantSpecies.has(j.species)).map((j) => j.run),
+    ...ASSET_MANIFEST.filter((e) => !isFirst(e)).map((entry) => () => loadAsset(entry)),
+  ];
+  progress.total = first.length;
   const report = () => {
     for (const l of listeners) l(progress.done, progress.total);
   };
   report();
-  preload = Promise.all(
-    jobs.map((job) =>
-      job()
-        .catch(() => undefined)
-        .finally(() => {
-          progress.done++;
-          report();
-        }),
-    ),
-  ).then(() => listeners.clear());
+  preload = Promise.all(first.map((job) => settle(job, report))).then(() => {
+    listeners.clear();
+    // Background phase: after the first screen is up, a couple of files at a time.
+    const queue = [...rest];
+    const worker = async () => {
+      for (let job = queue.shift(); job; job = queue.shift()) await job().catch(() => undefined);
+    };
+    void Promise.all([worker(), worker()]);
+  });
   return preload;
 }

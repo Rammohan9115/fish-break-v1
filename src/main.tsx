@@ -1,6 +1,11 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+// Self-hosted fonts (latin subset only; no request to Google).
+import '@fontsource-variable/nunito/wght.css';
+import '@fontsource/fredoka/latin-500.css';
+import '@fontsource/fredoka/latin-600.css';
+import '@fontsource/fredoka/latin-700.css';
 import './styles.css';
 import './ui/kit/kit.css';
 import './ui/screens.css';

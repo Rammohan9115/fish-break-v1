@@ -122,7 +122,7 @@ describe('formatOfflineSummary', () => {
 
   it('lists what happened', () => {
     const text = formatOfflineSummary({ ...base, shellsDropped: 6, shellValue: 12, pearlsDropped: 1, eggsHatched: 2, fishGrown: 3 });
-    expect(text).toBe('While you were away (2h 15m): 🐚 12 shells dropped, ⚪ 1 pearl, 🥚 2 eggs hatched, 🐟 3 grew up a stage');
+    expect(text).toBe('While you were away (2h 15m): 🐚 12 shells waiting on the sand, ⚪ 1 pearl, 🥚 2 eggs hatched, 🐟 3 grew up a stage');
   });
 
   it('mentions eggs laid and babies sent to the Nursery', () => {

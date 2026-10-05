@@ -217,8 +217,19 @@ export function Settings() {
   const user = useCloudStore((s) => s.user);
   const [view, setView] = useState<'main' | 'login'>('main');
   const [loggingOut, setLoggingOut] = useState(false);
+  const [confirmingLogout, setConfirmingLogout] = useState(false);
 
   if (!open) return null;
+  const doLogout = (force: boolean) => {
+    setConfirmingLogout(false);
+    setLoggingOut(true);
+    void logOut(force)
+      .then((done) => {
+        if (done) openPanel(null);
+        else setConfirmingLogout(true);
+      })
+      .finally(() => setLoggingOut(false));
+  };
   const close = () => {
     setView('main');
     openPanel(null);
@@ -241,16 +252,21 @@ export function Settings() {
                   <SyncBadge />
                   <Button
                     busy={loggingOut}
-                    onClick={() => {
-                      setLoggingOut(true);
-                      void logOut().finally(() => {
-                        setLoggingOut(false);
-                        openPanel(null);
-                      });
-                    }}
+                    onClick={() => doLogout(false)}
                   >
                     {loggingOut ? 'Saving…' : 'Log out'}
                   </Button>
+                  {confirmingLogout && (
+                    <ConfirmDialog
+                      title="Log out without saving?"
+                      body={<p>Your latest progress hasn't reached the cloud yet (are you offline?). If you log out now, it will be lost from this device.</p>}
+                      confirmLabel="Log out anyway"
+                      cancelLabel="Stay signed in"
+                      tone="danger"
+                      onCancel={() => setConfirmingLogout(false)}
+                      onConfirm={() => doLogout(true)}
+                    />
+                  )}
                 </>
               ) : (
                 <>

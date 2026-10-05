@@ -269,7 +269,7 @@ function formatDuration(ms: number): string {
 
 export function formatOfflineSummary(summary: OfflineSummary): string {
   const parts: string[] = [];
-  if (summary.shellsDropped > 0) parts.push(`🐚 ${summary.shellValue} shells dropped`);
+  if (summary.shellsDropped > 0) parts.push(`🐚 ${summary.shellValue} shells waiting on the sand`);
   if (summary.pearlsDropped > 0) parts.push(`⚪ ${plural(summary.pearlsDropped, 'pearl')}`);
   if (summary.eggsLaid > 0) parts.push(`💕 ${plural(summary.eggsLaid, 'egg')} laid`);
   if (summary.eggsHatched > 0) parts.push(`🥚 ${plural(summary.eggsHatched, 'egg')} hatched`);

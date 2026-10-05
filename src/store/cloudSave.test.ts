@@ -216,16 +216,37 @@ describe('CloudSync logout', () => {
     expect(status()).toBe('off');
   });
 
-  it('does not hang when the final save cannot reach the server', async () => {
+  it('does not hang when the final save cannot reach the server, and keeps the progress', async () => {
     const backend = new FakeBackend();
-    const { sync, h } = setup(progressed(100), backend);
+    const { sync, h, storage } = setup(progressed(100), backend);
     await sync.login('u1');
+    h.game = { ...h.game, shells: 4242 };
     const never = new Promise<string | null>(() => undefined);
     backend.updateIf = () => never;
     const done = sync.logout();
     const timeout = h.timers.find((t) => t.ms === CLOUD_FINAL_SAVE_TIMEOUT_MS)!;
     timeout.fn();
-    await done;
+    expect(await done).toEqual({ ok: false });
+    expect(h.game.shells).toBe(4242);
+    expect(readMeta(storage)).not.toBeNull();
+  });
+
+  it('refuses to wipe unsynced progress while offline', async () => {
+    const { sync, h, backend, storage } = setup(progressed(100));
+    await sync.login('u1');
+    h.game = { ...h.game, shells: 777 };
+    backend.offline = true;
+    expect(await sync.logout()).toEqual({ ok: false });
+    expect(h.game.shells).toBe(777);
+    expect(readMeta(storage)).not.toBeNull();
+  });
+
+  it('logs out anyway when forced (the player accepted the risk)', async () => {
+    const { sync, h, backend } = setup(progressed(100));
+    await sync.login('u1');
+    h.game = { ...h.game, shells: 777 };
+    backend.offline = true;
+    expect(await sync.logout(true)).toEqual({ ok: true });
     expect(hasProgress(h.game)).toBe(false);
   });
 });

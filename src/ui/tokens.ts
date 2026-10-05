@@ -77,8 +77,8 @@ export const shadow = {
 } as const;
 
 export const font = {
-  body: "'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif",
-  display: "'Fredoka', 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif",
+  body: "'Nunito Variable', 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif",
+  display: "'Fredoka', 'Nunito Variable', 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif",
 } as const;
 
 /** Minimums: body 14px, labels 12px (mobile). */

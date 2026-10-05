@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ALGAE_FLOOR_CLEANLINESS,
   ALGAE_MIN_SIZE,
+  ALGAE_WIPE_CLEANLINESS,
+  AUTO_COLLECT_FRACTION_ONLINE,
   HOUR_MS,
   MAX_ALGAE_SPOTS,
   MAX_DROPS_PER_TANK,
   MINUTE_MS,
+  NURSERY_MAX,
   OFFLINE_CAP_MS,
   SAND_Y,
   SAVE_VERSION,
@@ -13,6 +17,7 @@ import {
   XP,
 } from './constants';
 import {
+  algaeNeeded,
   algaeTouchedBySponge,
   cleanlinessDecayPerMin,
   createInitialState,
@@ -292,6 +297,32 @@ describe('algae spawning', () => {
     expect(tankOf(state).algaeSpots).toHaveLength(MAX_ALGAE_SPOTS);
   });
 
+  it('algaeNeeded: none at the floor, enough spots below it to wipe back up to the floor', () => {
+    expect(algaeNeeded(ALGAE_FLOOR_CLEANLINESS)).toBe(0);
+    expect(algaeNeeded(100)).toBe(0);
+    expect(algaeNeeded(ALGAE_FLOOR_CLEANLINESS - 1)).toBe(1);
+    expect(algaeNeeded(ALGAE_FLOOR_CLEANLINESS - ALGAE_WIPE_CLEANLINESS)).toBe(1);
+    expect(algaeNeeded(0)).toBe(Math.min(MAX_ALGAE_SPOTS, Math.ceil(ALGAE_FLOOR_CLEANLINESS / ALGAE_WIPE_CLEANLINESS)));
+  });
+
+  it('a dirty tank with no spots grows one per minute until it can be wiped back up', () => {
+    let state = makeState({ tank: { cleanliness: 30, algaeSpots: [] } });
+    state = tick(state, MINUTE_MS, rng()).state;
+    expect(tankOf(state).algaeSpots).toHaveLength(1);
+    state = tick(state, MINUTE_MS, rng()).state;
+    expect(tankOf(state).algaeSpots).toHaveLength(2);
+  });
+
+  it('no dead end: after wiping every spot, cleanliness is back to at least the floor', () => {
+    let state = makeState({ fish: [makeFish(), makeFish()], tank: { cleanliness: 35, algaeSpots: [] } });
+    for (let i = 0; i < 120; i++) state = tick(state, MINUTE_MS, rng()).state; // two hours of neglect
+    const tank = tankOf(state);
+    expect(tank.cleanliness).toBe(0);
+    expect(tank.algaeSpots.length).toBeGreaterThanOrEqual(algaeNeeded(0));
+    const wiped = Math.min(100, tank.cleanliness + tank.algaeSpots.length * ALGAE_WIPE_CLEANLINESS);
+    expect(wiped).toBeGreaterThanOrEqual(ALGAE_FLOOR_CLEANLINESS);
+  });
+
   it('places spots inside the water area', () => {
     const { state } = tick(makeState({ tank: { cleanliness: 85 } }), 120 * MINUTE_MS, rng());
     for (const spot of tankOf(state).algaeSpots) {
@@ -359,7 +390,7 @@ describe('shell drops', () => {
     expect(drops).toHaveLength(1);
     expect(drops[0]).toMatchObject({ value: SPECIES.danio.dropValue, pearl: false });
     expect(fishOf(state).lastDropAt).toBe(T0 + SECOND_MS);
-    expect(events).toContainEqual({ type: 'drop', tankId: 'tank-1', fishId: fish.id, value: 2, pearl: false });
+    expect(events).toContainEqual(expect.objectContaining({ type: 'drop', tankId: 'tank-1', fishId: fish.id, value: 2, pearl: false }));
   });
 
   it('does not drop before dropMinutes has passed', () => {
@@ -385,21 +416,31 @@ describe('shell drops', () => {
     expect(tankOf(state).shells).toHaveLength(3);
   });
 
-  it('auto-collects the oldest at full value when over the 10-drop cap', () => {
-    const existing = Array.from({ length: MAX_DROPS_PER_TANK }, (_, i) => ({ id: `s${i}`, x: 100, value: i === 0 ? 7 : 1, pearl: false }));
+  it('online, the oldest drop over the cap is auto-collected at half value', () => {
+    const existing = Array.from({ length: MAX_DROPS_PER_TANK }, (_, i) => ({ id: `s${i}`, x: 100, value: i === 0 ? 8 : 1, pearl: false }));
     const state = makeState({ fish: [adult()], tank: { shells: existing } });
     const { state: next, events } = tick(state, SECOND_MS, constRng(0.5));
+    const paid = Math.floor(8 * AUTO_COLLECT_FRACTION_ONLINE);
     expect(tankOf(next).shells).toHaveLength(MAX_DROPS_PER_TANK);
     expect(tankOf(next).shells.some((s) => s.id === 's0')).toBe(false);
-    expect(next.shells).toBe(state.shells + 7);
-    expect(events).toContainEqual({ type: 'autoCollect', tankId: 'tank-1', value: 7, pearl: false });
+    expect(next.shells).toBe(state.shells + paid);
+    expect(events).toContainEqual({ type: 'autoCollect', tankId: 'tank-1', value: paid, pearl: false });
+  });
+
+  it('offline, overflow drops are lost instead of auto-collected', () => {
+    const existing = Array.from({ length: MAX_DROPS_PER_TANK }, (_, i) => ({ id: `s${i}`, x: 100, value: i === 0 ? 8 : 1, pearl: false }));
+    const state = makeState({ fish: [adult()], tank: { shells: existing } });
+    const { state: next } = tick(state, SECOND_MS, constRng(0.5), { offline: true });
+    expect(tankOf(next).shells).toHaveLength(MAX_DROPS_PER_TANK);
+    expect(next.shells).toBe(state.shells);
+    expect(next.pearls).toBe(state.pearls);
   });
 
   it('auto-collected pearls go to the pearl balance', () => {
-    const existing = Array.from({ length: MAX_DROPS_PER_TANK }, (_, i) => ({ id: `s${i}`, x: 100, value: 1, pearl: i === 0 }));
+    const existing = Array.from({ length: MAX_DROPS_PER_TANK }, (_, i) => ({ id: `s${i}`, x: 100, value: i === 0 ? 4 : 1, pearl: i === 0 }));
     const state = makeState({ fish: [adult()], tank: { shells: existing } });
     const next = tick(state, SECOND_MS, constRng(0.5)).state;
-    expect(next.pearls).toBe(state.pearls + 1);
+    expect(next.pearls).toBe(state.pearls + Math.floor(4 * AUTO_COLLECT_FRACTION_ONLINE));
     expect(next.shells).toBe(state.shells);
   });
 });
@@ -428,6 +469,32 @@ describe('egg hatching', () => {
     expect(events).toContainEqual(expect.objectContaining({ type: 'hatched', destination: 'nursery' }));
   });
 
+  it('when the tank and the Nursery are full the egg waits, unhatched, and says so once', () => {
+    const residents = Array.from({ length: 2 }, () => makeFish());
+    const napping = Array.from({ length: NURSERY_MAX }, () => makeFish({ tankId: '' }));
+    const state = { ...makeState({ fish: residents, tank: { capacity: 2 } }), nursery: napping, eggs: [egg()] };
+    const first = tick(state, SECOND_MS, rng());
+    expect(first.state.eggs).toHaveLength(1);
+    expect(first.state.eggs[0]!.waiting).toBe(true);
+    expect(first.state.nursery).toHaveLength(NURSERY_MAX);
+    expect(first.state.stats.hatched).toBe(state.stats.hatched);
+    expect(first.events.filter((e) => e.type === 'eggWaiting')).toHaveLength(1);
+    const second = tick(first.state, SECOND_MS, rng());
+    expect(second.events.some((e) => e.type === 'eggWaiting')).toBe(false);
+    expect(second.state.eggs).toHaveLength(1);
+  });
+
+  it('a waiting egg hatches as soon as a Nursery slot frees up', () => {
+    const residents = Array.from({ length: 2 }, () => makeFish());
+    const napping = Array.from({ length: NURSERY_MAX }, () => makeFish({ tankId: '' }));
+    let state = { ...makeState({ fish: residents, tank: { capacity: 2 } }), nursery: napping, eggs: [egg()] };
+    state = tick(state, SECOND_MS, rng()).state;
+    state = { ...state, nursery: state.nursery.slice(1) };
+    const next = tick(state, SECOND_MS, rng()).state;
+    expect(next.eggs).toHaveLength(0);
+    expect(next.nursery).toHaveLength(NURSERY_MAX);
+  });
+
   it('Nursery babies nap: no growth, no hunger', () => {
     const napper = makeFish({ tankId: '', hunger: 60, growth: 10 });
     const state = { ...makeState(), nursery: [napper] };
@@ -446,10 +513,10 @@ describe('egg hatching', () => {
 describe('xp and leveling from the sim', () => {
   it('levels up and awards level * 10 shells', () => {
     const fish = makeFish({ hunger: 80, happiness: 85, growth: 1199, stage: 'juvenile' });
-    const state = makeState({ fish: [fish], overrides: { xp: 35 } });
+    const state = makeState({ fish: [fish], overrides: { xp: 25 } });
     const { state: next, events } = tick(state, SECOND_MS, rng());
     expect(next.level).toBe(2);
-    expect(next.xp).toBe(35 + XP.fishAdult - 40);
+    expect(next.xp).toBe(25 + XP.fishAdult - 30);
     expect(next.shells).toBe(state.shells + 20);
     expect(events).toContainEqual({ type: 'levelUp', level: 2, shells: 20 });
   });
@@ -542,14 +609,15 @@ describe('simulateOffline', () => {
     const state = { ...makeState({ fish: [adult, baby] }), eggs: [egg({ speciesId: 'danio', variant: 'mint' })] };
     const { state: next, summary } = simulateOffline(state, T0 + 8 * HOUR_MS, rng());
 
-    // 480 min / 8 min per drop for the adult, plus the baby's drops once it became adult.
-    expect(summary.shellsDropped + summary.pearlsDropped).toBeGreaterThanOrEqual(60);
+    // Far more drops fell than fit on the sand, but the overflow was lost: the summary only counts what's still there.
+    expect(summary.shellsDropped + summary.pearlsDropped).toBe(tankOf(next).shells.length);
+    expect(summary.shellsDropped + summary.pearlsDropped).toBeGreaterThan(0);
     expect(summary.shellValue).toBe(summary.shellsDropped * SPECIES.danio.dropValue);
     expect(summary.eggsHatched).toBe(1);
     expect(summary.fishGrown).toBeGreaterThanOrEqual(2); // baby → juvenile → adult
     expect(tankOf(next).shells.length).toBeLessThanOrEqual(MAX_DROPS_PER_TANK);
-    // Auto-collected drops landed in the wallet.
-    expect(next.shells).toBeGreaterThan(state.shells);
+    // Overflow drops are lost while away: nothing landed in the wallet.
+    expect(next.shells).toBe(state.shells);
   });
 });
 

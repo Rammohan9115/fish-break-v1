@@ -13,6 +13,7 @@ A cozy, cartoonish virtual fish tank in the browser. Players feed fish, watch th
 
 ## Tech stack
 - Vite + React 18 + TypeScript (strict)
+- Fonts are self-hosted via @fontsource (Nunito Variable, Fredoka); no Google Fonts requests.
 - Rendering: HTML Canvas 2D with a custom render loop (`requestAnimationFrame`). No game engine.
 - React is used ONLY for UI overlays (HUD, shop, modals, toolbar), never for drawing fish.
 - State: Zustand, persisted to localStorage via a custom save module (plus optional Supabase cloud saves, see below)
@@ -154,18 +155,19 @@ The sim runs on a 1-second fixed tick. Rendering is separate at 60fps.
 **Cleanliness**
 - Decreases by 0.5 per minute + 0.1 per minute per fish in the tank.
 - When it drops below 80/60/40/20 thresholds, an algae spot spawns (max 12 spots).
+- Below 60 the tank always has at least `ceil((60 − cleanliness) / 6)` spots (topped up at most one per sim minute), so wiping them all always brings it back to 60.
 - Wiping a spot in Clean mode: removes it, +6 cleanliness, +2 XP, sparkle effect.
 
 **Shell drops (adults only)**
 - Every `species.dropMinutes`, an adult drops a shell of `species.dropValue` onto the sand.
 - 2% chance the drop is a pearl instead.
-- Max 10 uncollected drops per tank (oldest are auto-collected at full value when the cap is exceeded).
+- Max 20 uncollected drops per tank. When the cap is exceeded the oldest is auto-collected at 50% of its value while the game is open, and lost during offline catch-up.
 - Click to collect: +value, +1 XP, coin-pop animation.
 
 **Offline catch-up**
 - On load, simulate elapsed time since `lastTickAt`, capped at 8 hours, in 60-second steps.
 - Same rules as live. Nothing dies. Fish simply wait hungry.
-- Show a "While you were away" toast summary (shells dropped, eggs hatched, fish grown).
+- Show a "While you were away" toast summary (shells waiting on the sand, eggs hatched, fish grown).
 
 ## Species
 | id | name | unlock lvl | cost | growMinutes | hungerRate/min | sell (adult) | dropMinutes | dropValue | notes |
@@ -194,7 +196,7 @@ its tentacles (below `bellSplitY`) is caught, slides up and is eaten. Fish steer
 a glow flash, bubbles and a heart. On the night theme it glows (brighter on each pulse) with a faint halo.
 
 ## Levels & XP
-- XP to next level: `round(40 * level^1.5)`
+- XP to next level: `round(30 * level^1.5)`
 - XP sources: pellet eaten +1 (max 30 XP from feeding per hour), algae wiped +2, shell collected +1, fish bought +5, egg hatched +10, fish reaches adult +8, daily gift +5
 - Level-up modal shows what just unlocked. Each level-up also gives `level * 10` shells.
 
@@ -237,6 +239,7 @@ randomness only affects the baby's color and shiny chance.
 
 **Nursery** (breeding is never blocked by a full tank)
 - If the tank is full when an egg hatches, the baby goes to the Nursery with a toast: "Baby moved to the Nursery — make room or upgrade your tank."
+- The Nursery holds at most 12 babies. If it's full too, a ready egg waits unhatched (never lost; a toast and a Breeding panel note say so) until there's room.
 - Nursery babies nap: no growth, no hunger. From the Nursery, move a baby to any tank with room (theme-only species need their theme), or rehome it for 20% of the adult price (the only time a baby can be sold).
 
 **Breeding panel** (💕 toolbar button, locked with "Unlocks at Lv 5" before then)
@@ -331,13 +334,13 @@ Press and hold a fish to pet it. Petting builds a **bond** that unlocks tricks a
 stress relief, so it must always feel soft and rewarding.
 - **Pillars:** bond NEVER decreases (no decay, no guilt, no "your fish misses you"). Rewards cap; the joy doesn't.
   Every pet gets instant feedback.
-- **Levels** (`BOND.levels`): 0 Stranger (0) · 1 Curious (10) · 2 Friendly (30) · 3 Buddy (60) · 4 Best Friend (100) · 5 Soulmate (160).
+- **Levels** (`BOND.levels`): 0 Stranger (0) · 1 Curious (15) · 2 Friendly (45) · 3 Buddy (100) · 4 Best Friend (180) · 5 Soulmate (300).
 - **Sources:**
   - A completed pet session gives +3 bond, +5 happiness and +1 XP.
   - A fish eating a pellet the player dropped within 80 units of it gives +0.2 bond (max +2 per fish per rolling hour).
-- **Cap:** 3 rewarded sessions per fish per rolling hour. After that, petting plays every animation and gives +2 happiness,
+- **Cap:** 2 rewarded sessions per fish per rolling hour. After that, petting plays every animation and gives +2 happiness,
   but no bond or XP, and the fish shows "😌 content" instead of the meter.
-- **Babies** of two Buddy+ parents start at Curious (10). The egg stores it as `startBond`.
+- **Babies** of two Buddy+ parents start at Curious (15). The egg stores it as `startBond`.
 - **Gesture:**
   - Hold ~250ms on a fish in look mode to pet; the hitbox is +12 units. A quick tap keeps its behavior (quick actions, then the FishCard).
   - Dragging before the hold completes pans on tall screens; elsewhere it starts petting.
@@ -411,7 +414,7 @@ Bright, glossy, chunky cartoon, like classic Facebook-era aquarium games. This s
   patterns rippling on the sand, swaying light rays, and floating dust specks for depth.
 - Sand: warm gradient with colorful pebbles and a few shells; decor casts shadows.
 - 3 depth layers: back plants (slightly blurred/darker), mid fish layer, front plants (overlap fish).
-- Use the sprites in /public/assets/kenney-fish where available (exception to "all art is drawn in code"); draw everything else in code.
+- Sprites (exception to "all art is drawn in code"): original PNGs live in `art-src/` (not shipped). `npm run build:assets` (scripts/build-assets.ts, sharp) turns them into pre-cleaned, trimmed WebP in `public/assets-webp/` (fish ≤512px, backgrounds 1600px wide, one file per decor item and icon). Commit the output; re-run it whenever art-src or `DECOR_ART` rects change. Draw everything else in code.
 
 ## Art direction
 - Cartoon style: round bodies, oversized eyes with a white highlight, blink every 3–6s, 2px darker outline, soft pastel fills.
@@ -460,7 +463,7 @@ Bright, glossy, chunky cartoon, like classic Facebook-era aquarium games. This s
     (level, shells, fish count, last played) and let the player pick one.
   - Cross-device conflicts: writes are conditional on the last known `updated_at`. If the cloud is newer than our last sync,
     reload the cloud data instead of overwriting it.
-  - Log out: save once more, clear the local cache, start a fresh guest game.
+  - Log out: save once more; only if that push is confirmed, clear the local cache and start a fresh guest game. If it can't be confirmed (offline), warn and let the player cancel or log out anyway.
   - A small HUD indicator shows ☁️✓ synced / ⟳ saving / ⚠ offline. Network calls never block gameplay.
   - Cloud data is validated with the same save version and migrations as local saves before it's loaded.
 

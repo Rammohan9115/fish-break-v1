@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   FEED_COOLDOWN_MS,
+  BOND,
   FEED_XP_MAX_PER_HOUR,
   HOUR_MS,
   MINUTE_MS,
@@ -366,7 +367,13 @@ describe('clean mode', () => {
     load(makeState());
     store().setMode('clean');
     expect(store().mode).toBe('look');
-    expect(store().toasts.some((t) => t.text.includes('Sparkling clean'))).toBe(true);
+    expect(store().toasts.some((t) => t.text.includes('Looking good'))).toBe(true);
+  });
+
+  it('opens whenever a dirty tank has spots, however low its cleanliness', () => {
+    load(makeState({ tank: { cleanliness: 0, algaeSpots: [{ id: 'a1', x: 100, y: 100, size: 20 }] } }));
+    store().setMode('clean');
+    expect(store().mode).toBe('clean');
   });
 
   it('wiping spots touched by the sponge gives +6 cleanliness and +2 XP each', () => {
@@ -629,16 +636,16 @@ describe('petting & bond', () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it('petFish rewards 3 sessions an hour, then the fish is just content', () => {
+  it('petFish rewards 2 sessions an hour, then the fish is just content', () => {
     const fish = makeFish({ happiness: 50 });
     load(makeState({ fish: [fish], overrides: { lastTickAt: T0 } }));
-    for (let i = 0; i < 3; i++) expect(store().petFish(fish.id)?.rewarded).toBe(true);
+    for (let i = 0; i < BOND.sessionsPerHour; i++) expect(store().petFish(fish.id)?.rewarded).toBe(true);
     expect(store().petFish(fish.id)?.rewarded).toBe(false);
-    expect(game().fish[0]!.bondPoints).toBe(9);
+    expect(game().fish[0]!.bondPoints).toBe(BOND.sessionsPerHour * BOND.petSession);
   });
 
   it('a bond level-up toasts what is new and tells the renderer', () => {
-    const fish = { ...makeFish({ name: 'Bubbles' }), bondPoints: 58, bondLevel: 2 as const };
+    const fish = { ...makeFish({ name: 'Bubbles' }), bondPoints: 98, bondLevel: 2 as const };
     load(makeState({ fish: [fish], overrides: { lastTickAt: T0 } }));
     const seen: BondEvent[] = [];
     const off = subscribeBondEvents((e) => seen.push(e));

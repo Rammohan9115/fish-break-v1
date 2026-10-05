@@ -3,25 +3,25 @@ import { applyXp, grantXp, levelUpReward, nextUnlock, unlocksAtLevel, UNLOCKS, x
 import { makeState } from './testUtils';
 
 describe('xpToNext', () => {
-  it('follows round(40 * level^1.5)', () => {
-    expect(xpToNext(1)).toBe(40);
-    expect(xpToNext(2)).toBe(113);
-    expect(xpToNext(3)).toBe(208);
-    expect(xpToNext(10)).toBe(1265);
+  it('follows round(30 * level^1.5)', () => {
+    expect(xpToNext(1)).toBe(30);
+    expect(xpToNext(2)).toBe(85);
+    expect(xpToNext(3)).toBe(156);
+    expect(xpToNext(10)).toBe(949);
   });
 });
 
 describe('applyXp', () => {
   it('accumulates without leveling below the threshold', () => {
-    expect(applyXp(1, 0, 39)).toEqual({ level: 1, xp: 39, levelsGained: [], shellsAwarded: 0 });
+    expect(applyXp(1, 0, 29)).toEqual({ level: 1, xp: 29, levelsGained: [], shellsAwarded: 0 });
   });
 
   it('levels up and carries over remaining xp', () => {
-    expect(applyXp(1, 30, 15)).toEqual({ level: 2, xp: 5, levelsGained: [2], shellsAwarded: 20 });
+    expect(applyXp(1, 20, 15)).toEqual({ level: 2, xp: 5, levelsGained: [2], shellsAwarded: 20 });
   });
 
   it('can roll over multiple levels at once', () => {
-    const result = applyXp(1, 0, 40 + 113 + 1);
+    const result = applyXp(1, 0, 30 + 85 + 1);
     expect(result.level).toBe(3);
     expect(result.xp).toBe(1);
     expect(result.levelsGained).toEqual([2, 3]);
@@ -64,10 +64,10 @@ describe('unlocks', () => {
 describe('grantXp', () => {
   it('adds XP, rolls over levels, and pays level * 10 shells each', () => {
     const state = makeState({ overrides: { shells: 0, xp: 0, level: 1 } });
-    const once = grantXp(state, 41);
+    const once = grantXp(state, 31);
     expect(once.state).toMatchObject({ level: 2, xp: 1, shells: 20 });
     expect(once.levelsGained).toEqual([2]);
-    const many = grantXp(state, 40 + 113 + 208);
+    const many = grantXp(state, 30 + 85 + 156);
     expect(many.state).toMatchObject({ level: 4, xp: 0, shells: 20 + 30 + 40 });
     expect(many.levelsGained).toEqual([2, 3, 4]);
   });

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { compatiblePartners, isCourting, isReadyToPair, notReadyReasons } from '../game/breeding';
 import { checkMoveFromNursery, rehomeValue } from '../game/economy';
+import { NURSERY_MAX } from '../game/constants';
 import { getSpecies, getVariant } from '../game/species';
 import type { Fish, GameState } from '../game/types';
 import { useGameStore } from '../store/gameStore';
@@ -196,6 +197,7 @@ export function BreedingPanel() {
   const now = useNow(1000);
   if (panel !== 'breeding') return null;
 
+  const waiting = game.eggs.filter((e) => e.waiting).length;
   return (
     <Sheet title="Breeding 💕" onClose={() => openPanel(null)} scrollKey={tab}>
       <Tabs
@@ -207,6 +209,12 @@ export function BreedingPanel() {
           { id: 'nursery', label: `🍼 Nursery${game.nursery.length > 0 ? ` (${game.nursery.length})` : ''}` },
         ]}
       />
+      {tab === 'nursery' && game.nursery.length >= NURSERY_MAX && (
+        <p className="meta nursery-full">
+          🍼 The Nursery is full ({NURSERY_MAX}). New eggs wait safely until you move or rehome a baby
+          {waiting > 0 ? ` · ${waiting} egg${waiting === 1 ? '' : 's'} waiting` : ''}.
+        </p>
+      )}
       {tab === 'pairs' ? (
         <PairsTab game={game} now={now} />
       ) : game.nursery.length === 0 ? (

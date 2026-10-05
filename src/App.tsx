@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { sound } from './audio/sound';
-import { DEV_TOOLS_IN_PRODUCTION } from './game/constants';
+import { DEV_TOOLS_IN_PRODUCTION, DEV_TOOLS_KEY } from './game/constants';
 import { startCloudSync } from './store/cloudSave';
 import { startGame, useGameStore, type GameStore } from './store/gameStore';
 import { BreakMode } from './ui/BreakMode';
@@ -32,9 +32,20 @@ import { enterFullscreen, isTouchLandscape } from './ui/fullscreen';
 import { closeTopSheet } from './ui/kit';
 import { applyTokens } from './ui/tokens';
 
-// Dev/art-preview panel: always in dev; in production only while DEV_TOOLS_IN_PRODUCTION is true
-// (when false, the lazy chunk is never loaded).
-const DevPanel = import.meta.env.DEV || DEV_TOOLS_IN_PRODUCTION ? lazy(() => import('./ui/DevPanel')) : null;
+/** Production builds show the dev panel only after opening the page with `?dev=1` (remembered; `?dev=0` forgets). */
+function devToolsUnlocked(): boolean {
+  try {
+    const flag = new URLSearchParams(window.location.search).get('dev');
+    if (flag === '1') localStorage.setItem(DEV_TOOLS_KEY, '1');
+    if (flag === '0') localStorage.removeItem(DEV_TOOLS_KEY);
+    return localStorage.getItem(DEV_TOOLS_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+// Dev/art-preview panel: always in dev; in production only when unlocked (otherwise the lazy chunk never loads).
+const DevPanel = import.meta.env.DEV || DEV_TOOLS_IN_PRODUCTION || devToolsUnlocked() ? lazy(() => import('./ui/DevPanel')) : null;
 
 /** Keeps the sound engine in sync with the saved mute setting and Break Mode ambience. */
 function useSoundSync() {

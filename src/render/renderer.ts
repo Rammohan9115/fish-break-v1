@@ -1211,7 +1211,7 @@ export class Renderer {
       ctx.setLineDash([]);
     }
     ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-    ctx.font = '700 14px Nunito, system-ui, sans-serif';
+    ctx.font = "700 14px 'Nunito Variable', Nunito, system-ui, sans-serif";
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('◀', x - w / 2 - pad - 10, baseY - h / 2);

@@ -15,7 +15,7 @@ import {
 } from '../game/constants';
 import { createInitialState, simulateOffline } from '../game/sim';
 import type { GameState } from '../game/types';
-import { supabase } from '../lib/supabase';
+import { cloudConfigured, getSupabase, needsSupabaseAtStart } from '../lib/supabase';
 import { useGameStore } from './gameStore';
 import { formatOfflineSummary, parseSaveData, saveGame } from './save';
 
@@ -162,6 +162,8 @@ export class CloudSync {
   private conflictPending = false;
   private loggingIn = false;
   private saving: Promise<void> | null = null;
+  /** Did the most recent push reach the cloud (or adopt the cloud's newer data)? */
+  private lastPushOk = false;
   private timer: unknown = null;
 
   constructor(
@@ -318,6 +320,7 @@ export class CloudSync {
     const userId = this.userId;
     if (!userId) return;
     const run = async () => {
+      this.lastPushOk = false;
       this.hooks.setStatus('saving');
       const state = this.hooks.getGame();
       const meta = readMeta(this.hooks.storage);
@@ -336,6 +339,7 @@ export class CloudSync {
           writeMeta(this.hooks.storage, { userId, lastSyncedAt: at });
         }
         this.ready = true;
+        this.lastPushOk = true;
         this.hooks.setStatus('synced');
       } catch {
         this.hooks.setStatus('offline');
@@ -347,13 +351,23 @@ export class CloudSync {
     return this.saving;
   }
 
-  /** Final save (bounded wait), then forget the user and start a fresh guest game with a clean local cache. */
-  async logout(): Promise<void> {
-    if (this.userId && this.ready && !this.conflictPending) {
-      await Promise.race([
-        this.push(false),
-        new Promise<void>((resolve) => this.hooks.setTimeout(resolve, CLOUD_FINAL_SAVE_TIMEOUT_MS)),
-      ]);
+  /**
+   * Final save (bounded wait), then forget the user and start a fresh guest game with a clean local cache.
+   * If that final save can't be confirmed (offline, timeout, conflict pending) and the game has progress, nothing is
+   * cleared and `{ ok: false }` is returned so the UI can warn; pass `force` to log out and lose it anyway.
+   */
+  async logout(force = false): Promise<{ ok: boolean }> {
+    if (this.userId) {
+      let confirmed = false;
+      if (this.ready && !this.conflictPending) {
+        this.lastPushOk = false;
+        await Promise.race([
+          this.push(false),
+          new Promise<void>((resolve) => this.hooks.setTimeout(resolve, CLOUD_FINAL_SAVE_TIMEOUT_MS)),
+        ]);
+        confirmed = this.lastPushOk;
+      }
+      if (!confirmed && !force && hasProgress(this.hooks.getGame())) return { ok: false };
     }
     if (this.timer !== null) this.hooks.clearTimeout(this.timer);
     this.timer = null;
@@ -369,6 +383,7 @@ export class CloudSync {
     }
     this.hooks.applyGame(createInitialState(this.hooks.now()));
     this.hooks.setStatus('off');
+    return { ok: true };
   }
 
   dispose(): void {
@@ -395,7 +410,7 @@ interface CloudStore {
 }
 
 export const useCloudStore = create<CloudStore>()(() => ({
-  enabled: supabase !== null,
+  enabled: cloudConfigured,
   user: null,
   status: 'off',
   conflict: null,
@@ -405,8 +420,19 @@ let activeSync: CloudSync | null = null;
 
 /** Starts auth listening + sync. Returns a cleanup function. No-op in local-only mode. */
 export function startCloudSync(): () => void {
-  const client = supabase;
-  if (!client) return () => undefined;
+  if (!needsSupabaseAtStart()) return () => undefined; // guests never load supabase-js
+  let disposed = false;
+  let detach: () => void = () => undefined;
+  void getSupabase().then((client) => {
+    if (client && !disposed) detach = attachCloudSync(client);
+  });
+  return () => {
+    disposed = true;
+    detach();
+  };
+}
+
+function attachCloudSync(client: SupabaseClient): () => void {
   const sync = new CloudSync(supabaseBackend(client), {
     getGame: () => useGameStore.getState().game,
     applyGame: (state) => {
@@ -465,6 +491,7 @@ export function startCloudSync(): () => void {
 // ---------------------------------------------------------------------------
 
 export async function sendMagicLink(email: string): Promise<{ ok: true } | { ok: false; message: string }> {
+  const supabase = await getSupabase();
   if (!supabase) return { ok: false, message: 'Cloud saves are not set up.' };
   const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin } });
   return error ? { ok: false, message: error.message } : { ok: true };
@@ -472,17 +499,22 @@ export async function sendMagicLink(email: string): Promise<{ ok: true } | { ok:
 
 /** Redirects the page to Google; on return, the session is picked up from the URL on load. */
 export async function signInWithGoogle(): Promise<{ ok: true } | { ok: false; message: string }> {
+  const supabase = await getSupabase();
   if (!supabase) return { ok: false, message: 'Cloud saves are not set up.' };
   const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } });
   return error ? { ok: false, message: error.message } : { ok: true };
 }
 
-export async function logOut(): Promise<void> {
-  if (!supabase) return;
-  await activeSync?.logout();
+/** Returns false (and stays logged in) when unsynced progress would be lost and `force` isn't set. */
+export async function logOut(force = false): Promise<boolean> {
+  const supabase = await getSupabase();
+  if (!supabase) return true;
+  const result = (await activeSync?.logout(force)) ?? { ok: true };
+  if (!result.ok) return false;
   await supabase.auth.signOut();
   useCloudStore.setState({ user: null, status: 'off', conflict: null });
   useGameStore.getState().addToast('Logged out. Starting a fresh guest tank 🐟');
+  return true;
 }
 
 export async function resolveCloudConflict(choice: 'local' | 'cloud'): Promise<void> {

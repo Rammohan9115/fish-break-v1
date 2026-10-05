@@ -2,6 +2,11 @@
 import { bondDropValue, newBond } from './bond';
 import { decorHappiness } from './decor';
 import {
+  ALGAE_FLOOR_CLEANLINESS,
+  ALGAE_WIPE_CLEANLINESS,
+  AUTO_COLLECT_FRACTION_OFFLINE,
+  AUTO_COLLECT_FRACTION_ONLINE,
+  NURSERY_MAX,
   DEFAULT_TANK_STYLE,
   LAYOUT_PRESET_SLOTS,
   ADULT_AT_FRACTION,
@@ -70,8 +75,10 @@ import type { AlgaeSpot, Egg, Fish, GameState, Rng, SpeciesId, Stage, Tank } fro
 // ---------------------------------------------------------------------------
 
 export type SimEvent =
-  | { type: 'drop'; tankId: string; fishId: string; value: number; pearl: boolean }
+  | { type: 'drop'; tankId: string; fishId: string; dropId: string; value: number; pearl: boolean }
   | { type: 'autoCollect'; tankId: string; value: number; pearl: boolean }
+  /** An egg is ready but the tank and the Nursery are full: it waits (emitted once per egg). */
+  | { type: 'eggWaiting'; eggId: string; tankId: string }
   | { type: 'stageUp'; fishId: string; from: Stage; to: Stage }
   | { type: 'hatched'; fishId: string; tankId: string; shiny: boolean; eggId: string; destination: 'tank' | 'nursery' }
   | { type: 'eggLaid'; tankId: string; eggId: string; parentIds: [string, string]; shiny: boolean }
@@ -165,6 +172,13 @@ interface TickCtx {
   events: SimEvent[];
   newId: (prefix: string) => string;
   xpGained: number;
+  /** Overflow drops are auto-collected at this fraction of their value (online 0.5, offline 0). */
+  autoCollect: number;
+}
+
+export interface TickOptions {
+  /** Offline catch-up: overflow drops are lost instead of half-collected. */
+  offline?: boolean;
 }
 
 function spawnAlgae(ctx: TickCtx, tank: Tank, size: number): void {
@@ -216,26 +230,39 @@ function updateCleanliness(ctx: TickCtx, tank: Tank, cleanlinessBefore: number):
   tank.cleanliness = clamp(tank.cleanliness - decay, CLEANLINESS_MIN, CLEANLINESS_MAX);
   const crossed = thresholdsCrossed(cleanlinessBefore, tank.cleanliness);
   for (let i = 0; i < crossed; i++) spawnAlgae(ctx, tank, randomAlgaeSize(ctx.rng));
+  // A dirty tank always has algae to wipe (otherwise it could sit at 0% with nothing to clean):
+  // top up toward algaeNeeded(), at most one spot per sim minute.
+  if (tank.algaeSpots.length < algaeNeeded(tank.cleanliness) && ctx.rng() < Math.min(1, ctx.dtMs / MINUTE_MS)) {
+    spawnAlgae(ctx, tank, randomAlgaeSize(ctx.rng));
+  }
+}
+
+/** Algae spots a tank should have so wiping them all brings it back to ALGAE_FLOOR_CLEANLINESS. */
+export function algaeNeeded(cleanliness: number): number {
+  if (cleanliness >= ALGAE_FLOOR_CLEANLINESS) return 0;
+  return Math.min(MAX_ALGAE_SPOTS, Math.ceil((ALGAE_FLOOR_CLEANLINESS - cleanliness) / ALGAE_WIPE_CLEANLINESS));
 }
 
 function addDrop(ctx: TickCtx, tank: Tank, fish: Fish): void {
   const species = getSpecies(fish.speciesId);
   const pearl = ctx.rng() < DROP_PEARL_CHANCE;
   const value = pearl ? PEARL_DROP_VALUE : bondDropValue(fish, species.dropValue);
+  const dropId = ctx.newId('drop');
   tank.shells.push({
-    id: ctx.newId('drop'),
+    id: dropId,
     x: TANK_EDGE_MARGIN + ctx.rng() * (TANK_WIDTH - 2 * TANK_EDGE_MARGIN),
     value,
     pearl,
   });
-  ctx.events.push({ type: 'drop', tankId: tank.id, fishId: fish.id, value, pearl });
+  ctx.events.push({ type: 'drop', tankId: tank.id, fishId: fish.id, dropId, value, pearl });
 
-  // Over the cap: oldest drops are auto-collected at full value.
+  // Over the cap: the oldest drop leaves the sand, auto-collected at a fraction of its value (none offline).
   while (tank.shells.length > MAX_DROPS_PER_TANK) {
     const oldest = tank.shells.shift()!;
-    if (oldest.pearl) ctx.state.pearls += oldest.value;
-    else ctx.state.shells += oldest.value;
-    ctx.events.push({ type: 'autoCollect', tankId: tank.id, value: oldest.value, pearl: oldest.pearl });
+    const paid = Math.floor(oldest.value * ctx.autoCollect);
+    if (oldest.pearl) ctx.state.pearls += paid;
+    else ctx.state.shells += paid;
+    ctx.events.push({ type: 'autoCollect', tankId: tank.id, value: paid, pearl: oldest.pearl });
   }
 }
 
@@ -295,8 +322,17 @@ function hatchEggs(ctx: TickCtx): void {
       continue;
     }
     const tank = state.tanks.find((t) => t.id === egg.tankId);
-    // A full tank never blocks a hatch: the baby naps in the Nursery until there's room.
+    // A full tank never blocks a hatch: the baby naps in the Nursery until there's room. Only when the
+    // Nursery is full too does the egg wait (unhatched, never lost).
     const roomy = tank !== undefined && tankOccupancy(state, tank.id) < tank.capacity;
+    if (!roomy && state.nursery.length >= NURSERY_MAX) {
+      if (!egg.waiting) {
+        egg.waiting = true;
+        ctx.events.push({ type: 'eggWaiting', eggId: egg.id, tankId: egg.tankId });
+      }
+      remaining.push(egg);
+      continue;
+    }
     const fish = createFish(egg.speciesId, roomy ? egg.tankId : '', egg.hatchAt, ctx.rng, {
       id: ctx.newId('fish'),
       variant: egg.variant,
@@ -337,10 +373,11 @@ function applyXpGain(ctx: TickCtx): void {
  * Advances the simulation by `dtMs`. Returns a new state (the input is not mutated)
  * plus the events that happened, for toasts, sounds, and summaries.
  */
-export function tick(state: GameState, dtMs: number, rng: Rng): TickResult {
+export function tick(state: GameState, dtMs: number, rng: Rng, opts: TickOptions = {}): TickResult {
   const next = structuredClone(state);
   const now = state.lastTickAt + dtMs;
-  const ctx: TickCtx = { state: next, rng, now, dtMs, events: [], newId: idFactory(now, rng), xpGained: 0 };
+  const autoCollect = opts.offline ? AUTO_COLLECT_FRACTION_OFFLINE : AUTO_COLLECT_FRACTION_ONLINE;
+  const ctx: TickCtx = { state: next, rng, now, dtMs, events: [], newId: idFactory(now, rng), xpGained: 0, autoCollect };
 
   hatchEggs(ctx);
 
@@ -437,7 +474,7 @@ export function simulateOffline(state: GameState, now: number, rng: Rng = Math.r
   let remaining = elapsedMs;
   while (remaining > 0) {
     const step = Math.min(OFFLINE_STEP_MS, remaining);
-    const result = tick(current, step, rng);
+    const result = tick(current, step, rng, { offline: true });
     current = result.state;
     events.push(...result.events);
     remaining -= step;
@@ -445,7 +482,9 @@ export function simulateOffline(state: GameState, now: number, rng: Rng = Math.r
   // Time beyond the cap is skipped, not simulated.
   current = { ...current, lastTickAt: now };
 
-  const drops = events.filter((e): e is Extract<SimEvent, { type: 'drop' }> => e.type === 'drop');
+  // Honest about what was kept: only drops still waiting on the sand count (overflow was lost while away).
+  const onSand = new Set(current.tanks.flatMap((t) => t.shells.map((d) => d.id)));
+  const drops = events.filter((e): e is Extract<SimEvent, { type: 'drop' }> => e.type === 'drop' && onSand.has(e.dropId));
   const shellDrops = drops.filter((d) => !d.pearl);
   const summary: OfflineSummary = {
     elapsedMs,
