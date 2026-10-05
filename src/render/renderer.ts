@@ -42,7 +42,6 @@ import {
   JELLY_EXPAND_MS,
   PET_HITBOX_PAD,
   DECOR,
-  DECOR_SIZE_SCALE,
   DEFAULT_TANK_STYLE,
 } from '../game/constants';
 import { getSpecies, getVariant, SHINY_OUTLINE, SHINY_SPARKLE } from '../game/species';
@@ -81,7 +80,7 @@ import { drawThemeScenery } from './drawScenery';
 import { drawEgg, eggProgress } from './drawEgg';
 import { iconSprite } from './assets';
 import { ThemeBackground } from './background';
-import { decorBox, decorSpriteSize, drawIconAt, drawSandItem, dropSquash, type PixelGrid } from './drawSprites';
+import { decorBox, decorSpriteSize, depthOf, drawIconAt, drawSandItem, dropSquash, sizeScale, type PixelGrid } from './drawSprites';
 import { THEME_ART, type IconId } from './artConfig';
 import { BackgroundFx, type FxFrame } from './ambient/backgroundFx';
 import { Currents } from './ambient/currents';
@@ -89,14 +88,14 @@ import { currentHour, dayLight, getHourOverride, setHourOverride, type DayLight 
 import { DecorBehaviors } from './ambient/decorBehaviors';
 import { QualityManager, type QualityLevel } from './ambient/quality';
 import { SandItems } from './ambient/sandItems';
-import type { Courtship, DecorId, Egg } from '../game/types';
+import type { Courtship, Egg } from '../game/types';
 import type { SimEvent } from '../game/sim';
 import { drawDrop, drawPellet, Particles } from './particles';
 import { BondFx, type PetOutcome } from './bondFx';
 import { DecorVisits } from './ambient/decorVisits';
 import { SetEffects } from './ambient/setEffects';
 import { drawLightingTint, drawWaterTint, SubstrateLayer } from './drawSubstrate';
-import { activeSets } from '../game/decor';
+import { activeSets, depthGeometry } from '../game/decor';
 import type { DecorAttractor } from './ambient/decorBehaviors';
 import { dailyGiftAvailable, localDateKey } from '../game/economy';
 import type { TrickId } from '../game/bond';
@@ -139,7 +138,7 @@ export interface BreedingView {
 /** What the tank shows for decorating. */
 export interface DecorView {
   decorating: boolean;
-  tryDecor: (Pick<PlacedDecor, 'decorId' | 'x' | 'flipped' | 'size' | 'depth'>) | null;
+  tryDecor: (Pick<PlacedDecor, 'decorId' | 'x' | 'flipped' | 'size' | 'z'>) | null;
   stylePreview: Partial<TankStyle> | null;
 }
 
@@ -192,7 +191,7 @@ export class Renderer {
   private decorView: DecorView = NO_DECOR_VIEW;
   /** Decorate mode: the snap guide's x while dragging, or null. */
   private snapGuide: number | null = null;
-  private readonly tryPlaced: PlacedDecor = { id: TRY_DECOR_ID, decorId: 'rock', x: 0, flipped: false, size: 'M', depth: 'back' };
+  private readonly tryPlaced: PlacedDecor = { id: TRY_DECOR_ID, decorId: 'rock', x: 0, flipped: false, size: 'M', z: 0.5 };
   private readonly attractors: DecorAttractor[] = [];
   /** When the daily-gift check (mailbox flag) last ran (renderer ms). */
   private giftCheckedAt = -Infinity;
@@ -362,28 +361,38 @@ export class Renderer {
     return null;
   }
 
-  /** Topmost placed decor (active tank) under a tank-space point, or null. */
+  /** Topmost placed decor (active tank) under a tank-space point, or null: tested in reverse paint order, so what is drawn on top wins. */
   decorAt(x: number, y: number): string | null {
     const game = this.deps.getGame();
     const tank = game.tanks.find((t) => t.id === game.activeTankId);
     if (!tank) return null;
-    for (let i = tank.decor.length - 1; i >= 0; i--) {
-      const d = tank.decor[i]!;
-      const k = DECOR_SIZE_SCALE[d.size];
+    const { back, front } = this.paintOrder(tank.decor);
+    const topFirst = [...front.reverse(), ...back.reverse()];
+    for (const d of topFirst) {
+      const k = sizeScale(d);
       const [w0, h0] = decorBox(d.decorId);
       const w = w0 * k;
       const h = h0 * k;
       const m = this.behaviors.motion(d, w0);
-      const baseY = this.decorBaseY(d.decorId) + m.dy;
+      const baseY = this.decorBaseY(d) + m.dy;
       if (Math.abs(x - d.x - m.dx) <= w / 2 && y <= baseY && y >= baseY - h) return d.id;
     }
     return null;
   }
 
+  /** Painter's order: pieces behind the fish, then (after the fish) the ones in front; each far → near. */
+  private paintOrder(list: Tank['decor']): { back: Tank['decor']; front: Tank['decor'] } {
+    const front = list.filter((d) => this.isFront(d));
+    const back = list.filter((d) => !this.isFront(d));
+    const key = (d: PlacedDecor) => (DECOR[d.decorId].placement === 'sand' ? d.z ?? 0.5 : -1);
+    const byDepth = (a: PlacedDecor, b: PlacedDecor) => key(a) - key(b);
+    return { back: back.sort(byDepth), front: front.sort(byDepth) };
+  }
+
   /** Where a decor item's base sits: sprites rest on the sand line, the drawn art slightly below it. */
-  private decorBaseY(decorId: DecorId): number {
-    const size = decorSpriteSize(decorId);
-    return size ? this.behaviors.restY(decorId, size.h) : SAND_Y + DECOR_BASE_OFFSET;
+  private decorBaseY(d: Pick<PlacedDecor, 'decorId' | 'z'>): number {
+    const size = decorSpriteSize(d.decorId);
+    return size ? this.behaviors.restY(d.decorId, size.h, d.z) : SAND_Y + DECOR_BASE_OFFSET + depthOf(d).dy;
   }
 
   /** A placed decor item's top-center in client (viewport) px, for floating toolbars; null if not in the active tank. */
@@ -391,10 +400,10 @@ export class Renderer {
     const game = this.deps.getGame();
     const d = game.tanks.find((t) => t.id === game.activeTankId)?.decor.find((dd) => dd.id === placedId);
     if (!d) return null;
-    const k = DECOR_SIZE_SCALE[d.size];
+    const k = sizeScale(d);
     const [w0, h0] = decorBox(d.decorId);
     const m = this.behaviors.motion(d, w0);
-    const baseY = this.decorBaseY(d.decorId) + m.dy;
+    const baseY = this.decorBaseY(d) + m.dy;
     const rect = this.canvas.getBoundingClientRect();
     return {
       x: rect.left + (d.x + m.dx - this.camX) * this.scale,
@@ -425,7 +434,7 @@ export class Renderer {
 
   /** Front-depth sand decor draws over the fish; everything else behind them. */
   private isFront(d: PlacedDecor): boolean {
-    return DECOR[d.decorId].placement === 'sand' && d.depth === 'front' && decorSpriteSize(d.decorId) !== null;
+    return DECOR[d.decorId].placement === 'sand' && depthGeometry(d.z).frontOfFish && decorSpriteSize(d.decorId) !== null;
   }
 
   /** Decor under the cursor (look mode) gets a soft outline glow; null clears it. */
@@ -448,7 +457,7 @@ export class Renderer {
     const game = this.deps.getGame();
     const tank = game.tanks.find((t) => t.id === game.activeTankId);
     const placed = tank?.decor.find((d) => d.id === decorId);
-    if (placed) this.particles.spawnSandPuff(placed.x, SAND_Y, decorBox(placed.decorId)[0], DECOR_DROP_PUFFS);
+    if (placed) this.particles.spawnSandPuff(placed.x, SAND_Y + depthOf(placed).dy, decorBox(placed.decorId)[0] * sizeScale(placed), DECOR_DROP_PUFFS);
   }
 
   /** Uncollected shell/pearl drop under a tank-space point, or null. */
@@ -782,7 +791,7 @@ export class Renderer {
       if (open > 0.3 && !this.openChests.has(d.id)) {
         this.openChests.add(d.id);
         const puffs = reduced ? 2 : 7;
-        for (let i = 0; i < puffs; i++) this.particles.spawnBubble(d.x + (Math.random() - 0.5) * 30, SAND_Y - 20 - Math.random() * 10, 2 + Math.random() * 3);
+        for (let i = 0; i < puffs; i++) this.particles.spawnBubble(d.x + (Math.random() - 0.5) * 30, SAND_Y + depthOf(d).dy - 20 - Math.random() * 10, 2 + Math.random() * 3);
       } else if (open === 0) {
         this.openChests.delete(d.id);
       }
@@ -978,9 +987,8 @@ export class Renderer {
     // Shadows slide gently with the sun angle and the swaying rays.
     const shadowShift = (-day.sunX + Math.sin(timeSec * RAY_SPEED) * 0.25) * SHADOW_SHIFT;
     const decor = this.decorList(tank);
-    for (const d of decor) {
-      if (!this.isFront(d)) this.drawDecorItem(d, tank, now, timeSec, px, grid, shadowShift, fx);
-    }
+    const order = this.paintOrder(decor);
+    for (const d of order.back) this.drawDecorItem(d, tank, now, timeSec, px, grid, shadowShift, fx);
     drawWaterTint(ctx, style.water, view);
     this.particles.drawSandPuffs(ctx, pal.sandLight);
     this.fx.drawSpecks(fx, 1);
@@ -1071,9 +1079,7 @@ export class Renderer {
       if (actor?.indicator && f.tankId === tank.id) this.drawIndicator(actor, f, now, px);
     }
     this.drawBreedingMarkers(game.fish.filter((f) => f.tankId === tank.id), timeSec, reduced);
-    for (const d of decor) {
-      if (this.isFront(d)) this.drawDecorItem(d, tank, now, timeSec, px, grid, shadowShift, fx);
-    }
+    for (const d of order.front) this.drawDecorItem(d, tank, now, timeSec, px, grid, shadowShift, fx);
     if (this.snapGuide !== null) this.drawSnapGuide(this.snapGuide, view, px);
     if (!picture) drawFrontPlants(ctx, pal, sceneTime, px, view);
     // Eggs and shell drops sit in front of everything on the sand, so they're never hidden behind decor or fish.
@@ -1155,7 +1161,7 @@ export class Renderer {
       preset: fx.preset,
     });
     if (selected) this.drawDecorSelection(d, timeSec, px, drawn);
-    if (!drawn) drawDecor(this.ctx, d.decorId, d.x, SAND_Y + DECOR_BASE_OFFSET, now, px);
+    if (!drawn) drawDecor(this.ctx, d.decorId, d.x, SAND_Y + DECOR_BASE_OFFSET + depthOf(d).dy, now, px);
   }
 
   /** An egg on the sand, rocking more as hatching nears: the egg sprite, or the drawn egg. */
@@ -1195,13 +1201,13 @@ export class Renderer {
 
   private drawDecorSelection(d: PlacedDecor, timeSec: number, px: number, sprite: boolean): void {
     const { ctx } = this;
-    const k = DECOR_SIZE_SCALE[d.size];
+    const k = sizeScale(d);
     const [w0, h0] = decorBox(d.decorId);
     const w = w0 * k;
     const h = h0 * k;
     const m = this.behaviors.motion(d, w0);
     const x = d.x + m.dx;
-    const baseY = this.decorBaseY(d.decorId) + m.dy;
+    const baseY = this.decorBaseY(d) + m.dy;
     const pad = 8 + Math.sin(timeSec * 4) * 2;
     ctx.save();
     if (!sprite) {

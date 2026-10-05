@@ -32,7 +32,7 @@ export function DecorCard() {
             </p>
           )}
           <p className="meta">Decor here gives fish +{decorHappiness(tank)} happiness</p>
-          <p className="decorcard-hint">↔ Drag it sideways to move it. 🎨 Decorate to flip, resize or rearrange.</p>
+          <p className="decorcard-hint">↔ Drag to move it, up and down to push it back or pull it forward. 🎨 Decorate to flip, resize or rearrange.</p>
         </div>
       </div>
       <Button variant="primary" size="sm" onClick={() => setMode('decorate')}>

@@ -26,6 +26,23 @@ const tank = (s: GameState) => s.tanks[0]!;
 const withDecor = (ids: DecorId[], o: Partial<GameState> = {}) =>
   makeState({ tank: { decor: ids.map((id, i) => newPlaced(`p${i}`, id, 100 + i * 80)) }, overrides: { shells: 5000, pearls: 50, ...o } });
 
+describe('layouts keep depth', () => {
+  it('saves and re-applies each piece at its own depth; an old layout without depth stands on the sand line', () => {
+    const state = okState(
+      buyAndPlaceDecor(makeState({ overrides: { shells: 9999 } }), 'rock', 400, { flipped: false, size: 'M', z: 0.15 }, T0, seededRng(1)),
+    );
+    const saved = okState(savePreset(state, 'tank-1', 0, 'deep'));
+    expect(saved.tanks[0]!.layoutPresets[0]!.items[0]!.z).toBe(0.15);
+    // An older preset has no z at all.
+    const legacy = {
+      ...saved,
+      tanks: [{ ...saved.tanks[0]!, layoutPresets: [{ name: 'old', items: [{ decorId: 'rock' as const, x: 200, flipped: false, size: 'M' as const }] }, null, null] }],
+    } as unknown as GameState;
+    const applied = okState(applyPreset(legacy, 'tank-1', 0, T0, seededRng(2)));
+    expect(applied.tanks[0]!.decor[0]!.z).toBe(0.5);
+  });
+});
+
 describe('decor limit', () => {
   it('is 15, plus 3 per capacity upgrade', () => {
     expect(maxDecor({ upgrades: 0 })).toBe(DECOR_LIMIT.base);
@@ -57,12 +74,12 @@ describe('decor box', () => {
   });
 
   it('flip, size and depth can be changed', () => {
-    const s = okState(updateDecor(withDecor(['rock']), 'tank-1', 'p0', { flipped: true, size: 'L', depth: 'front' }));
-    expect(tank(s).decor[0]).toMatchObject({ flipped: true, size: 'L', depth: 'front' });
+    const s = okState(updateDecor(withDecor(['rock']), 'tank-1', 'p0', { flipped: true, size: 'L', z: 0.85 }));
+    expect(tank(s).decor[0]).toMatchObject({ flipped: true, size: 'L', z: 0.85 });
   });
 
   it('Try it buys and places at the chosen spot with the chosen look', () => {
-    const s = okState(buyAndPlaceDecor(withDecor([]), 'bench', 333, { flipped: true, size: 'S', depth: 'back' }, T0, seededRng(1)));
+    const s = okState(buyAndPlaceDecor(withDecor([]), 'bench', 333, { flipped: true, size: 'S', z: 0.5 }, T0, seededRng(1)));
     expect(tank(s).decor[0]).toMatchObject({ decorId: 'bench', x: 333, flipped: true, size: 'S' });
     expect(s.shells).toBe(5000 - 60);
   });

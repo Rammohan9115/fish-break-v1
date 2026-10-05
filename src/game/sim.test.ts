@@ -110,8 +110,8 @@ describe('happiness target', () => {
   });
 
   it('decor rewards variety: +3 per different item, +1 per duplicate, capped at +20', () => {
-    const rocks = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `d${i}`, decorId: 'rock' as const, x: 0, flipped: false, size: 'M' as const, depth: 'back' as const }));
-    const mixed = (['rock', 'castle', 'chest', 'plant_small', 'plant_tall', 'shipwreck', 'bench', 'diver'] as const).map((decorId, i) => ({ id: `m${i}`, decorId, x: 0, flipped: false, size: 'M' as const, depth: 'back' as const }));
+    const rocks = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `d${i}`, decorId: 'rock' as const, x: 0, flipped: false, size: 'M' as const, z: 0.5 }));
+    const mixed = (['rock', 'castle', 'chest', 'plant_small', 'plant_tall', 'shipwreck', 'bench', 'diver'] as const).map((decorId, i) => ({ id: `m${i}`, decorId, x: 0, flipped: false, size: 'M' as const, z: 0.5 }));
     expect(happinessTarget(30, tank({ decor: rocks(2) }), 1)).toBe(54); // 3 + 1
     expect(happinessTarget(30, tank({ decor: rocks(5) }), 1)).toBe(57); // 3 + 4
     expect(happinessTarget(30, tank({ decor: mixed }), 1)).toBe(70); // 8 × 3 = 24 → capped at 20
@@ -134,7 +134,7 @@ describe('happiness target', () => {
   });
 
   it('stays within 0..100', () => {
-    const best = makeTank({ cleanliness: 100, decor: (['moss_ball', 'driftwood', 'flower_plant', 'column', 'bench', 'diver', 'rock'] as const).map((decorId, i) => ({ id: `d${i}`, decorId, x: 0, flipped: false, size: 'M' as const, depth: 'back' as const })) });
+    const best = makeTank({ cleanliness: 100, decor: (['moss_ball', 'driftwood', 'flower_plant', 'column', 'bench', 'diver', 'rock'] as const).map((decorId, i) => ({ id: `d${i}`, decorId, x: 0, flipped: false, size: 'M' as const, z: 0.5 })) });
     expect(happinessTarget(100, best, 1)).toBe(100);
     const worst = makeTank({ cleanliness: 0, capacity: 1 });
     expect(happinessTarget(0, worst, 5)).toBeGreaterThanOrEqual(0);

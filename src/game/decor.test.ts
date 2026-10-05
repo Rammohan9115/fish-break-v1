@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { checkBuyDecor } from './economy';
-import { COLLECTION_LIST, DECOR, HAPPINESS_DECOR_MAX, HAPPINESS_PER_SET } from './constants';
-import { activeSets, collectionItems, collectionProgress, decorAvailable, decorHappiness, decorHappinessGain } from './decor';
+import { COLLECTION_LIST, DECOR, DECOR_Z, HAPPINESS_DECOR_MAX, HAPPINESS_PER_SET, SAND_Y } from './constants';
+import { activeSets, clampZ, collectionItems, collectionProgress, decorAvailable, decorDrawOrder, decorHappiness, decorHappinessGain, depthGeometry, hazeBucket, snapZ, zFromBaseY } from './decor';
 import { makeState, makeTank } from './testUtils';
 import type { DecorId, Tank } from './types';
 
-const placed = (...ids: DecorId[]): Tank['decor'] => ids.map((decorId, i) => ({ id: `p${i}`, decorId, x: 100 + i * 50, flipped: false, size: 'M' as const, depth: 'back' as const }));
+const placed = (...ids: DecorId[]): Tank['decor'] => ids.map((decorId, i) => ({ id: `p${i}`, decorId, x: 100 + i * 50, flipped: false, size: 'M' as const, z: 0.5 }));
 
 describe('catalog', () => {
   it('has the 22 collection items, in five collections', () => {
@@ -80,5 +80,75 @@ describe('small collections', () => {
   it('Halloween (2 pieces) activates with both pieces', () => {
     expect(activeSets(makeTank({ decor: placed('pumpkin') }))).toEqual([]);
     expect(activeSets(makeTank({ decor: placed('pumpkin', 'spooky_tree') }))).toEqual(['halloween']);
+  });
+});
+
+describe('depth (perspective)', () => {
+  it('z = 0.5 is exactly the original flat sand line', () => {
+    expect(depthGeometry(0.5)).toMatchObject({ dy: 0, scale: 1, frontOfFish: false });
+  });
+
+  it('far pieces are smaller, higher and hazier; near pieces are bigger, lower and crisper', () => {
+    const far = depthGeometry(0);
+    const near = depthGeometry(1);
+    expect(far.dy).toBe(DECOR_Z.farDy);
+    expect(far.scale).toBe(DECOR_Z.farScale);
+    expect(far.tint).toBeGreaterThan(depthGeometry(0.5).tint);
+    expect(far.desat).toBeGreaterThan(0);
+    expect(near.dy).toBe(DECOR_Z.nearDy);
+    expect(near.scale).toBe(DECOR_Z.nearScale);
+    expect(near.tint).toBeLessThan(depthGeometry(0.5).tint);
+    expect(near.desat).toBe(0);
+  });
+
+  it('is monotonic: further forward is always lower and bigger', () => {
+    let prev = depthGeometry(0);
+    for (let z = 0.05; z <= 1.0001; z += 0.05) {
+      const g = depthGeometry(z);
+      expect(g.dy).toBeGreaterThanOrEqual(prev.dy);
+      expect(g.scale).toBeGreaterThanOrEqual(prev.scale);
+      prev = g;
+    }
+  });
+
+  it('only pieces near the glass are drawn over the fish', () => {
+    expect(depthGeometry(0.5).frontOfFish).toBe(false);
+    expect(depthGeometry(DECOR_Z.frontOfFish).frontOfFish).toBe(true);
+    expect(depthGeometry(1).frontOfFish).toBe(true);
+  });
+
+  it('clamps out-of-range and junk depths', () => {
+    expect(clampZ(-3)).toBe(0);
+    expect(clampZ(7)).toBe(1);
+    expect(clampZ(Number.NaN)).toBe(DECOR_Z.default);
+    expect(depthGeometry(99)).toEqual(depthGeometry(1));
+  });
+
+  it('zFromBaseY is the inverse of the base line', () => {
+    for (const z of [0, 0.2, 0.5, 0.8, 1]) expect(zFromBaseY(SAND_Y + depthGeometry(z).dy)).toBeCloseTo(z, 6);
+    expect(zFromBaseY(0)).toBe(0);
+    expect(zFromBaseY(9999)).toBe(1);
+  });
+
+  it('dragging magnets onto the original line, but not onto other depths', () => {
+    expect(snapZ(0.5 + DECOR_Z.snap - 0.001)).toBe(0.5);
+    expect(snapZ(0.5 - DECOR_Z.snap + 0.001)).toBe(0.5);
+    expect(snapZ(0.6)).toBe(0.6);
+  });
+
+  it('nearby depths share one baked haze bucket', () => {
+    expect(hazeBucket(0.5)).toBe(hazeBucket(0.52));
+    expect(hazeBucket(0)).not.toBe(hazeBucket(1));
+  });
+
+  it('paints far to near, split around the fish', () => {
+    const items = [
+      { id: 'a', z: 0.9 },
+      { id: 'b', z: 0.1 },
+      { id: 'c', z: 0.5 },
+      { id: 'd', z: 0.75 },
+    ];
+    expect(decorDrawOrder(items, false).map((i) => i.id)).toEqual(['b', 'c']);
+    expect(decorDrawOrder(items, true).map((i) => i.id)).toEqual(['d', 'a']);
   });
 });

@@ -21,7 +21,7 @@ export async function seedMidGame(page: Page, extra = ''): Promise<void> {
   await page.evaluate(`(() => {
     const { store, utils } = window.__fishbowl; const now = Date.now();
     const fish = ['danio','guppy','goldfish','goldfish','tetra'].map((s, i) => utils.makeFish({ speciesId: s, stage: 'adult', growth: 99999, hunger: 60, happiness: 90, name: 'Fish' + i, bornAt: now - 1e7, lastDropAt: now, lastBredAt: null }));
-    const decor = ['plant_tall','castle','rock'].map((d, i) => ({ id: 'd' + i, decorId: d, x: 200 + i * 250, flipped: false, size: 'M', depth: 'back' }));
+    const decor = ['plant_tall','castle','rock'].map((d, i) => ({ id: 'd' + i, decorId: d, x: 200 + i * 250, flipped: false, size: 'M', z: 0.5 }));
     store.getState().loadState(utils.makeState({ fish, tank: { decor }, overrides: { level: 12, shells: 2000, pearls: 7, lastTickAt: now, lastDailyGift: new Date().toISOString().slice(0, 10) } }));
     store.setState({ onboardingStep: null });
     ${extra}

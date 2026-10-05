@@ -2,7 +2,7 @@
 // layouts (3 slots per tank) and Tank Style. A bottom sheet on phones, docked right on desktop.
 import { useEffect, useRef, useState } from 'react';
 import { DECOR, LAYOUT_PRESET_SLOTS } from '../game/constants';
-import { boxCount } from '../game/decor';
+import { boxCount, snapZ, zFromBaseY } from '../game/decor';
 import type { DecorId } from '../game/types';
 import { currentRenderer } from '../render/renderer';
 import { sound } from '../audio/sound';
@@ -16,8 +16,8 @@ import { decorRefund } from '../game/economy';
 /** Pointer travel (px) before a press on a box item becomes a drag. */
 const DRAG_START_PX = 8;
 
-/** Places `decorId` where the pointer was released over the tank (or the middle of the view). */
-function dropInTank(decorId: DecorId, clientX: number | null): boolean {
+/** Places `decorId` where the pointer was released over the tank (or the middle of the view); sand pieces take their depth from the release height. */
+function dropInTank(decorId: DecorId, clientX: number | null, clientY: number | null = null): boolean {
   const renderer = currentRenderer();
   const store = useGameStore.getState();
   if (!renderer) return false;
@@ -28,7 +28,8 @@ function dropInTank(decorId: DecorId, clientX: number | null): boolean {
   } else {
     x = renderer.toTank(clientX, 0).x;
   }
-  const ok = store.placeFromBox(decorId, x);
+  const z = clientX !== null && clientY !== null && DECOR[decorId].placement === 'sand' ? snapZ(zFromBaseY(renderer.toTank(clientX, clientY).y)) : undefined;
+  const ok = store.placeFromBox(decorId, x, z);
   if (ok) sound.play('plop');
   return ok;
 }
@@ -70,7 +71,7 @@ function BoxItem({ decorId, count }: { decorId: DecorId; count: number }) {
     }
     // Dropped over the water (not over the tray or other UI): place it there.
     const under = document.elementFromPoint(e.clientX, e.clientY);
-    if (under?.classList.contains('tank-canvas')) dropInTank(decorId, e.clientX);
+    if (under?.classList.contains('tank-canvas')) dropInTank(decorId, e.clientX, e.clientY);
   };
 
   return (

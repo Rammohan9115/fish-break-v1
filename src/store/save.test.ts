@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DECOR_Z } from '../game/constants';
 import { CORRUPT_BACKUPS_KEPT, CORRUPT_SAVE_PREFIX, HOUR_MS, MINUTE_MS, SAVE_INTERVAL_MS, SAVE_KEY, SAVE_VERSION } from '../game/constants';
 import type { OfflineSummary } from '../game/sim';
 import { makeFish, makeState, seededRng, T0 } from '../game/testUtils';
@@ -442,11 +443,50 @@ describe('v5 → v6 migration (decor customization)', () => {
     const migrated = migrate({ ...rest, version: 5, tanks: [oldTank] } as unknown as Record<string, unknown>);
     expect(isValidGameState(migrated)).toBe(true);
     const state = migrated as unknown as ReturnType<typeof makeState>;
-    expect(state.tanks[0]!.decor).toEqual([{ id: 'd1', decorId: 'castle', x: 300, flipped: false, size: 'M', depth: 'back' }]);
+    expect(state.tanks[0]!.decor).toEqual([{ id: 'd1', decorId: 'castle', x: 300, flipped: false, size: 'M', z: 0.5 }]);
     expect(state.tanks[0]!.style.frame).toBe('frame:glass');
     expect(state.tanks[0]!.layoutPresets).toEqual([null, null, null]);
     expect(state.decorInventory).toEqual({});
     expect(state.ownedStyles).toEqual([]);
     expect(state.fish).toEqual(s.fish);
+  });
+});
+
+describe('v6 → v7 migration (decor depth)', () => {
+  const v6 = () => {
+    const s = makeState({ fish: [makeFish()] });
+    const decor = [
+      { id: 'a', decorId: 'rock', x: 100, flipped: false, size: 'M', depth: 'back' },
+      { id: 'b', decorId: 'castle', x: 300, flipped: true, size: 'L', depth: 'front' },
+    ];
+    const items = [
+      { decorId: 'rock', x: 100, flipped: false, size: 'M', depth: 'front' },
+      { decorId: 'bench', x: 500, flipped: false, size: 'S', depth: 'back' },
+    ];
+    return { ...s, version: 6, tanks: [{ ...s.tanks[0]!, decor, layoutPresets: [{ name: 'Mine', items }, null, null] }] } as unknown as Record<string, unknown>;
+  };
+
+  it('back pieces stay on the sand line, front pieces move a little nearer, and the old flag is gone', () => {
+    const migrated = migrate(v6());
+    expect(isValidGameState(migrated)).toBe(true);
+    const tank = (migrated as unknown as ReturnType<typeof makeState>).tanks[0]!;
+    expect(tank.decor).toEqual([
+      { id: 'a', decorId: 'rock', x: 100, flipped: false, size: 'M', z: DECOR_Z.default },
+      { id: 'b', decorId: 'castle', x: 300, flipped: true, size: 'L', z: DECOR_Z.migratedFront },
+    ]);
+  });
+
+  it('saved layouts are converted too, and empty slots stay empty', () => {
+    const tank = (migrate(v6()) as unknown as ReturnType<typeof makeState>).tanks[0]!;
+    expect(tank.layoutPresets[0]!.items.map((i) => i.z)).toEqual([DECOR_Z.migratedFront, DECOR_Z.default]);
+    expect(tank.layoutPresets[1]).toBeNull();
+    expect(JSON.stringify(tank)).not.toContain('"depth"');
+  });
+
+  it('a piece that somehow already has a depth keeps it', () => {
+    const data = v6();
+    const tanks = data.tanks as { decor: Record<string, unknown>[] }[];
+    tanks[0]!.decor[0]!.z = 0.2;
+    expect((migrate(data) as unknown as ReturnType<typeof makeState>).tanks[0]!.decor[0]!.z).toBe(0.2);
   });
 });

@@ -560,7 +560,7 @@ describe('breeding events (store)', () => {
 describe('decor & tanks (store)', () => {
   it('selecting decor and fish are mutually exclusive', () => {
     const fish = makeFish();
-    load(makeState({ fish: [fish], tank: { decor: [{ id: 'd1', decorId: 'rock', x: 300, flipped: false, size: 'M' as const, depth: 'back' as const }] } }));
+    load(makeState({ fish: [fish], tank: { decor: [{ id: 'd1', decorId: 'rock', x: 300, flipped: false, size: 'M' as const, z: 0.5 }] } }));
     store().selectFish(fish.id);
     store().selectDecor('d1');
     expect(store().selectedFishId).toBeNull();
@@ -569,7 +569,7 @@ describe('decor & tanks (store)', () => {
   });
 
   it('drags decor in the active tank and sells it back, clearing the selection', () => {
-    load(makeState({ tank: { decor: [{ id: 'd1', decorId: 'castle', x: 300, flipped: false, size: 'M' as const, depth: 'back' as const }] }, overrides: { shells: 0 } }));
+    load(makeState({ tank: { decor: [{ id: 'd1', decorId: 'castle', x: 300, flipped: false, size: 'M' as const, z: 0.5 }] }, overrides: { shells: 0 } }));
     store().moveDecor('d1', 512);
     expect(tank().decor[0]!.x).toBe(512);
     store().selectDecor('d1');
@@ -776,7 +776,7 @@ describe('petting & bond', () => {
 
 describe('decorate mode undo/redo', () => {
   it('undoes and redoes box moves, and keeps at most 20 steps', () => {
-    const decor = [{ id: 'a', decorId: 'rock' as const, x: 200, flipped: false, size: 'M' as const, depth: 'back' as const }];
+    const decor = [{ id: 'a', decorId: 'rock' as const, x: 200, flipped: false, size: 'M' as const, z: 0.5 }];
     load(makeState({ tank: { decor } }));
     store().setMode('decorate');
     store().storeDecor('a');
@@ -797,7 +797,7 @@ describe('decorate mode undo/redo', () => {
   });
 
   it('selling clears the history (money changes are not undoable)', () => {
-    const decor = [{ id: 'a', decorId: 'castle' as const, x: 200, flipped: false, size: 'M' as const, depth: 'back' as const }];
+    const decor = [{ id: 'a', decorId: 'castle' as const, x: 200, flipped: false, size: 'M' as const, z: 0.5 }];
     load(makeState({ tank: { decor } }));
     store().setMode('decorate');
     store().updateDecor('a', { flipped: true });

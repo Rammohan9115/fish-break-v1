@@ -4,7 +4,7 @@
 // decor reuses them without new code. Everything is slow and springy; nothing snaps.
 import {
   BUBBLE_RING_GAP,
-  DECOR_SIZE_SCALE,
+  DECOR_Z,
   CURTAIN_RATE,
   DECOR_BOB_AMP,
   DECOR_BOB_SPEED,
@@ -55,7 +55,9 @@ import {
   decorImage,
   decorShadow,
   decorSpriteSize,
+  depthOf,
   silhouette,
+  sizeScale,
   snapTo,
   type DecorImage,
   type PixelGrid,
@@ -227,11 +229,11 @@ export class DecorBehaviors {
   private readonly motionOut: Motion = { dx: 0, dy: 0, rot: 0, sx: 1 };
 
   /** Where a decor item's base rests (before sink): the sand line, just under the water line, or mid-water. */
-  restY(decorId: DecorId, h: number): number {
+  restY(decorId: DecorId, h: number, z: number = DECOR_Z.default): number {
     const placement = DECOR[decorId].placement;
     if (placement === 'surface') return this.surfaceTop + DECOR_SURFACE_Y + h / 2;
     if (placement === 'mid') return SAND_Y * DECOR_MID_FRACTION + h / 2;
-    return SAND_Y;
+    return SAND_Y + depthOf({ decorId, z }).dy; // sand pieces stand further back / forward by their depth
   }
 
   /** This frame's bob / drift / roll / spin offsets for an item (shared object; read immediately). */
@@ -268,11 +270,11 @@ export class DecorBehaviors {
    * included. `w`/`h` are the drawn size at M; `sink` is how far the base sits below its resting line.
    */
   pointAt(d: Placed, w: number, h: number, sink: number, uv: UV, m: Motion): { x: number; y: number } {
-    const k = DECOR_SIZE_SCALE[d.size ?? 'M'];
+    const k = sizeScale(d);
     const fx = d.flipped ? -1 : 1;
     return {
       x: d.x + m.dx + fx * k * (-w / 2 + uv[0] * w),
-      y: this.restY(d.decorId, h) + sink + m.dy + k * (-h + uv[1] * h),
+      y: this.restY(d.decorId, h, d.z) + sink + m.dy + k * (-h + uv[1] * h),
     };
   }
 
@@ -283,6 +285,8 @@ export class DecorBehaviors {
       const a = DECOR_ART[d.decorId].anchors?.attract;
       const size = a ? decorSpriteSize(d.decorId) : null;
       if (!a || !size) continue;
+      // Fish can't swim down to far/near pieces' bases: only pieces close to the sand line attract them.
+      if (DECOR[d.decorId].placement === 'sand' && (d.z ?? DECOR_Z.default) > DECOR_Z.attractMax) continue;
       const p = this.pointAt(d, size.w, size.h, size.h * DECOR_ART[d.decorId].sink, a.uv, this.motion(d, size.w));
       out.push({ x: p.x, y: p.y, kind: a.kind, species: a.species });
     }
@@ -387,7 +391,7 @@ export class DecorBehaviors {
     }
 
     if (this.has(d, 'sway')) {
-      const target = env.current.total * PLANT_CURRENT_LEAN + fishPush(d.x, SAND_Y, w, h, env.fish);
+      const target = env.current.total * PLANT_CURRENT_LEAN + fishPush(d.x, SAND_Y + depthOf(d).dy, w * sizeScale(d), h * sizeScale(d), env.fish);
       stepSpring(s.bend, target, PLANT_STIFFNESS, PLANT_DAMPING, dt);
     }
     stepSpring(s.wiggle, 0, PLANT_STIFFNESS * 1.6, PLANT_DAMPING * 0.8, dt);
@@ -465,7 +469,7 @@ export class DecorBehaviors {
 
   /** Draws one decor item with its behaviors. False if its sprite is missing (draw the code art). */
   draw(ctx: Ctx, d: Placed, pose: DecorPose): boolean {
-    const img = decorImage(d.decorId, pose.theme, pose.grid.k);
+    const img = decorImage(d.decorId, pose.theme, pose.grid.k * depthOf(d).scale, d.z);
     if (!img) return false;
     const s = this.state(d);
     const art = DECOR_ART[d.decorId];
@@ -475,8 +479,11 @@ export class DecorBehaviors {
 
     const m = this.motion(d, dw);
     const floating = DECOR[d.decorId].placement !== 'sand';
-    const sizeK = DECOR_SIZE_SCALE[d.size ?? 'M'];
-    decorShadow(ctx, d.decorId, d.x + m.dx, pose.lift, pose.shadowShift, (floating ? FLOATING_SHADOW : 1) * (pose.alpha ?? 1), sizeK);
+    const geo = depthOf(d);
+    const sizeK = sizeScale(d);
+    // Far pieces cast a fainter shadow; it sits on the piece's own base line.
+    const farFade = floating ? 1 : 0.55 + 0.9 * Math.min(0.5, d.z ?? DECOR_Z.default);
+    decorShadow(ctx, d.decorId, d.x + m.dx, pose.lift, pose.shadowShift, (floating ? FLOATING_SHADOW : 1) * (pose.alpha ?? 1) * farFade, sizeK, SAND_Y + geo.dy + 1);
 
     const breathe = this.has(d, 'breathe') ? 1 + DECOR_BREATHE * Math.sin(t * s.breatheFreq + s.phase) : 1;
     const rock = this.has(d, 'rocking') ? Math.sin(t * WRECK_ROCK_SPEED + s.phase) * WRECK_ROCK_DEG * DEG : 0;
@@ -484,7 +491,7 @@ export class DecorBehaviors {
     const lift = 1 + pose.lift * DECOR_LIFT_SCALE;
     // At rest the base point lands on a whole device pixel; anything moving stays subpixel-smooth.
     const moving = lifted || m.dx !== 0 || m.dy !== 0;
-    const rest = this.restY(d.decorId, dh) + img.sinkY;
+    const rest = this.restY(d.decorId, dh, d.z) + img.sinkY;
     const baseX = moving ? d.x + m.dx : snapTo(d.x, pose.grid.camX, k);
     const baseY = moving ? rest + m.dy - pose.lift * DECOR_LIFT : snapTo(rest, pose.grid.camY, k);
 
@@ -663,13 +670,13 @@ export class DecorBehaviors {
   /** Warm lights (castle windows, wreck lanterns), drawn after the scene tint so they glow at night. */
   drawLights(ctx: Ctx, d: Placed, theme: ThemeId, k: number, lights: number, timeSec: number): void {
     if (lights < 0.02) return;
-    const img = decorImage(d.decorId, theme, k);
+    const img = decorImage(d.decorId, theme, k * depthOf(d).scale, d.z);
     if (!img) return;
     const pts = lightPoints(d.decorId, (b) => this.has(d, b));
     if (pts.length === 0) return;
     const s = this.state(d);
     const m = this.motion(d, img.dw);
-    const sizeK = DECOR_SIZE_SCALE[d.size ?? 'M'];
+    const sizeK = sizeScale(d);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for (const [i, p] of pts.entries()) {

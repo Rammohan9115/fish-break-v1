@@ -7,6 +7,7 @@ import {
   TOAST_QUEUE_MAX,
   FISH_NAME_MAX_LENGTH,
   DECOR,
+  DECOR_Z,
   DECOR_UNDO_STEPS,
   OCTOBER_MONTH,
   STYLE_OPTIONS,
@@ -39,6 +40,7 @@ import {
 } from '../game/bond';
 import { breedingChecklist, compatiblePartners, startCourtship } from '../game/breeding';
 import * as economy from '../game/economy';
+import { clampZ } from '../game/decor';
 import { grantXp } from '../game/levels';
 import { getSpecies } from '../game/species';
 import {
@@ -171,7 +173,7 @@ export interface GameStore {
   /** Decorate mode undo/redo (this session only): snapshots of the tank's decor and the decor box. */
   decorHistory: { past: DecorSnapshot[]; future: DecorSnapshot[] };
   /** Shop "Try it": a ghost of the item in the tank, positioned before buying. */
-  tryDecor: ({ decorId: DecorId; x: number } & Pick<PlacedDecor, 'flipped' | 'size' | 'depth'>) | null;
+  tryDecor: ({ decorId: DecorId; x: number } & Pick<PlacedDecor, 'flipped' | 'size' | 'z'>) | null;
   /** Tank Style live preview (not applied until used or bought). */
   stylePreview: Partial<TankStyle> | null;
   /** Decorate mode tray tab. */
@@ -209,9 +211,9 @@ export interface GameStore {
   /** Best Friend+: follow the pointer for FOLLOW_MS (or stop). */
   toggleFollow: (fishId: string) => void;
   /** Decorate mode: decor box, editing, layouts, undo/redo. */
-  placeFromBox: (decorId: DecorId, x: number) => boolean;
+  placeFromBox: (decorId: DecorId, x: number, z?: number) => boolean;
   storeDecor: (placedId: string) => boolean;
-  updateDecor: (placedId: string, change: Partial<Pick<PlacedDecor, 'flipped' | 'size' | 'depth'>>) => void;
+  updateDecor: (placedId: string, change: Partial<Pick<PlacedDecor, 'flipped' | 'size' | 'z'>>) => void;
   sellBoxedDecor: (decorId: DecorId) => boolean;
   savePreset: (slot: number, name: string) => void;
   applyPreset: (slot: number) => void;
@@ -227,7 +229,7 @@ export interface GameStore {
   setStyleExtras: (change: { lightingColor?: string; nameplate?: boolean }) => void;
   /** Shop "Try it": show a ghost, move it, then buy & place it (or cancel). */
   startTry: (decorId: DecorId) => void;
-  moveTry: (x: number) => void;
+  moveTry: (x: number, z?: number) => void;
   confirmTry: () => boolean;
   cancelTry: () => void;
   /** Shows the first-time tips again. */
@@ -250,7 +252,7 @@ export interface GameStore {
   renameTank: (tankId: string, name: string) => void;
   moveFish: (fishId: string, tankId: string) => boolean;
   /** Slides decor along the sand (active tank). */
-  moveDecor: (placedId: string, x: number) => void;
+  moveDecor: (placedId: string, x: number, z?: number) => void;
   /** Breeding: enter pairing mode for a ready fish (or go straight to the sheet with `partnerId`). */
   startPairing: (fishId: string, partnerId?: string) => boolean;
   /** In pairing mode: choose the partner (opens the confirm sheet if compatible). */
@@ -903,9 +905,9 @@ export const useGameStore = create<GameStore>()((set, get) => {
       });
     },
 
-    placeFromBox: (decorId, x) => {
+    placeFromBox: (decorId, x, z) => {
       const before = get().game;
-      const result = economy.placeFromBox(before, before.activeTankId, decorId, x, Date.now(), Math.random);
+      const result = economy.placeFromBox(before, before.activeTankId, decorId, x, Date.now(), Math.random, z);
       if (!result.ok) {
         get().addToast(result.reason === 'full' ? '🪸 This tank is full of decor. Put something in the box first.' : PURCHASE_ERROR_TEXT[result.reason]);
         return false;
@@ -974,11 +976,11 @@ export const useGameStore = create<GameStore>()((set, get) => {
     },
 
     startTry: (decorId) =>
-      set({ tryDecor: { decorId, x: TANK_WIDTH / 2, flipped: false, size: 'M', depth: 'back' }, panel: null, mode: 'look', selectedDecorId: null, quickFishId: null }),
+      set({ tryDecor: { decorId, x: TANK_WIDTH / 2, flipped: false, size: 'M', z: DECOR_Z.default }, panel: null, mode: 'look', selectedDecorId: null, quickFishId: null }),
 
-    moveTry: (x) => {
+    moveTry: (x, z) => {
       const t = get().tryDecor;
-      if (t) set({ tryDecor: { ...t, x: economy.clampDecorX(x) } });
+      if (t) set({ tryDecor: { ...t, x: economy.clampDecorX(x), ...(z === undefined ? {} : { z: clampZ(z) }) } });
     },
 
     confirmTry: () => {
@@ -993,8 +995,8 @@ export const useGameStore = create<GameStore>()((set, get) => {
 
     cancelTry: () => set({ tryDecor: null }),
 
-    moveDecor: (placedId, x) => {
-      const result = economy.moveDecor(get().game, get().game.activeTankId, placedId, x);
+    moveDecor: (placedId, x, z) => {
+      const result = economy.moveDecor(get().game, get().game.activeTankId, placedId, x, z);
       if (result.ok) set({ game: result.state });
     },
 

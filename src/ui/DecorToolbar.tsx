@@ -1,7 +1,7 @@
 // Decorate mode: a small toolbar floating above the selected decor piece — flip, back/front (sand pieces),
 // S/M/L size, back to the box, or sell. Follows the piece as it bobs or drifts.
 import { useEffect, useRef, useState } from 'react';
-import { DECOR } from '../game/constants';
+import { DECOR, DECOR_Z } from '../game/constants';
 import { decorRefund } from '../game/economy';
 import type { DecorSize } from '../game/types';
 import { currentRenderer } from '../render/renderer';
@@ -12,6 +12,13 @@ import { PriceTag } from './Shop';
 const GAP_PX = 12;
 const EDGE_PX = 8;
 const SIZES: DecorSize[] = ['S', 'M', 'L'];
+/** Quick depth presets (a piece dragged in between highlights the nearest one). */
+const DEPTHS = [
+  { label: 'Far', z: DECOR_Z.far },
+  { label: 'Mid', z: DECOR_Z.mid },
+  { label: 'Near', z: DECOR_Z.near },
+] as const;
+const nearestDepth = (z: number): number => DEPTHS.reduce((best, d) => (Math.abs(d.z - z) < Math.abs(best.z - z) ? d : best)).z;
 /** Keyboard nudge in tank units (Shift = a bigger step). */
 const NUDGE = 10;
 const NUDGE_BIG = 40;
@@ -28,23 +35,32 @@ export function DecorToolbar() {
   const ref = useRef<HTMLDivElement>(null);
   const moveDecor = useGameStore((s) => s.moveDecor);
   const placedX = placed?.x;
+  const placedZ = placed?.z;
+  const isSand = placed ? DECOR[placed.decorId].placement === 'sand' : false;
 
-  // Keyboard path for moving a piece: ←/→ nudge the selected piece (Shift for bigger steps).
+  // Keyboard path for moving a piece: ←/→ nudge it sideways (Shift for bigger steps), ↑/↓ push it back / pull it forward.
   useEffect(() => {
     if (mode !== 'decorate' || !selectedId || placedX === undefined) return undefined;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      const vertical = e.key === 'ArrowUp' || e.key === 'ArrowDown';
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && !(vertical && isSand)) return;
       const t = e.target;
       if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return;
       // Arrows inside tab lists / sliders keep their own meaning.
       if (t instanceof HTMLElement && t.closest('[role=tablist], [role=slider]')) return;
       e.preventDefault();
+      if (vertical) {
+        // ↑ pushes the piece back (farther), ↓ pulls it forward; rounding to 2 decimals avoids float drift.
+        const z = Math.round(((placedZ ?? DECOR_Z.default) + (e.key === 'ArrowUp' ? -DECOR_Z.step : DECOR_Z.step)) * 100) / 100;
+        moveDecor(selectedId, placedX, Math.min(1, Math.max(0, z)));
+        return;
+      }
       const step = e.shiftKey ? NUDGE_BIG : NUDGE;
       moveDecor(selectedId, placedX + (e.key === 'ArrowLeft' ? -step : step));
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [mode, selectedId, placedX, moveDecor]);
+  }, [mode, selectedId, placedX, placedZ, isSand, moveDecor]);
 
   // Follow the piece (it may bob or drift); flip below it when there's no room above.
   useEffect(() => {
@@ -85,9 +101,16 @@ export function DecorToolbar() {
             ⇋ Flip
           </Button>
           {sand && (
-            <Button size="sm" onClick={() => updateDecor(placed.id, { depth: placed.depth === 'front' ? 'back' : 'front' })}>
-              {placed.depth === 'front' ? '⬇ To back' : '⬆ To front'}
-            </Button>
+            <div className="size-seg" role="radiogroup" aria-label="Depth">
+              {DEPTHS.map(({ label, z }) => {
+                const on = nearestDepth(placed.z) === z;
+                return (
+                  <button key={label} type="button" role="radio" aria-checked={on} className={`size-btn depth-btn${on ? ' size-on' : ''}`} onClick={() => updateDecor(placed.id, { z })}>
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
           )}
           <div className="size-seg" role="radiogroup" aria-label="Size">
             {SIZES.map((sz) => (

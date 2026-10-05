@@ -18,3 +18,25 @@ test('Decorate mode: banner, tray, selecting a piece and flipping it, then Done'
   await page.getByRole('button', { name: 'Done decorating' }).click();
   await expect(page.getByText('Decorating')).toHaveCount(0);
 });
+
+test('depth: Far / Mid / Near buttons and ↑/↓ move a piece into the sand', async ({ page }) => {
+  await freshGame(page, { seed: true });
+  await openTools(page);
+  await page.getByRole('button', { name: /Decorate/ }).first().click();
+  await page.evaluate(() => {
+    const s = window.__fishbowl.store;
+    s.getState().selectDecor(s.getState().game.tanks[0].decor[0].id);
+  });
+  const z = async () => (await gameState(page)).tanks[0].decor[0].z;
+  expect(await z()).toBe(0.5);
+  await page.getByRole('radio', { name: 'Far' }).click();
+  await expect.poll(z).toBe(0.15);
+  await page.getByRole('radio', { name: 'Near' }).click();
+  await expect.poll(z).toBe(0.85);
+  await expect(page.getByRole('radio', { name: 'Near' })).toHaveAttribute('aria-checked', 'true');
+  await page.keyboard.press('ArrowUp'); // farther
+  await expect.poll(z).toBe(0.75);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await expect.poll(z).toBe(0.95);
+});

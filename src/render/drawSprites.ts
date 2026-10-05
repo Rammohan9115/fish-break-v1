@@ -9,15 +9,19 @@ import {
   DECOR_GLOW_PX,
   DECOR_LIFT,
   DECOR_LIFT_SCALE,
+  DECOR_SIZE_SCALE,
   DECOR_SHADOW_ALPHA,
   DECOR_SHADOW_W,
   DECOR_TINT_BACK,
   DECOR_TINT_FRONT,
+  DECOR,
+  DECOR_Z,
   SAND_Y,
   SPRITE_BASE_SHADE,
   SPRITE_TOP_LIGHT,
 } from '../game/constants';
-import type { DecorId, ThemeId } from '../game/types';
+import { depthGeometry, hazeBucket, type DepthGeometry } from '../game/decor';
+import type { DecorId, DecorSize, ThemeId } from '../game/types';
 import { DECOR_ART, ICON_ART, THEME_ART, type DecorLayer, type IconId } from './artConfig';
 import { bucketPx, decorSprite, iconSprite, makeCanvas, scaledSprite, type AssetSprite } from './assets';
 import { decorBounds } from './drawDecor';
@@ -65,12 +69,17 @@ export function dropSquash(elapsedMs: number): number {
 }
 
 /** Water tint plus the shared top light, painted onto a sprite copy (only where it has pixels). */
-function shade(tint: string, tintAlpha: number) {
+function shade(tint: string, tintAlpha: number, desat = 0) {
   return (ctx: Ctx, w: number, h: number) => {
     ctx.save();
     ctx.globalCompositeOperation = 'source-atop';
     if (tintAlpha > 0) {
       ctx.fillStyle = rgba(tint, tintAlpha);
+      ctx.fillRect(0, 0, w, h);
+    }
+    // Far pieces also lose colour (a neutral blue-grey wash reads as distance haze).
+    if (desat > 0) {
+      ctx.fillStyle = rgba(FAR_HAZE, desat * 0.9);
       ctx.fillRect(0, 0, w, h);
     }
     const g = ctx.createLinearGradient(0, 0, 0, h);
@@ -116,14 +125,43 @@ export interface DecorImage {
   sinkY: number;
 }
 
-/** The decor sprite shaded for `theme` (water tint by layer + shared top light) at `k` device px per unit. */
-export function decorImage(decorId: DecorId, theme: ThemeId, k: number): DecorImage | null {
+const FAR_HAZE = '#9fb4c8';
+
+/** How a sand piece standing at depth `z` is scaled (size S/M/L × perspective) and shifted. Floating pieces ignore depth. */
+export function depthOf(d: { decorId: DecorId; z?: number }): DepthGeometry {
+  return DECOR[d.decorId].placement === 'sand' ? depthGeometry(d.z ?? DECOR_Z.default) : FLAT_DEPTH;
+}
+const FLAT_DEPTH: DepthGeometry = { dy: 0, scale: 1, tint: 0, desat: 0, frontOfFish: false };
+
+/** Total draw scale of a placed piece: its S/M/L size times the perspective scale of its depth. */
+export function sizeScale(d: { decorId: DecorId; size?: DecorSize; z?: number }): number {
+  return DECOR_SIZE_SCALE[d.size ?? 'M'] * depthOf(d).scale;
+}
+
+/** The haze of a sand piece at depth `z`: water tint (from its own layer's value toward far/near) and desaturation. */
+function hazeAt(baseTint: number, z: number): { tint: number; desat: number } {
+  const far = z <= DECOR_Z.mid;
+  const t = far ? z / DECOR_Z.mid : (z - DECOR_Z.mid) / (1 - DECOR_Z.mid);
+  return {
+    tint: far ? DECOR_Z.tintFar + (baseTint - DECOR_Z.tintFar) * t : baseTint + (DECOR_Z.tintNear - baseTint) * t,
+    desat: far ? DECOR_Z.desatFar * (1 - t) : 0,
+  };
+}
+
+/**
+ * The decor sprite shaded for `theme` (water tint by layer + haze by depth + shared top light) at `k` device px per
+ * unit. Depth is rounded to a few haze buckets so one baked copy serves nearby depths.
+ */
+export function decorImage(decorId: DecorId, theme: ThemeId, k: number, z: number = DECOR_Z.default): DecorImage | null {
   const sprite = decorSprite(decorId);
   if (!sprite) return null;
   const art = DECOR_ART[decorId];
-  const tint = art.layer === 'back' ? DECOR_TINT_BACK : DECOR_TINT_FRONT;
-  const key = `decor:${decorId}:${theme}`;
-  const canvas = scaledSprite(key, sprite, bucketPx(art.width * k), shade(THEME_ART[theme].tint, tint));
+  const baseTint = art.layer === 'back' ? DECOR_TINT_BACK : DECOR_TINT_FRONT;
+  const sand = DECOR[decorId].placement === 'sand';
+  const bucket = sand ? hazeBucket(z) : DECOR_Z.hazeSteps / 2;
+  const haze = sand ? hazeAt(baseTint, bucket / DECOR_Z.hazeSteps) : { tint: baseTint, desat: 0 };
+  const key = `decor:${decorId}:${theme}:h${bucket}`;
+  const canvas = scaledSprite(key, sprite, bucketPx(art.width * k), shade(THEME_ART[theme].tint, haze.tint, haze.desat));
   // Draw at the copy's own pixel size (1 sprite px = 1 device px at rest); a capped native copy stretches to fit.
   const native = canvas.width === sprite.w && sprite.w < art.width * k;
   const dw = native ? art.width : canvas.width / k;
@@ -132,9 +170,9 @@ export function decorImage(decorId: DecorId, theme: ThemeId, k: number): DecorIm
 }
 
 /** The decor contact shadow on the sand: fainter and wider while lifted, slid by the light (`shift`). */
-export function decorShadow(ctx: Ctx, decorId: DecorId, x: number, lift: number, shift: number, strength = 1, scale = 1): void {
+export function decorShadow(ctx: Ctx, decorId: DecorId, x: number, lift: number, shift: number, strength = 1, scale = 1, baseY = SAND_Y + 1): void {
   const sw = DECOR_ART[decorId].width * DECOR_SHADOW_W * (1 + lift * 0.15) * (strength < 1 ? 1.4 : 1) * scale;
-  dropShadow(ctx, x + shift, SAND_Y + 1, sw, sw * 0.2, DECOR_SHADOW_ALPHA * (1 - lift * 0.45) * strength);
+  dropShadow(ctx, x + shift, baseY, sw, sw * 0.2, DECOR_SHADOW_ALPHA * (1 - lift * 0.45) * strength);
 }
 
 /** Snaps a tank-space coordinate to the device pixel grid (crisp static sprites). */

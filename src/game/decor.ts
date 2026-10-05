@@ -3,6 +3,8 @@ import {
   COLLECTION_LIST,
   DECOR_LIMIT,
   DECOR,
+  DECOR_Z,
+  SAND_Y,
   HAPPINESS_DECOR_MAX,
   HAPPINESS_PER_DUPLICATE_DECOR,
   HAPPINESS_PER_SET,
@@ -79,10 +81,66 @@ export function maxDecor(tank: Pick<Tank, 'upgrades'>): number {
 
 /** A newly placed item with the default look (medium, not flipped, behind the fish). */
 export function newPlaced(id: string, decorId: DecorId, x: number): PlacedDecor {
-  return { id, decorId, x, flipped: false, size: 'M', depth: 'back' };
+  return { id, decorId, x, flipped: false, size: 'M', z: DECOR_Z.default };
 }
 
 /** Total items in the decor box. */
 export function boxCount(game: Pick<GameState, 'decorInventory'>): number {
   return Object.values(game.decorInventory).reduce((n, c) => n + (c ?? 0), 0);
+}
+
+// ---------------------------------------------------------------------------
+// Depth (perspective)
+// ---------------------------------------------------------------------------
+
+export interface DepthGeometry {
+  /** Base-line offset from the sand line (tank units; negative = further up/back). */
+  dy: number;
+  /** Perspective scale (multiplies the S/M/L size). */
+  scale: number;
+  /** Water tint strength over the sprite (0 crisp … ~0.34 hazy). */
+  tint: number;
+  /** Desaturation (0 … 0.25), far pieces only. */
+  desat: number;
+  /** Drawn over the fish (true) or behind them. */
+  frontOfFish: boolean;
+}
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+export const clampZ = (z: number): number => Math.min(1, Math.max(0, Number.isFinite(z) ? z : DECOR_Z.default));
+
+/** Where a piece at depth `z` stands and how it looks. At z = 0.5 it is exactly the old flat line. */
+export function depthGeometry(zIn: number): DepthGeometry {
+  const z = clampZ(zIn);
+  const far = z <= 0.5;
+  const t = far ? z / 0.5 : (z - 0.5) / 0.5; // 0…1 within each half
+  return {
+    dy: far ? lerp(DECOR_Z.farDy, 0, t) : lerp(0, DECOR_Z.nearDy, t),
+    scale: far ? lerp(DECOR_Z.farScale, 1, t) : lerp(1, DECOR_Z.nearScale, t),
+    tint: far ? lerp(DECOR_Z.tintFar, DECOR_Z.tintMid, t) : lerp(DECOR_Z.tintMid, DECOR_Z.tintNear, t),
+    desat: far ? lerp(DECOR_Z.desatFar, 0, t) : 0,
+    frontOfFish: z >= DECOR_Z.frontOfFish,
+  };
+}
+
+/** The depth whose base line is at tank y `baseY` (the inverse of `depthGeometry(z).dy`), clamped to 0…1. */
+export function zFromBaseY(baseY: number): number {
+  const dy = baseY - SAND_Y;
+  const z = dy <= 0 ? 0.5 * ((dy - DECOR_Z.farDy) / -DECOR_Z.farDy) : 0.5 + 0.5 * (dy / DECOR_Z.nearDy);
+  return clampZ(z);
+}
+
+/** Dragging magnet: close to the original sand line snaps onto it. */
+export function snapZ(z: number): number {
+  return Math.abs(z - DECOR_Z.mid) <= DECOR_Z.snap ? DECOR_Z.mid : clampZ(z);
+}
+
+/** Depth rounded to the haze cache buckets (so a baked sprite is reused across tiny differences). */
+export function hazeBucket(z: number): number {
+  return Math.round(clampZ(z) * DECOR_Z.hazeSteps);
+}
+
+/** Sand pieces drawn behind the fish / over the fish, each sorted far → near (painter's order). */
+export function decorDrawOrder<T extends Pick<PlacedDecor, 'z'>>(items: T[], inFront: boolean): T[] {
+  return items.filter((d) => depthGeometry(d.z).frontOfFish === inFront).sort((a, b) => clampZ(a.z) - clampZ(b.z));
 }

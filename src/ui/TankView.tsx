@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react';
 import {
   BOND,
   DECOR,
-  DECOR_SIZE_SCALE,
+  DECOR_Z,
   DECOR_SNAP_DIST,
   TANK_WIDTH,
   DECOR_LONG_PRESS_MS,
@@ -19,9 +19,10 @@ import {
   XP,
 } from '../game/constants';
 import { playableTricks } from '../game/bond';
-import { decorBox } from '../render/drawSprites';
+import { decorBox, sizeScale } from '../render/drawSprites';
+import { depthGeometry, snapZ, zFromBaseY } from '../game/decor';
 import { snapX } from '../render/snap';
-import type { PlacedDecor } from '../game/types';
+import type { DecorId, PlacedDecor } from '../game/types';
 import { dailyGiftAvailable, localDateKey } from '../game/economy';
 import { algaeTouchedBySponge } from '../game/sim';
 import { sound } from '../audio/sound';
@@ -36,11 +37,11 @@ type Point = { x: number; y: number };
 /** What a press in the tank started. */
 type Gesture =
   | { kind: 'sponge'; last: Point }
-  | { kind: 'decor'; id: string; grabOffset: number; startClientX: number; dragging: boolean; snap?: boolean }
+  | { kind: 'decor'; id: string; grabOffset: number; grabDy: number; startClientX: number; startClientY: number; dragging: boolean; snap?: boolean }
   /** Dragging the shop's "Try it" ghost along its line. */
-  | { kind: 'try'; grabOffset: number }
+  | { kind: 'try'; grabOffset: number; grabDy: number }
   /** A press on decor that isn't picked up yet: it only moves if held for DECOR_LONG_PRESS_MS. */
-  | { kind: 'hold'; id: string; grabOffset: number; startClientX: number; startClientY: number }
+  | { kind: 'hold'; id: string; grabOffset: number; grabDy: number; startClientX: number; startClientY: number }
   | { kind: 'pan'; lastClientX: number }
   /** A press on a fish: a tap on release, or petting once held for PET_HOLD_MS. */
   | { kind: 'press'; fishId: string; startClientX: number; startClientY: number }
@@ -55,15 +56,28 @@ const nextTrick = new Map<string, number>();
 /** Two fingers landing (and lifting) within this long is a tap: undo in Decorate mode. */
 const TWO_FINGER_TAP_MS = 300;
 
-/** Decorate mode: line the dragged item up with the tank center or another item when close. */
-function snapDecor(placedId: string, x: number): { x: number; guide: number | null } {
+/** How far (tank units) the pointer is below a sand piece's base line when grabbed, so it doesn't jump when dragged in depth. */
+function grabDyOf(decorId: DecorId, z: number, pointerY: number): number {
+  return DECOR[decorId].placement === 'sand' ? pointerY - (SAND_Y + depthGeometry(z).dy) : 0;
+}
+
+/** The depth a sand piece dragged to pointer height `pointerY` should have (null: floating pieces have none). */
+function dragZ(decorId: DecorId, pointerY: number, grabDy: number): number | undefined {
+  return DECOR[decorId].placement === 'sand' ? snapZ(zFromBaseY(pointerY - grabDy)) : undefined;
+}
+
+/** Decorate mode: line the dragged item up with the tank center or another item when close (only pieces at a similar depth). */
+function snapDecor(placedId: string, x: number, z: number | undefined): { x: number; guide: number | null } {
   const { game } = useGameStore.getState();
   const tank = game.tanks.find((t) => t.id === game.activeTankId);
   const me = tank?.decor.find((d) => d.id === placedId);
   if (!tank || !me) return { x, guide: null };
-  const half = (d: PlacedDecor) => (decorBox(d.decorId)[0] * DECOR_SIZE_SCALE[d.size]) / 2;
+  const half = (d: PlacedDecor) => (decorBox(d.decorId)[0] * sizeScale(d)) / 2;
   const line = DECOR[me.decorId].placement;
-  const others = tank.decor.filter((d) => d.id !== placedId && DECOR[d.decorId].placement === line).map((d) => ({ x: d.x, half: half(d) }));
+  const myZ = z ?? me.z;
+  const others = tank.decor
+    .filter((d) => d.id !== placedId && DECOR[d.decorId].placement === line && (line !== 'sand' || Math.abs(d.z - myZ) < DECOR_Z.snapNeighbour))
+    .map((d) => ({ x: d.x, half: half(d) }));
   return snapX(x, half(me), others, TANK_WIDTH / 2, DECOR_SNAP_DIST);
 }
 
@@ -154,7 +168,7 @@ function handleTankPress(renderer: Renderer, clientX: number, clientY: number): 
   }
 
   // "Try it": the ghost follows the finger until Buy & Place or Cancel.
-  if (store.tryDecor) return { kind: 'try', grabOffset: x - store.tryDecor.x };
+  if (store.tryDecor) return { kind: 'try', grabOffset: x - store.tryDecor.x, grabDy: grabDyOf(store.tryDecor.decorId, store.tryDecor.z, y) };
 
   // Decorate mode: decor is grabbed straight away (no hold); fish are just scenery.
   if (store.mode === 'decorate') {
@@ -162,7 +176,16 @@ function handleTankPress(renderer: Renderer, clientX: number, clientY: number): 
     if (decorId) {
       const placed = store.game.tanks.find((t) => t.id === store.game.activeTankId)?.decor.find((d) => d.id === decorId);
       store.selectDecor(decorId);
-      return { kind: 'decor', id: decorId, grabOffset: x - (placed?.x ?? x), startClientX: clientX, dragging: false, snap: true };
+      return {
+        kind: 'decor',
+        id: decorId,
+        grabOffset: x - (placed?.x ?? x),
+        grabDy: placed ? grabDyOf(placed.decorId, placed.z, y) : 0,
+        startClientX: clientX,
+        startClientY: clientY,
+        dragging: false,
+        snap: true,
+      };
     }
     store.selectDecor(null);
     return renderer.canPan ? { kind: 'pan', lastClientX: clientX } : null;
@@ -234,13 +257,14 @@ function handleTankPress(renderer: Renderer, clientX: number, clientY: number): 
       }
     }
     const grabOffset = x - (placed?.x ?? x);
+    const grabDy = placed ? grabDyOf(placed.decorId, placed.z, y) : 0;
     // Already picked up (its card is open): drag it right away.
-    if (decorId === store.selectedDecorId) return { kind: 'decor', id: decorId, grabOffset, startClientX: clientX, dragging: false };
+    if (decorId === store.selectedDecorId) return { kind: 'decor', id: decorId, grabOffset, grabDy, startClientX: clientX, startClientY: clientY, dragging: false };
     // Otherwise a tap is just a tap on the water; holding picks it up.
     store.selectFish(null);
     store.selectDecor(null);
     store.showQuickActions(null);
-    return { kind: 'hold', id: decorId, grabOffset, startClientX: clientX, startClientY: clientY };
+    return { kind: 'hold', id: decorId, grabOffset, grabDy, startClientX: clientX, startClientY: clientY };
   }
 
   store.selectFish(null);
@@ -408,7 +432,7 @@ export function TankView() {
         navigator.vibrate?.(15);
         sound.play('bubble');
         canvas.style.cursor = 'grabbing';
-        gestureRef.current = { kind: 'decor', id: gesture.id, grabOffset: gesture.grabOffset, startClientX: gesture.startClientX, dragging: true };
+        gestureRef.current = { kind: 'decor', id: gesture.id, grabOffset: gesture.grabOffset, grabDy: gesture.grabDy, startClientX: gesture.startClientX, startClientY: gesture.startClientY, dragging: true };
       }, DECOR_LONG_PRESS_MS);
     }
   };
@@ -458,11 +482,12 @@ export function TankView() {
       return;
     }
     if (gesture?.kind === 'try') {
-      useGameStore.getState().moveTry(point.x - gesture.grabOffset);
+      const t = useGameStore.getState().tryDecor;
+      useGameStore.getState().moveTry(point.x - gesture.grabOffset, t ? dragZ(t.decorId, point.y, gesture.grabDy) : undefined);
       return;
     }
     if (gesture?.kind === 'decor') {
-      if (!gesture.dragging && Math.abs(e.clientX - gesture.startClientX) < DRAG_THRESHOLD_PX) return;
+      if (!gesture.dragging && Math.hypot(e.clientX - gesture.startClientX, e.clientY - gesture.startClientY) < DRAG_THRESHOLD_PX) return;
       if (!gesture.dragging) {
         renderer.liftDecor(gesture.id);
         // One undo step per drag.
@@ -471,12 +496,14 @@ export function TankView() {
       gesture.dragging = true;
       e.currentTarget.style.cursor = 'grabbing';
       let x = point.x - gesture.grabOffset;
+      const dragged = useGameStore.getState().game.tanks.find((t) => t.id === useGameStore.getState().game.activeTankId)?.decor.find((d) => d.id === gesture.id);
+      const z = dragged ? dragZ(dragged.decorId, point.y, gesture.grabDy) : undefined;
       if (gesture.snap) {
-        const snapped = snapDecor(gesture.id, x);
+        const snapped = snapDecor(gesture.id, x, z);
         x = snapped.x;
         renderer.setSnapGuide(snapped.guide);
       }
-      useGameStore.getState().moveDecor(gesture.id, x);
+      useGameStore.getState().moveDecor(gesture.id, x, z);
       return;
     }
     // Hover: decor glows and the cursor hints it can be grabbed (look mode only; other modes use their CSS cursors).

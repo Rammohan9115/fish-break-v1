@@ -97,7 +97,7 @@ interface Tank {
   upgrades: number;       // capacity upgrades bought (0..5)
   cleanliness: number;    // 0..100
   algaeSpots: { id: string; x: number; y: number; size: number }[];
-  decor: { id: string; decorId: string; x: number; flipped: boolean; size: 'S' | 'M' | 'L'; depth: 'back' | 'front' }[];
+  decor: { id: string; decorId: string; x: number; flipped: boolean; size: 'S' | 'M' | 'L'; z: number /* 0 far … 1 near, 0.5 = sand line (sand items only) */ }[];
   style: { frame; substrate; lighting; lightingColor; water; bubbler; nameplate: boolean }; // STYLE_OPTIONS ids
   layoutPresets: ({ name: string; items: Omit<PlacedDecor, 'id'>[] } | null)[];  // 3 slots
   pellets: { id: string; x: number; y: number; vy: number; premium: boolean; landedAt: number | null }[];
@@ -290,8 +290,11 @@ No "Unlocks at Lv X" labels for decor. Theme level gates (Night/Coral/Pond) stay
 | pumpkin | Jack-o'-Lantern | Halloween | 80 shells | sand | glows orange at night |
 | spooky_tree | Spooky Tree | Halloween | 120 shells | sand | gentle sway |
 
-- **Placement:** sand items sit on the sand line, surface items float just below the HUD band at the top of the view, and mid-water items drift at ~40% depth.
-  Everything is moved by dragging horizontally. Up to **15 placed items per tank, +3 per capacity upgrade**. Buying with a full tank puts the piece in the decor box. Sell back for 50% (from the tank or the box).
+- **Placement:** sand items stand somewhere between the far and near parts of the sand (depth `z`), surface items float just below the HUD band at the top of the view, and mid-water items drift at ~40% depth.
+  Sand items are dragged sideways **and up/down**: dragging up pushes a piece back (smaller, hazier, higher, with a fainter shadow), down pulls it
+  forward (bigger, crisper, lower). `z` runs 0 (far) … 1 (near); 0.5 is the original sand line (it magnets there), so older tanks look unchanged.
+  Pieces with `z ≥ 0.7` draw over the fish, the rest behind them, each group far → near; only pieces at `z ≤ 0.65` attract fish (arch, anemone…).
+  Geometry lives in `depthGeometry` (`src/game/decor.ts`; constants `DECOR_Z`). Surface and mid-water pieces ignore depth. Up to **15 placed items per tank, +3 per capacity upgrade**. Buying with a full tank puts the piece in the decor box. Sell back for 50% (from the tank or the box).
 - **Art:** the collection sprites are cut from sheets in `public/assets/elements/` (`nature`, `ruins`, `village`, `playful`, `halloween`.PNG) by the `rect` in `DECOR_ART`.
 - **Halloween is an October event** (local date): buyable only in October. Owned pieces stay forever and keep working.
 
@@ -302,7 +305,7 @@ No "Unlocks at Lv X" labels for decor. Theme level gates (Night/Coral/Pond) stay
   - **Layouts**: 3 slots per tank. Save the current layout, or apply one. Applying puts everything in the box first, then places the layout's pieces; pieces you no longer own are skipped and counted in a toast.
   - **Tank Style**: see below.
 - **Pieces:** a press drags straight away. Snap guides line a piece up with the tank center or another piece's center or edges (6 units).
-  The selected piece gets a floating toolbar: ⇋ Flip · To front/back (sand pieces) · S/M/L (0.8/1.0/1.2) · 📦 To box · Sell.
+  The selected piece gets a floating toolbar: ⇋ Flip · Far/Mid/Near (sand pieces; ↑/↓ also nudge depth) · S/M/L (0.8/1.0/1.2) · 📦 To box · Sell.
 - **Undo/redo** (last 20 steps, this session): the banner buttons, Ctrl/Cmd+Z (Shift to redo), or a two-finger tap on touch. Selling clears the history, because money can't be undone.
 - **Try it** (shop): a ghost of the piece in the tank. Drag it, then **Buy & Place** or cancel.
 

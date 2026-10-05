@@ -215,8 +215,6 @@ export interface AlgaeSpot {
 }
 
 export type DecorSize = 'S' | 'M' | 'L';
-export type DecorDepth = 'back' | 'front';
-
 export interface PlacedDecor {
   id: string;
   decorId: DecorId;
@@ -225,8 +223,8 @@ export interface PlacedDecor {
   flipped: boolean;
   /** S/M/L = 0.8 / 1.0 / 1.2 scale. */
   size: DecorSize;
-  /** Sand items: behind the fish ('back') or in front of them ('front'). Surface and mid-water items ignore it. */
-  depth: DecorDepth;
+  /** Sand items: depth from 0 (far) to 1 (near); 0.5 is the sand line. Surface and mid-water items ignore it. */
+  z: number;
 }
 
 /** One item of a saved layout (no id: it's placed from the decor box when applied). */

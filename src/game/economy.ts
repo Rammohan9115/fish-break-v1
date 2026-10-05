@@ -1,5 +1,5 @@
 // Shop purchases, selling, feeding XP, and the daily gift. Pure: (state, ...) → result.
-import { decorAvailable, maxDecor, newPlaced } from './decor';
+import { clampZ, decorAvailable, maxDecor, newPlaced } from './decor';
 import {
   BREAK_XP_COOLDOWN_MS,
   CAPACITY_UPGRADE,
@@ -7,6 +7,7 @@ import {
   DECOR,
   DECOR_EDGE_MARGIN,
   DECOR_PLACEMENT_TRIES,
+  DECOR_Z,
   DECOR_SELL_FRACTION,
   FEED_XP_MAX_PER_HOUR,
   HOUR_MS,
@@ -162,20 +163,27 @@ export function checkBuyDecor(state: GameState, decorId: DecorId, now: number): 
   return null;
 }
 
-/** Picks a spot on the sand that is as far as possible from existing decor. */
-export function pickDecorX(tank: Tank, rng: Rng): number {
-  let best = TANK_WIDTH / 2;
+/**
+ * Picks a spot on the sand (x and depth) as far as possible from existing decor, so a new piece lands in open
+ * sand instead of on top of another. Depth is weighed against x so a piece behind another still counts as apart.
+ */
+export function pickDecorSpot(tank: Tank, rng: Rng): { x: number; z: number } {
+  let best: { x: number; z: number } = { x: TANK_WIDTH / 2, z: DECOR_Z.default };
   let bestGap = -1;
   for (let i = 0; i < DECOR_PLACEMENT_TRIES; i++) {
     const x = DECOR_EDGE_MARGIN + rng() * (TANK_WIDTH - 2 * DECOR_EDGE_MARGIN);
-    const gap = tank.decor.length === 0 ? Infinity : Math.min(...tank.decor.map((d) => Math.abs(d.x - x)));
+    const z = DECOR_Z.far + rng() * (DECOR_Z.near - DECOR_Z.far);
+    const gap = tank.decor.length === 0 ? Infinity : Math.min(...tank.decor.map((d) => Math.hypot(d.x - x, (d.z - z) * DECOR_SPOT_Z_WEIGHT)));
     if (gap > bestGap) {
-      best = x;
+      best = { x, z };
       bestGap = gap;
     }
   }
   return best;
 }
+
+/** One unit of depth counts as this many tank units when judging how far apart two pieces are. */
+const DECOR_SPOT_Z_WEIGHT = 300;
 
 /** Buys decor: it's placed in the active tank if there's room, otherwise it goes to the decor box. */
 export function buyDecor(state: GameState, decorId: DecorId, now: number, rng: Rng): Result & { boxed?: boolean } {
@@ -184,12 +192,13 @@ export function buyDecor(state: GameState, decorId: DecorId, now: number, rng: R
   const tank = activeTank(state)!;
   const paid = pay(state, DECOR[decorId].cost);
   if (tank.decor.length >= maxDecor(tank)) return { ...ok(addToBox(paid, decorId, 1)), boxed: true };
-  const placed = newPlaced(newId('decor', now, rng), decorId, pickDecorX(tank, rng));
+  const spot = pickDecorSpot(tank, rng);
+  const placed = { ...newPlaced(newId('decor', now, rng), decorId, spot.x), z: spot.z };
   return ok(mapTank(paid, tank.id, (t) => ({ ...t, decor: [...t.decor, placed] })));
 }
 
 /** "Try it" → Buy & Place: buys decor and places it at `x` with the previewed look (needs room). */
-export function buyAndPlaceDecor(state: GameState, decorId: DecorId, x: number, look: Pick<PlacedDecor, 'flipped' | 'size' | 'depth'>, now: number, rng: Rng): Result {
+export function buyAndPlaceDecor(state: GameState, decorId: DecorId, x: number, look: Pick<PlacedDecor, 'flipped' | 'size' | 'z'>, now: number, rng: Rng): Result {
   const error = checkBuyDecor(state, decorId, now);
   if (error) return fail(error);
   const tank = activeTank(state)!;
@@ -206,13 +215,13 @@ function addToBox(state: GameState, decorId: DecorId, n: number): GameState {
   return { ...state, decorInventory };
 }
 
-/** Places one item from the decor box into a tank at `x`. */
-export function placeFromBox(state: GameState, tankId: string, decorId: DecorId, x: number, now: number, rng: Rng): Result {
+/** Places one item from the decor box into a tank at `x` (and depth `z`; the sand line by default). */
+export function placeFromBox(state: GameState, tankId: string, decorId: DecorId, x: number, now: number, rng: Rng, z: number = DECOR_Z.default): Result {
   const tank = state.tanks.find((t) => t.id === tankId);
   if (!tank) return fail('notFound');
   if ((state.decorInventory[decorId] ?? 0) <= 0) return fail('notFound');
   if (tank.decor.length >= maxDecor(tank)) return fail('full');
-  const placed = newPlaced(newId('decor', now, rng), decorId, clampDecorX(x));
+  const placed = { ...newPlaced(newId('decor', now, rng), decorId, clampDecorX(x)), z: clampZ(z) };
   return ok(mapTank(addToBox(state, decorId, -1), tankId, (t) => ({ ...t, decor: [...t.decor, placed] })));
 }
 
@@ -225,11 +234,12 @@ export function storeDecor(state: GameState, tankId: string, placedId: string): 
   return ok(addToBox(next, placed.decorId, 1));
 }
 
-/** Changes a placed item's look: flip, size, or (sand items) back/front. */
-export function updateDecor(state: GameState, tankId: string, placedId: string, change: Partial<Pick<PlacedDecor, 'flipped' | 'size' | 'depth'>>): Result {
+/** Changes a placed item's look: flip, size, or (sand items) depth. */
+export function updateDecor(state: GameState, tankId: string, placedId: string, change: Partial<Pick<PlacedDecor, 'flipped' | 'size' | 'z'>>): Result {
   const tank = state.tanks.find((t) => t.id === tankId);
   if (!tank?.decor.some((d) => d.id === placedId)) return fail('notFound');
-  return ok(mapTank(state, tankId, (t) => ({ ...t, decor: t.decor.map((d) => (d.id === placedId ? { ...d, ...change } : d)) })));
+  const safe = change.z === undefined ? change : { ...change, z: clampZ(change.z) };
+  return ok(mapTank(state, tankId, (t) => ({ ...t, decor: t.decor.map((d) => (d.id === placedId ? { ...d, ...safe } : d)) })));
 }
 
 /** Sells one item from the decor box for 50%. */
@@ -246,7 +256,7 @@ export function sellBoxedDecor(state: GameState, decorId: DecorId): Result {
 export function savePreset(state: GameState, tankId: string, slot: number, name: string): Result {
   const tank = state.tanks.find((t) => t.id === tankId);
   if (!tank || slot < 0 || slot >= LAYOUT_PRESET_SLOTS) return fail('notFound');
-  const items = tank.decor.map(({ decorId, x, flipped, size, depth }) => ({ decorId, x, flipped, size, depth }));
+  const items = tank.decor.map(({ decorId, x, flipped, size, z }) => ({ decorId, x, flipped, size, z }));
   const layoutPresets = Array.from({ length: LAYOUT_PRESET_SLOTS }, (_, i) => (i === slot ? { name: name.trim() || `Layout ${slot + 1}`, items } : (tank.layoutPresets[i] ?? null)));
   return ok(mapTank(state, tankId, (t) => ({ ...t, layoutPresets })));
 }
@@ -269,7 +279,8 @@ export function applyPreset(state: GameState, tankId: string, slot: number, now:
       continue;
     }
     next = addToBox(next, item.decorId, -1);
-    decor.push({ ...item, id: newId('decor', now + decor.length, rng) });
+    // Older layouts have no depth: they stand on the sand line.
+    decor.push({ ...newPlaced('', item.decorId, item.x), ...item, z: clampZ(item.z ?? DECOR_Z.default), id: newId('decor', now + decor.length, rng) });
   }
   return { ...ok(mapTank(next, tankId, (t) => ({ ...t, decor }))), skipped };
 }
@@ -473,10 +484,11 @@ export function clampDecorX(x: number): number {
 }
 
 /** Slides placed decor horizontally along the sand. */
-export function moveDecor(state: GameState, tankId: string, placedId: string, x: number): Result {
+/** Moves a placed item sideways (and, when `z` is given, in depth). */
+export function moveDecor(state: GameState, tankId: string, placedId: string, x: number, z?: number): Result {
   const tank = state.tanks.find((t) => t.id === tankId);
   if (!tank?.decor.some((d) => d.id === placedId)) return fail('notFound');
-  return ok(mapTank(state, tankId, (t) => ({ ...t, decor: t.decor.map((d) => (d.id === placedId ? { ...d, x: clampDecorX(x) } : d)) })));
+  return ok(mapTank(state, tankId, (t) => ({ ...t, decor: t.decor.map((d) => (d.id === placedId ? { ...d, x: clampDecorX(x), ...(z === undefined ? {} : { z: clampZ(z) }) } : d)) })));
 }
 
 /** Why a fish can't move to `tankId` (null = it can): target must exist, have room, and suit theme-only species. */

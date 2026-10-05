@@ -1,7 +1,7 @@
 // All balance numbers live here. Logic must not contain magic numbers.
 import type { CollectionDef, CollectionId, DecorDef, DecorId, DecorSize, Price, StyleCategory, StyleOption, TankStyle, ThemeId } from './types';
 
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 
 // ---------------------------------------------------------------------------
 // Time
@@ -305,6 +305,43 @@ export const LAYOUT_PRESET_SLOTS = 3;
 export const DECOR_UNDO_STEPS = 20;
 /** Decorate mode: snap to the tank center or another item's center/edge within this distance (tank units). */
 export const DECOR_SNAP_DIST = 6;
+
+/**
+ * Decor depth. Sand pieces have `z` from 0 (far, up in the sand) to 1 (near, down toward the glass); 0.5 is the
+ * original sand line, so older tanks look the same. Everything is piecewise linear through that identity.
+ */
+export const DECOR_Z = {
+  default: 0.5,
+  /** Where an old "front" piece lands when a save is migrated. */
+  migratedFront: 0.85,
+  /** The Far / Mid / Near buttons. */
+  far: 0.15,
+  mid: 0.5,
+  near: 0.85,
+  /** Pieces at or beyond this depth are drawn over the fish; nearer-to-the-back ones behind them. */
+  frontOfFish: 0.7,
+  /** Fish can't swim down to far/near bases; only pieces at or behind this depth attract them (arch, anemone…). */
+  attractMax: 0.65,
+  /** ↑/↓ nudge in Decorate mode. */
+  step: 0.1,
+  /** Dragging magnets onto the original line within this. */
+  snap: 0.04,
+  /** Base-line offset from SAND_Y (tank units) at z = 0 and z = 1. */
+  farDy: -34,
+  nearDy: 26,
+  /** Perspective scale at z = 0 and z = 1. */
+  farScale: 0.72,
+  nearScale: 1.22,
+  /** Water tint over the sprite at z = 0, 0.5 and 1 (0.5 and 1 are the old back/front values), and desaturation at z = 0. */
+  tintFar: 0.34,
+  tintMid: 0.16,
+  tintNear: 0.03,
+  desatFar: 0.25,
+  /** Cache buckets for haze (z is rounded to 1/steps when baking a sprite). */
+  hazeSteps: 5,
+  /** Pieces closer than this in z can snap to each other's x. */
+  snapNeighbour: 0.15,
+} as const;
 
 // ---------------------------------------------------------------------------
 // Tank styles (code-drawn; no level gates; at least 2 free per category)

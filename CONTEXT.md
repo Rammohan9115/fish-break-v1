@@ -406,3 +406,10 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
 - **Phones:** `PORTRAIT_FISH_BOOST` (1.2 ≤ 560px wide) via `setFishViewBoost`, applied inside `fishScale` so art, hitboxes and mouths stay consistent. Decor shop folds where/price/owned filters into "More filters".
 - **Keyboard:** ←/→ nudge the selected decor piece (Shift = 40 units) in Decorate mode.
 - **A11y:** `.locked-tag` contrast fixed, accessible names start with visible text (tank chip, Box tab), min text 12px, rename inputs 44px.
+
+## Decor depth (save v7)
+- `PlacedDecor.depth: 'back'|'front'` became `z` (0 far … 1 near, 0.5 = the old flat line). Migration 6→7 maps back→0.5, front→0.85 (decor and saved layouts). `applyPreset` defaults a missing `z` to 0.5.
+- **Pure geometry** (`game/decor.ts`): `depthGeometry(z)` → `{ dy, scale, tint, desat, frontOfFish }` (piecewise linear through the identity at 0.5), `zFromBaseY` (drag inverse), `snapZ`, `hazeBucket`, `decorDrawOrder`. Constants: `DECOR_Z`.
+- **Rendering:** `render/drawSprites.ts` `depthOf`/`sizeScale` are the single source for a piece's perspective scale and base offset; `restY(decorId, h, z)`, `pointAt`, shadows (own base line, fainter when far), `fishPush`, hit-test (`Renderer.decorAt` goes front-to-back in paint order), selection and the toolbar anchor all use them. Haze (water tint + grey wash) is baked per depth bucket into the sprite cache key (`decor:<id>:<theme>:h<bucket>`). `Renderer.paintOrder` replaces the array-order loops.
+- **Interaction:** TankView drags track pointer y (`grabDy`, `dragZ`); toolbar Far/Mid/Near; ↑/↓ nudge `z` by 0.1; tray drops and the Try-it ghost take depth from the pointer height; `snapDecor` only snaps against pieces at a similar depth. Economy: `moveDecor(..., x, z?)`, `pickDecorSpot` (2-D gap), `placeFromBox(..., z?)`.
+- Not done: parallax (far pieces shifting less when panning/tilting) was left out of v1.

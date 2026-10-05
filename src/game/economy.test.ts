@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { BREEDING, DECOR_LIMIT, FEED_XP_MAX_PER_HOUR, HOUR_MS, TANK_BASE_CAPACITY, XP } from './constants';
 import {
   collectDrop,
+  updateDecor,
+  placeFromBox,
   restoreSoldDecor,
   restoreSoldFish,
   applyTheme,
@@ -26,7 +28,7 @@ import {
   localDateKey,
   moveDecor,
   moveFish,
-  pickDecorX,
+  pickDecorSpot,
   renameTank,
   sellDecor,
   sellFish,
@@ -186,16 +188,26 @@ describe('decor', () => {
   });
 
   it('spreads new decor away from existing items', () => {
-    const tank = makeTank({ decor: [{ id: 'a', decorId: 'rock', x: 500, flipped: false, size: 'M' as const, depth: 'back' as const }] });
-    const x = pickDecorX(tank, seededRng(3));
-    expect(Math.abs(x - 500)).toBeGreaterThan(150);
+    const tank = makeTank({ decor: [{ id: 'a', decorId: 'rock', x: 500, flipped: false, size: 'M' as const, z: 0.5 }] });
+    const spot = pickDecorSpot(tank, seededRng(3));
+    expect(Math.hypot(spot.x - 500, (spot.z - 0.5) * 300)).toBeGreaterThan(150);
+    expect(spot.z).toBeGreaterThanOrEqual(0);
+    expect(spot.z).toBeLessThanOrEqual(1);
+  });
+
+  it('a new piece lands behind or in front of a crowded line, not on it', () => {
+    const line = Array.from({ length: 6 }, (_, i) => ({ id: `l${i}`, decorId: 'rock' as const, x: 120 + i * 150, flipped: false, size: 'M' as const, z: 0.5 }));
+    const tank = makeTank({ decor: line });
+    const spot = pickDecorSpot(tank, seededRng(11));
+    const nearest = Math.min(...line.map((d) => Math.hypot(d.x - spot.x, (d.z - spot.z) * 300)));
+    expect(nearest).toBeGreaterThan(60);
   });
 
   it('sells back for 50% in the original currency', () => {
     expect(decorRefund('plant_tall')).toEqual({ currency: 'shells', amount: 17 });
     expect(decorRefund('shipwreck')).toEqual({ currency: 'pearls', amount: 3 });
     const state = rich({ shells: 0 });
-    state.tanks = [makeTank({ decor: [{ id: 'd1', decorId: 'castle', x: 300, flipped: false, size: 'M' as const, depth: 'back' as const }] })];
+    state.tanks = [makeTank({ decor: [{ id: 'd1', decorId: 'castle', x: 300, flipped: false, size: 'M' as const, z: 0.5 }] })];
     const next = okState(sellDecor(state, 'tank-1', 'd1'));
     expect(next.shells).toBe(75);
     expect(next.tanks[0]!.decor).toHaveLength(0);
@@ -286,7 +298,7 @@ describe('daily gift', () => {
 describe('decor placement', () => {
   it('slides decor along the sand, clamped away from the glass', () => {
     const state = rich();
-    state.tanks = [makeTank({ decor: [{ id: 'd1', decorId: 'rock', x: 300, flipped: false, size: 'M' as const, depth: 'back' as const }] })];
+    state.tanks = [makeTank({ decor: [{ id: 'd1', decorId: 'rock', x: 300, flipped: false, size: 'M' as const, z: 0.5 }] })];
     expect(okState(moveDecor(state, 'tank-1', 'd1', 640)).tanks[0]!.decor[0]!.x).toBe(640);
     expect(okState(moveDecor(state, 'tank-1', 'd1', -100)).tanks[0]!.decor[0]!.x).toBe(clampDecorX(-100));
     expect(clampDecorX(-100)).toBeGreaterThan(0);
@@ -407,6 +419,38 @@ describe('nursery', () => {
   });
 });
 
+describe('moving decor in depth', () => {
+  const piece = { id: 'd1', decorId: 'rock' as const, x: 300, flipped: false, size: 'M' as const, z: 0.5 };
+  const base = () => makeState({ tank: { decor: [piece] } });
+
+  it('moveDecor sets x and, when given, depth (both clamped)', () => {
+    const r = moveDecor(base(), 'tank-1', 'd1', 5000, 3);
+    if (!r.ok) throw new Error('should move');
+    expect(r.state.tanks[0]!.decor[0]).toMatchObject({ x: 930, z: 1 });
+  });
+
+  it('moveDecor without a depth leaves it alone', () => {
+    const r = moveDecor(makeState({ tank: { decor: [{ ...piece, z: 0.2 }] } }), 'tank-1', 'd1', 400);
+    if (!r.ok) throw new Error('should move');
+    expect(r.state.tanks[0]!.decor[0]).toMatchObject({ x: 400, z: 0.2 });
+  });
+
+  it('updateDecor clamps depth', () => {
+    const r = updateDecor(base(), 'tank-1', 'd1', { z: -2 });
+    if (!r.ok) throw new Error('should update');
+    expect(r.state.tanks[0]!.decor[0]!.z).toBe(0);
+  });
+
+  it('placeFromBox places at the sand line unless a depth is given', () => {
+    const state = { ...makeState(), decorInventory: { rock: 2 } };
+    const a = placeFromBox(state, 'tank-1', 'rock', 400, T0, seededRng(1));
+    const b = placeFromBox(state, 'tank-1', 'rock', 400, T0, seededRng(1), 0.9);
+    if (!a.ok || !b.ok) throw new Error('should place');
+    expect(a.state.tanks[0]!.decor[0]!.z).toBe(0.5);
+    expect(b.state.tanks[0]!.decor[0]!.z).toBe(0.9);
+  });
+});
+
 describe('collectDrop', () => {
   const drops = [
     { id: 's1', x: 100, value: 4, pearl: false },
@@ -461,7 +505,7 @@ describe('undoing a sale', () => {
   });
 
   it('a sold decor piece goes back exactly where it was, for its refund', () => {
-    const placed = { id: 'd1', decorId: 'rock' as const, x: 321, flipped: true, size: 'L' as const, depth: 'front' as const };
+    const placed = { id: 'd1', decorId: 'rock' as const, x: 321, flipped: true, size: 'L' as const, z: 0.85 };
     const state = makeState({ tank: { decor: [placed] }, overrides: { shells: 50 } });
     const sold = sellDecor(state, 'tank-1', 'd1');
     if (!sold.ok) throw new Error('should sell');

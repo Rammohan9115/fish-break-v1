@@ -4,6 +4,7 @@ import {
   CAPACITY_UPGRADE,
   CORRUPT_BACKUPS_KEPT,
   CORRUPT_SAVE_PREFIX,
+  DECOR_Z,
   DEFAULT_TANK_STYLE,
   LAYOUT_PRESET_SLOTS,
   MINUTE_MS,
@@ -88,6 +89,26 @@ export const migrations: Record<number, Migration> = {
         })
       : data.tanks;
     return { ...data, tanks, decorInventory: {}, ownedStyles: [] };
+  },
+  // v6 → v7: decor depth. The back/front flag becomes a depth `z` (0 far … 1 near, 0.5 = the old sand line):
+  // "back" pieces stay exactly where they were (0.5); "front" pieces move a little nearer. Saved layouts too.
+  6: (data) => {
+    const toZ = (item: unknown): unknown => {
+      if (!isObject(item)) return item;
+      const { depth, ...rest } = item;
+      return { ...rest, z: isNum(item.z) ? item.z : depth === 'front' ? DECOR_Z.migratedFront : DECOR_Z.default };
+    };
+    const tanks = Array.isArray(data.tanks)
+      ? data.tanks.map((t) => {
+          if (!isObject(t)) return t;
+          const decor = Array.isArray(t.decor) ? t.decor.map(toZ) : t.decor;
+          const layoutPresets = Array.isArray(t.layoutPresets)
+            ? t.layoutPresets.map((p) => (isObject(p) && Array.isArray(p.items) ? { ...p, items: p.items.map(toZ) } : p))
+            : t.layoutPresets;
+          return { ...t, decor, layoutPresets };
+        })
+      : data.tanks;
+    return { ...data, tanks };
   },
 };
 
