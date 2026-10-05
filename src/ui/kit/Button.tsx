@@ -57,6 +57,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ref={ref}
       type="button"
       className={classes}
+      // Icon-only buttons show their label as a tooltip on hover (desktop).
+      title={variant === 'icon' ? (rest['aria-label'] as string | undefined) : undefined}
       aria-disabled={blocked || undefined}
       aria-busy={busy || undefined}
       onClick={(e) => {

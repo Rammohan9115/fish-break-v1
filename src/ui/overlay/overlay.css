@@ -521,3 +521,146 @@
     gap: var(--space-1);
   }
 }
+
+/* ==== Phase 4: shop grid, item details, density, toasts, desktop polish ==== */
+
+/* Shop: auto-fill grid (2 columns on a phone, 3–5 on desktop), compact cards, notes clamp to 2 lines. */
+.shop-grid {
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+.shop-note {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+.shop-more {
+  min-height: var(--tap-min);
+  padding: 0 var(--space-3);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: 800;
+  color: var(--color-brand);
+  background: none;
+  border: none;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.shop-details-art {
+  display: grid;
+  place-items: center;
+  min-height: 84px;
+  margin-bottom: var(--space-2);
+}
+.shop-facts {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+.shop-fact {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.shop-fact dt {
+  color: var(--color-text-muted);
+}
+.shop-fact dd {
+  margin: 0;
+  font-weight: 800;
+  text-align: right;
+}
+.shop-details-text {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-small);
+  color: var(--color-text-muted);
+}
+/* The Shop's tab row scrolls sideways instead of wrapping when it doesn't fit. */
+.sheet-tabs > * {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.sheet-tabs > *::-webkit-scrollbar {
+  display: none;
+}
+
+/* ---- Density: the HUD and dock scale with --ui-zoom (set by useDensity; 1 except on big screens) ---- */
+.hud,
+.app .toolbar {
+  zoom: var(--ui-zoom, 1);
+}
+/* `zoom` also scales positioning lengths, so offsets are divided by it to stay where they were. */
+.hud {
+  right: calc(var(--panel-w) / var(--ui-zoom, 1));
+}
+.app .toolbar {
+  right: calc((10px + var(--panel-w) + env(safe-area-inset-right)) / var(--ui-zoom, 1));
+  bottom: calc((10px + env(safe-area-inset-bottom)) / var(--ui-zoom, 1));
+  max-width: calc((100vw - var(--panel-w) - 20px) / var(--ui-zoom, 1));
+}
+
+/* ---- Toasts: bottom-left on desktop (away from the right-hand panel); on a phone with a modal sheet or dialog open they
+   move to the top, above the scrim, so they are neither hidden behind it nor on top of its buttons. ---- */
+@media (hover: hover) and (min-width: 900px) {
+  .toasts {
+    left: calc(16px + env(safe-area-inset-left));
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    align-items: flex-start;
+    width: min(440px, 40vw);
+    transform: none;
+  }
+}
+.app:has(.sheet-layer-modal) .toasts {
+  top: calc(var(--vv-top, 0px) + 6px);
+  bottom: auto;
+  z-index: var(--z-celebrate);
+}
+@media (hover: hover) and (min-width: 900px) {
+  .app:has(.sheet-layer-modal) .toasts {
+    top: auto;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+}
+
+/* ---- Desktop polish: pointer cursors, hover states, a clear keyboard focus ring ---- */
+button:not(:disabled),
+[role='button'],
+[role='tab'],
+[role='radio'],
+label.switch,
+.chip,
+.tile.shop-item .shop-more {
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .chip:hover:not(.chip-on),
+  .tab:hover:not(.tab-active) {
+    background: var(--color-surface-alt);
+  }
+  .shop-item:not(.shop-item-locked) {
+    transition: transform var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease);
+  }
+  .shop-item:not(.shop-item-locked):hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-float);
+  }
+  .fc-menu .btn:hover:not(.btn-blocked) {
+    filter: brightness(1.06);
+  }
+}
+/* The ring is drawn inside the bright header bands too: white outside, dark inside, so it never vanishes on purple. */
+:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px #ffffff;
+}
+.sheet-head :focus-visible {
+  outline-color: #ffffff;
+  box-shadow: 0 0 0 2px var(--color-brand-edge);
+}
+
+/* Tighter (compact) spacing must never shrink a control below a finger: chips keep a 44px minimum width too. */
+.chip {
+  min-width: var(--tap-min);
+}

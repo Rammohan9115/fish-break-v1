@@ -489,7 +489,7 @@ These keep the interface calm on every screen. `src/ui/kit/index.ts` points here
 9. **Quiet and kind.** Sound starts muted, no streaks, no guilt, motion respects `prefers-reduced-motion`.
 
 ## Overlay system (`src/ui/overlay/`)
-One responsive system for every popup, panel and card (Phases 1–3 are live; density modes, the Shop grid and polish are Phase 4).
+One responsive system for every popup, panel and card (Phases 1–4).
 - **Variants, picked by size and input, never by user agent** (`pickVariant` in `overlay/rules.ts`, live via `useOverlayVariant`):
   **Dialog** (confirmations, celebrations: centred, `clamp(280px, 92vw, 400px)`, always fits without scrolling),
   **Sheet** (panels on narrow screens < 600 px wide: bottom sheet, snap 40/60/92 %, drag handle, swipe down to close),
@@ -503,6 +503,11 @@ One responsive system for every popup, panel and card (Phases 1–3 are live; de
   so overlays follow the visual viewport and stay above the on-screen keyboard; heights use `100dvh` (with a `100vh` fallback), never raw `100vh`.
   One side panel at a time (opening a panel puts a fish/decor card away, and vice versa).
 - **Fit budget:** FishCard (tabs Status / Bond / Breeding, ⋯ menu for Move and Sell, Pair up pinned in the footer), DecorCard, quick actions, the decor toolbar, every Dialog, the coachmark and the try-it banner never scroll on any of the 19 screens.
+- **Density modes** (by available space, `pickDensity`): compact (< 400 px wide or < 700 px tall, which includes 150–200 % zoom), regular, spacious (≥ 1600 px wide).
+  `useDensity` sets `data-density`, the spacing/type variables (`densityVars`: body always 14–18 px, labels ≥ 12 px) and `--ui-zoom` (the HUD and dock grow up to 1.35× on big screens). A tighter density must never shrink a target below 44 px (`.chip` has a min width).
+- **Shop:** items are an auto-fill grid (`minmax(140px, 1fr)`: 2 columns on a phone, 3–5 on desktop); a card's note clamps to 2 lines and **Details** opens a Dialog with the facts and a Buy button (`ShopItem` `details` prop).
+- **Toasts:** one at a time; bottom-left on a desktop (away from the right-hand panel); on a phone while a modal sheet or dialog is open they move to the top, above the scrim.
+- **Desktop polish:** pointer cursors, hover states, a two-tone focus ring (visible on the purple headers too), icon-only buttons get a tooltip from their `aria-label`; Esc closes and Enter confirms.
 - **Use the kit:** `<Sheet>` / `<ConfirmDialog>` pick the right primitive (`kind="dialog"` for dialogs, default panel). Put tabs/filters in `tabs`, actions in `footer`.
   z-index values are only the `--z-*` tokens (`tokens.ts`); no literals.
 - **Every new overlay must be added to `e2e/overlays/registry.js` (and to `enforced.js` once it passes).** `e2e/overlays.spec.ts` opens every

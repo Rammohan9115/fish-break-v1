@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   CAPACITY_UPGRADE,
   COLLECTION_LIST,
+  COLLECTIONS,
   DECOR_SEEN_KEY,
   DECOR,
   DECOR_LIST,
@@ -141,6 +142,8 @@ interface ItemProps {
   extra?: ReactNode;
   /** A small badge over the art (e.g. "New"). */
   badge?: ReactNode;
+  /** Facts shown in the item-details dialog (opened from "Details"); [label, value] rows plus optional free text. */
+  details?: { facts: [string, ReactNode][]; text?: ReactNode };
 }
 
 function ShopItem({
@@ -156,7 +159,9 @@ function ShopItem({
   onBuy,
   extra,
   badge,
+  details,
 }: ItemProps) {
+  const [open, setOpen] = useState(false);
   const locked = error === "locked";
   const block =
     error && !locked ? (blockedOverride ?? blocked(error, price, game)) : null;
@@ -172,6 +177,11 @@ function ShopItem({
       </div>
       <div className="shop-title">{title}</div>
       {note && <div className="shop-note">{note}</div>}
+      {details && (
+        <button type="button" className="shop-more" aria-haspopup="dialog" onClick={() => setOpen(true)}>
+          Details
+        </button>
+      )}
       {price && <PriceTag price={price} short={error === "cost"} />}
       {!locked && (
         <Button
@@ -185,6 +195,52 @@ function ShopItem({
         </Button>
       )}
       {extra}
+      {open && details && (
+        <Sheet
+          kind="dialog"
+          title={title}
+          onClose={() => setOpen(false)}
+          className="shop-details"
+          footer={
+            locked ? (
+              <Button block onClick={() => setOpen(false)}>
+                Close
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                block
+                disabledReason={block?.reason}
+                onClick={() => {
+                  if (onBuy()) {
+                    sound.play("coin");
+                    setOpen(false);
+                  }
+                }}
+              >
+                {block ? block.label : buyLabel}
+                {price && !block && (
+                  <>
+                    {" · "}
+                    <PriceTag price={price} />
+                  </>
+                )}
+              </Button>
+            )
+          }
+        >
+          <div className="shop-details-art">{art}</div>
+          <dl className="shop-facts">
+            {details.facts.map(([label, value]) => (
+              <div key={label} className="shop-fact">
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+          {details.text && <p className="shop-details-text">{details.text}</p>}
+        </Sheet>
+      )}
     </div>
   );
 }
@@ -224,6 +280,16 @@ function FishTab({ game }: { game: GameState }) {
                   text={`Grows in ${formatMinutes(s.growMinutes)} · drops ${s.dropValue} 🐚`}
                 />
               }
+              details={{
+                facts: [
+                  ["Grows up in", formatMinutes(s.growMinutes)],
+                  ["Drops", <RichText key="d" text={`${s.dropValue} 🐚 every ${formatMinutes(s.dropMinutes)}`} />],
+                  ["Sells for", <RichText key="s" text={`${s.sellPrice} 🐚 as an adult`} />],
+                  ["Unlocks at", `Lv ${s.unlockLevel}`],
+                  ...(theme ? ([["Lives in", `${theme} tanks only`]] as [string, ReactNode][]) : []),
+                ],
+                text: s.traits.length > 0 ? s.traits.join(" · ") : undefined,
+              }}
               onBuy={() => buyFish(s.id)}
             />
           );
@@ -351,6 +417,14 @@ function DecorItem({
       error={error}
       game={game}
       note={gain > 0 ? `+${gain} 😊 in ${tank.name}` : undefined}
+      details={{
+        facts: [
+          ["Collection", d.collection ? `${COLLECTIONS[d.collection].icon} ${COLLECTIONS[d.collection].name}` : "🪸 Classic"],
+          ["Goes", d.placement === "sand" ? "On the sand" : d.placement === "surface" ? "At the surface" : "Mid-water"],
+          ["Happiness", gain > 0 ? `+${gain} 😊 in ${tank.name}` : "No more than the pieces you already have"],
+          ["Sells back for", <PriceTag key="r" price={economy.decorRefund(d.id)} />],
+        ],
+      }}
       onBuy={() => buyDecor(d.id)}
     />
   );

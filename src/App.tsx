@@ -14,6 +14,7 @@ import { LoadingScreen, useArtPreload } from './ui/LoadingScreen';
 import { useLayoutVars } from './ui/useLayoutVars';
 import { SaveLockPrompt } from './ui/SaveLockPrompt';
 import { OverlayRoot } from './ui/overlay/OverlayRoot';
+import { useDensity } from './ui/overlay/useDensity';
 import { useVisualViewportVars } from './ui/overlay/useVisualViewport';
 import { UpdatePrompt } from './ui/UpdatePrompt';
 import { LevelUpModal } from './ui/LevelUpModal';
@@ -116,6 +117,7 @@ export function App() {
   const art = useArtPreload();
   useLayoutVars(art.ready && !onBreak);
   useVisualViewportVars();
+  useDensity(art.ready);
 
   // Esc ends a break, or closes cards/panels and leaves Feed/Premium/Clean mode.
   useEffect(() => {

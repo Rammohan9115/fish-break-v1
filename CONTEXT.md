@@ -433,3 +433,10 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
 - FishCard redesign: header (thumbnail, editable name, species · stage, ⋯ menu with Move + Sell), tabs Status (slim bars) / Bond / Breed, `Pair up` in the footer (tapped early it jumps to Breed and highlights the first missing line). DecorCard: preview + name + collection, two short lines, Decorate / Sell back in the footer.
 - Removed: the legacy inline sheet (`Sheet inline`, `.sheet-layer-inline`, `--inline-sheet-w`, the old phone bottom-sheet block in kit.css, per-card body CSS). `kit/Sheet.tsx` is now only a facade over Dialog / Panel.
 - Not done: Coachmark / Tooltip still position themselves (static anchors, not followers); density modes; Shop grid + item-details dialog; toast placement on desktop; hover/focus polish; DailyGift as a Dialog.
+
+## Overlay system, Phase 4 (density, shop, toasts, polish)
+- Density: `overlay/rules.ts` (`densityVars`, `uiZoom`, `DENSITY_SCALE`, `TEXT_LIMITS`), `overlay/useDensity.ts` (applies vars + `--ui-zoom` on `.app`). `.hud` and `.app .toolbar` use CSS `zoom: var(--ui-zoom)`; their offsets are divided by it (zoom also scales positioning lengths).
+- Shop: `.shop-grid` `minmax(140px, 1fr)`, `.shop-note` 2-line clamp, `ShopItem` `details={{ facts, text }}` → Details dialog (`.shop-details`) for fish and decor.
+- Toasts: desktop bottom-left; with `.sheet-layer-modal` open they sit at the top above the scrim (z `--z-celebrate`). Button: `title` = `aria-label` for `variant="icon"`.
+- Tests: `e2e/phase4.spec.ts`; the overlay matrix (589 measurements) still passes. A regression it caught: compact spacing made a chip 41 px wide (fixed with `min-width: var(--tap-min)`).
+- Still not done: Coachmark / Tooltip as Popovers, DailyGift as a Dialog (kept as the auto-fading card).

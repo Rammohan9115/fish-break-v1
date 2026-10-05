@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dialogWidth, needsReplace, pickDensity, pickVariant, placePopover, panelWidth, settleSheet, SHEET_SNAPS, tankShareBesidePanel, type ScreenEnv } from './rules';
+import { densityVars, dialogWidth, needsReplace, pickDensity, pickVariant, placePopover, panelWidth, settleSheet, SHEET_SNAPS, tankShareBesidePanel, uiZoom, type ScreenEnv } from './rules';
 
 const env = (width: number, height: number, mode: 'touch' | 'mouse'): ScreenEnv => ({ width, height, coarse: mode === 'touch', hover: mode === 'mouse' });
 
@@ -163,5 +163,51 @@ describe('needsReplace (sticky popovers)', () => {
 
   it('re-places when its own size changes (switching tabs)', () => {
     expect(needsReplace(prev, anchor, { w: 300, h: 300 }, 140)).toBe(true);
+  });
+});
+
+describe('density tokens', () => {
+  it('regular is the base token set', () => {
+    const v = densityVars('regular');
+    expect(v['--space-3']).toBe('12px');
+    expect(v['--text-body']).toBe('14px');
+    expect(v['--text-label']).toBe('12px');
+  });
+
+  it('compact tightens spacing but never shrinks type below the minimums (body 14, label 12)', () => {
+    const v = densityVars('compact');
+    expect(Number.parseFloat(v['--space-4']!)).toBeLessThan(16);
+    expect(v['--text-body']).toBe('14px');
+    expect(v['--text-label']).toBe('12px');
+  });
+
+  it('spacious grows spacing and type, but body stays within 18px', () => {
+    const v = densityVars('spacious');
+    expect(Number.parseFloat(v['--space-4']!)).toBeGreaterThan(16);
+    expect(Number.parseFloat(v['--text-body']!)).toBeGreaterThan(14);
+    expect(Number.parseFloat(v['--text-body']!)).toBeLessThanOrEqual(18);
+  });
+
+  it('every density keeps body ≥ 14px, labels ≥ 12px and body ≤ 18px', () => {
+    for (const d of ['compact', 'regular', 'spacious'] as const) {
+      const v = densityVars(d);
+      expect(Number.parseFloat(v['--text-body']!)).toBeGreaterThanOrEqual(14);
+      expect(Number.parseFloat(v['--text-body']!)).toBeLessThanOrEqual(18);
+      expect(Number.parseFloat(v['--text-label']!)).toBeGreaterThanOrEqual(12);
+    }
+  });
+});
+
+describe('uiZoom', () => {
+  it('is 1 except on spacious (big) screens, where the HUD and dock grow so they do not look tiny', () => {
+    expect(uiZoom('compact', 375)).toBe(1);
+    expect(uiZoom('regular', 1366)).toBe(1);
+    expect(uiZoom('spacious', 1600)).toBeGreaterThanOrEqual(1);
+    expect(uiZoom('spacious', 1920)).toBeGreaterThan(1.1);
+    expect(uiZoom('spacious', 2560)).toBeGreaterThan(uiZoom('spacious', 1920));
+  });
+
+  it('is capped', () => {
+    expect(uiZoom('spacious', 10000)).toBe(1.35);
   });
 });

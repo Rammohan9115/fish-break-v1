@@ -1,6 +1,7 @@
 // The pure rules of the overlay system: which primitive an overlay becomes on a given screen, how wide a side panel is,
 // which density the screen is in, where a sheet snaps, and where a popover goes. No DOM: unit-tested for every screen.
-// (The hooks in useOverlayVariant.ts feed these from matchMedia / the visual viewport.)
+// (The hooks in useScreenEnv.ts feed these from matchMedia / the visual viewport.)
+import { fontSize, space } from '../tokens';
 
 /** What the screen is like. Never derived from the user agent. */
 export interface ScreenEnv {
@@ -64,12 +65,32 @@ export function pickDensity(size: { width: number; height: number }): Density {
   return 'regular';
 }
 
-/** Per-density sizing used to set CSS custom properties (spacing scale, body type, icon size). Type never exceeds 18px. */
-export const DENSITY_TOKENS: Record<Density, { space: number; body: number; label: number; icon: number }> = {
-  compact: { space: 0.85, body: 14, label: 12, icon: 20 },
-  regular: { space: 1, body: 15, label: 12, icon: 24 },
-  spacious: { space: 1.15, body: 17, label: 13, icon: 28 },
+/** How much each density scales spacing and type (relative to the regular tokens). */
+const DENSITY_SCALE: Record<Density, { space: number; text: number }> = {
+  compact: { space: 0.85, text: 1 },
+  regular: { space: 1, text: 1 },
+  spacious: { space: 1.12, text: 1.15 },
 };
+
+/** Type never goes below these (readability) or above these (huge screens): body 14–18px, labels ≥ 12px. */
+const TEXT_LIMITS: Record<string, [number, number]> = { label: [12, 14], small: [13, 16], body: [14, 18], md: [16, 20], lg: [19, 24], xl: [24, 30], hero: [34, 42] };
+
+/** CSS custom properties for a density: the spacing scale and the type scale, derived from the base tokens. */
+export function densityVars(density: Density): Record<string, string> {
+  const k = DENSITY_SCALE[density];
+  const vars: Record<string, string> = {};
+  for (const [name, value] of Object.entries(space)) vars[`--space-${name}`] = `${Math.round(Number.parseFloat(value) * k.space)}px`;
+  for (const [name, value] of Object.entries(fontSize)) {
+    const [lo, hi] = TEXT_LIMITS[name] ?? [0, Infinity];
+    vars[`--text-${name}`] = `${Math.min(hi, Math.max(lo, Math.round(Number.parseFloat(value) * k.text)))}px`;
+  }
+  return vars;
+}
+
+/** The HUD and dock are drawn in px, so on big screens they would shrink to nothing: scale them (never below 1, at most 1.35). */
+export function uiZoom(density: Density, width: number): number {
+  return density === 'spacious' ? Math.min(1.35, Math.max(1, +(1 + (width - 1500) / 3000).toFixed(2))) : 1;
+}
 
 /** Sheet snap points as fractions of the available height: peek, half, full. */
 export const SHEET_SNAPS = [0.4, 0.6, 0.92] as const;
