@@ -13,6 +13,8 @@ import { IosInstallHint } from './ui/IosInstallHint';
 import { LoadingScreen, useArtPreload } from './ui/LoadingScreen';
 import { useLayoutVars } from './ui/useLayoutVars';
 import { SaveLockPrompt } from './ui/SaveLockPrompt';
+import { OverlayRoot } from './ui/overlay/OverlayRoot';
+import { useVisualViewportVars } from './ui/overlay/useVisualViewport';
 import { UpdatePrompt } from './ui/UpdatePrompt';
 import { LevelUpModal } from './ui/LevelUpModal';
 import { Onboarding } from './ui/Onboarding';
@@ -113,6 +115,7 @@ export function App() {
   const onBreak = useGameStore((s) => s.breakSession !== null);
   const art = useArtPreload();
   useLayoutVars(art.ready && !onBreak);
+  useVisualViewportVars();
 
   // Esc ends a break, or closes cards/panels and leaves Feed/Premium/Clean mode.
   useEffect(() => {
@@ -179,6 +182,7 @@ export function App() {
       )}
       <BreakMode />
       <CloudConflictModal />
+      <OverlayRoot />
     </div>
   );
 }

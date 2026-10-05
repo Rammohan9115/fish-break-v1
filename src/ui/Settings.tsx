@@ -1,5 +1,5 @@
 // Settings panel: cloud account (Save progress ☁️ / logged-in email + Log out) and Reset game.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AUTH_GOOGLE_ENABLED } from '../game/constants';
 import { createInitialState } from '../game/sim';
 import { analytics } from '../lib/analytics';
@@ -375,6 +375,11 @@ export function Settings() {
   const [view, setView] = useState<'main' | 'login'>('main');
   const [loggingOut, setLoggingOut] = useState(false);
   const [confirmingLogout, setConfirmingLogout] = useState(false);
+
+  // Closing Settings forgets the login view, so it reopens on the main view.
+  useEffect(() => {
+    if (!open) setView('main');
+  }, [open]);
 
   if (!open) return null;
   const doLogout = (force: boolean) => {

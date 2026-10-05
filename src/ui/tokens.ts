@@ -96,9 +96,11 @@ export const layer = {
   dock: 22,
   card: 24, // FishCard / DecorCard / quick actions (non-modal)
   banner: 26, // mode pill, pairing banner, goal chip
+  hint: 28, // the iOS install hint
   coachmark: 30,
   toast: 40,
-  sheet: 50, // modal sheets and dialogs
+  popover: 45, // anchored popovers (cards, quick actions)
+  sheet: 50, // panels, sheets and dialogs
   celebrate: 55, // level-up
   confirm: 60, // confirm dialogs above sheets
   breakMode: 70,

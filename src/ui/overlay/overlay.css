@@ -1,0 +1,331 @@
+/* ==== Overlay system (src/ui/overlay) ==== */
+
+/* Everything overlay-ish renders into .overlay-root (inside .app). It adds no box of its own. */
+.overlay-root {
+  display: contents;
+}
+
+/*
+ * Layers follow the visual viewport (so a dialog stays above the on-screen keyboard and inside a zoomed area).
+ * --vvh / --vv-top are published by useVisualViewportVars; 100dvh is the first-paint fallback.
+ */
+.ov-layer {
+  inset: auto;
+  left: 0;
+  right: 0;
+  top: var(--vv-top, 0px);
+  height: var(--vvh, 100dvh);
+}
+
+@supports not (height: 1dvh) {
+  :root {
+    --vvh: 100vh;
+  }
+}
+
+/* ---- Dialog: centred, clamp(280px, 92vw, 400px), always fits ---- */
+.sheet-layer.ov-layer-dialog {
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--space-3) + env(safe-area-inset-top)) calc(var(--space-3) + env(safe-area-inset-right)) calc(var(--space-3) + env(safe-area-inset-bottom))
+    calc(var(--space-3) + env(safe-area-inset-left));
+}
+
+.sheet.ov-dialog {
+  width: clamp(280px, 92vw, 400px);
+  max-width: 100%;
+  max-height: 100%;
+  border: 3px solid var(--color-brand-edge);
+  border-radius: var(--radius-xl);
+  padding-bottom: 0;
+  box-shadow: var(--shadow-card);
+  animation: sheet-pop var(--motion-slow) var(--ease-bounce);
+}
+
+.ov-dialog .sheet-head {
+  min-height: 52px;
+  padding-top: var(--space-2);
+  touch-action: auto;
+}
+
+.ov-dialog .sheet-body {
+  padding: var(--space-4) var(--space-5);
+}
+
+.ov-dialog .sheet-foot {
+  padding: var(--space-3) var(--space-5) var(--space-4);
+}
+
+/* Short screens (landscape phones, zoomed-in desktops): tighter chrome so dialogs still fit without scrolling. */
+@media (max-height: 560px) {
+  .ov-dialog .sheet-head {
+    min-height: 40px;
+    padding-block: 0;
+  }
+  .ov-dialog .sheet-title {
+    font-size: var(--text-lg);
+  }
+  .ov-dialog .sheet-body {
+    padding: var(--space-1) var(--space-4);
+  }
+  .ov-dialog .sheet-foot {
+    padding: var(--space-2) var(--space-4) var(--space-3);
+  }
+  .ov-dialog .confirm-body {
+    margin-bottom: var(--space-2);
+  }
+}
+
+/* The pinned row under a header (tabs, filters): it never scrolls away. */
+.sheet-tabs {
+  flex: none;
+  padding: var(--space-2) var(--space-4) 0;
+  background: var(--color-surface);
+}
+
+/* ---- Rich dialogs, sized to fit (no scrolling) ---- */
+
+/* Guide dots are real 44px targets, side by side with no overlap; the foot wraps when the dialog is narrow. */
+.guide-foot {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.guide-dot {
+  width: var(--tap-min);
+  margin-inline: 0;
+}
+
+/* Cloud conflict: two compact columns, label above value, so it fits a phone without scrolling. */
+.conflict-cols {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.conflict-col {
+  padding: var(--space-3);
+}
+.conflict-col dl {
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+.conflict-col dt {
+  margin-top: var(--space-1);
+  font-size: var(--text-label);
+}
+.conflict-col dd {
+  text-align: left;
+}
+
+/* The daily-gift card's small print was the browser's default 'smaller' (10.8px): never below 12px. */
+.gift-reveal small {
+  font-size: var(--text-label);
+}
+
+@media (max-height: 560px) {
+  /* Guide: shorter art, tighter card. */
+  .guide-art {
+    min-height: 64px;
+    font-size: 30px;
+  }
+  .guide-card {
+    padding: var(--space-2) var(--space-4) var(--space-1);
+    gap: var(--space-1);
+  }
+  .guide .sheet-foot {
+    padding-top: var(--space-1);
+  }
+  /* Pair confirm: smaller fish, two columns of colour odds. */
+  .pair-duo {
+    gap: var(--space-5);
+  }
+  .pair-duo .preview {
+    width: 56px;
+    height: auto;
+  }
+  .pair-fish .meta {
+    display: none;
+  }
+  .ov-dialog .sheet-foot .btn-lg {
+    min-height: var(--tap-min);
+  }
+  .pair-odds {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-1) var(--space-3);
+  }
+  .pair-facts {
+    margin-top: var(--space-2);
+  }
+  .ov-dialog .section-title {
+    margin: var(--space-1) 0;
+  }
+  /* Cloud conflict: label and value on one line. */
+  .conflict-icon {
+    display: none;
+  }
+  .conflict-col {
+    gap: var(--space-1);
+    padding: var(--space-2);
+  }
+  .conflict-col dl {
+    grid-template-columns: auto 1fr;
+    gap: 0 var(--space-2);
+  }
+  .conflict-col dt {
+    margin-top: 0;
+  }
+  .conflict-lead {
+    margin: 0 0 var(--space-1);
+    font-size: var(--text-small);
+    line-height: 1.3;
+  }
+  .conflict-col h3 {
+    margin: 0;
+    font-size: var(--text-md);
+  }
+  .conflict .sheet-body {
+    padding-block: var(--space-1) var(--space-2);
+  }
+}
+
+/* ---- Sheet: portrait phones. Height follows the snap point (peek .4 / half .6 / full .92). ---- */
+.app {
+  /* How much of the screen a docked side panel takes from the right (0 when none is open). */
+  --panel-w: 0px;
+  /* Room a bottom sheet can use: the visual viewport minus safe areas. */
+  --ov-avail: calc(var(--vvh, 100dvh) - env(safe-area-inset-top) - env(safe-area-inset-bottom) - var(--space-3));
+}
+
+.sheet-layer.ov-layer-sheet {
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+}
+
+/* A non-modal sheet (the Decorate tray) leaves the tank playable around it. */
+.ov-layer-free {
+  pointer-events: none;
+}
+
+.sheet.ov-sheet {
+  --snap: 0.92;
+  width: 100%;
+  max-width: 560px;
+  height: calc(var(--ov-avail) * var(--snap));
+  max-height: calc(var(--ov-avail) * 0.92);
+  border: 3px solid var(--color-brand-edge);
+  border-bottom: none;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  padding-bottom: env(safe-area-inset-bottom);
+  box-shadow: 0 -8px 28px rgba(10, 20, 60, 0.3);
+  transition: height var(--motion-base) var(--ease);
+  animation: sheet-up var(--motion-slow) var(--ease);
+}
+
+.sheet.ov-sheet.ov-collapsed {
+  height: auto;
+}
+.ov-collapsed .sheet-body,
+.ov-collapsed .sheet-tabs,
+.ov-collapsed .sheet-foot {
+  display: none;
+}
+
+.ov-sheet .sheet-head {
+  padding-top: var(--space-4);
+  touch-action: none;
+}
+.ov-sheet .sheet-body {
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+.ov-sheet .sheet-foot {
+  padding: var(--space-3) var(--space-4);
+}
+.ov-sheet .sheet-grab {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 18px;
+  z-index: 1;
+  touch-action: none;
+}
+.ov-sheet .sheet-grab::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: calc(50% - 22px);
+  width: 44px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.75);
+}
+
+/* ---- SidePanel: landscape phones, tablets, desktop. Docked right, full height inside the safe areas. ---- */
+.sheet.ov-sidepanel {
+  position: fixed;
+  z-index: var(--z-sheet);
+  top: calc(var(--vv-top, 0px) + env(safe-area-inset-top));
+  right: env(safe-area-inset-right);
+  height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  width: clamp(320px, 30vw, 440px);
+  max-width: none;
+  max-height: none;
+  border: 3px solid var(--color-brand-edge);
+  border-right: none;
+  border-radius: var(--radius-xl) 0 0 var(--radius-xl);
+  box-shadow: -8px 0 28px rgba(10, 20, 60, 0.28);
+  animation: panel-in var(--motion-slow) var(--ease);
+}
+.ov-sidepanel .sheet-grab {
+  display: none;
+}
+.ov-sidepanel .sheet-head {
+  touch-action: auto;
+}
+
+@keyframes panel-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+
+/* ---- The scene makes room for a docked panel (--panel-w), so fish stay visible and playable beside it ---- */
+.app .tank {
+  right: var(--panel-w);
+  width: auto !important;
+}
+.tank-frame {
+  right: var(--panel-w);
+}
+.hud {
+  right: var(--panel-w);
+}
+.app .toolbar {
+  right: calc(10px + var(--panel-w) + env(safe-area-inset-right));
+}
+/* Centred things centre in the free area, not on the whole screen. */
+.toasts,
+.banner:not(.banner-top-left) {
+  left: calc(50% - var(--panel-w) / 2);
+}
+
+/* The dock never runs under a docked panel; when its tools don't fit they scroll sideways. */
+.app .toolbar {
+  max-width: calc(100vw - var(--panel-w) - 20px);
+}
+.dock-tools {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.dock-tools::-webkit-scrollbar {
+  display: none;
+}
+
+/* On a landscape phone / small window the free area beside a panel is too narrow for the tank chip: it steps aside. */
+@media (max-width: 899px) {
+  .app:has(.ov-sidepanel) .hud-right {
+    display: none;
+  }
+}

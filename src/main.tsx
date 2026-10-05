@@ -9,13 +9,29 @@ import '@fontsource/fredoka/latin-700.css';
 import './styles.css';
 import './ui/kit/kit.css';
 import './ui/screens.css';
+import './ui/overlay/overlay.css';
 import { registerServiceWorker } from './pwa';
 import { applyTokens } from './ui/tokens';
 
 // Dev-only test hooks for e2e/screenshot scripts (stripped from production builds).
 if (import.meta.env.DEV) {
-  void Promise.all([import('./store/gameStore'), import('./game/testUtils')]).then(([store, utils]) => {
-    (window as unknown as { __fishbowl: unknown }).__fishbowl = { store: store.useGameStore, utils };
+  void Promise.all([
+    import('./store/gameStore'),
+    import('./game/testUtils'),
+    import('./render/renderer'),
+    import('./store/cloudSave'),
+    import('./store/saveLock'),
+    import('./pwa'),
+  ]).then(([store, utils, renderer, cloud, lock, pwa]) => {
+    (window as unknown as { __fishbowl: unknown }).__fishbowl = {
+      store: store.useGameStore,
+      utils,
+      renderer: renderer.currentRenderer,
+      // Extra stores so tests can open the overlays that only appear on cloud/PWA/lock events.
+      cloud: cloud.useCloudStore,
+      saveLock: lock.useSaveLock,
+      pwa: pwa.usePwaStore,
+    };
   });
 }
 

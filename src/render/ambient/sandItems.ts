@@ -30,7 +30,7 @@ export function arcPoint(a: { x: number; y: number }, b: { x: number; y: number 
   return { x: m * m * a.x + 2 * m * u * cx + u * u * b.x, y: m * m * a.y + 2 * m * u * cy + u * u * b.y };
 }
 
-function hash01(id: string): number {
+export function hash01(id: string): number {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
   return (h % 1000) / 1000;
@@ -41,6 +41,8 @@ interface Flight {
   from: { x: number; y: number };
   to: { x: number; y: number };
   start: number;
+  /** Icon size in tank units at takeoff. */
+  size: number;
 }
 
 /** Draws an icon sprite centered at (x, y), `w` tank units wide; false if it isn't loaded. */
@@ -70,19 +72,21 @@ export class SandItems {
   }
 
   /** A little star glint on a resting drop every few seconds (staggered per drop). */
-  drawGlint(ctx: Ctx, drop: Drop, timeSec: number, px: number): void {
+  drawGlint(ctx: Ctx, drop: Drop, timeSec: number, px: number, width = drop.pearl ? 20 : 24): void {
     const h = hash01(drop.id);
     const period = DROP_GLINT_GAP[0] + h * (DROP_GLINT_GAP[1] - DROP_GLINT_GAP[0]);
     const phase = ((timeSec + h * 17) % period) / period;
     const window = 0.5 / period;
     if (phase > window) return;
-    const r = (drop.pearl ? 3.6 : 4.2) * Math.sin((phase / window) * Math.PI);
-    drawStar(ctx, drop.x + (drop.pearl ? 5 : 7), SAND_Y - (drop.pearl ? 13 : 12), r, '#ffffff', null, 0.5 * px);
+    // Offsets and size follow the drawn width (they were tuned for the 24 / 20 unit icons).
+    const k = width / (drop.pearl ? 20 : 24);
+    const r = (drop.pearl ? 3.6 : 4.2) * k * Math.sin((phase / window) * Math.PI);
+    drawStar(ctx, drop.x + (drop.pearl ? 5 : 7) * k, SAND_Y - (drop.pearl ? 13 : 12) * k, r, '#ffffff', null, 0.5 * px);
   }
 
   /** Starts an icon flying from the sand up to a HUD counter (tank coordinates). */
-  fly(icon: IconId, from: { x: number; y: number }, to: { x: number; y: number }, now: number): void {
-    this.flights.push({ icon, from, to, start: now });
+  fly(icon: IconId, from: { x: number; y: number }, to: { x: number; y: number }, now: number, size = 22): void {
+    this.flights.push({ icon, from, to, start: now, size });
   }
 
   /** Draws flying icons; calls `onArrive` for each one that reached its counter this frame. */
@@ -99,7 +103,7 @@ export class SandItems {
       const p = arcPoint(f.from, f.to, 90, e);
       ctx.save();
       ctx.globalAlpha = u > 0.85 ? (1 - u) / 0.15 : 1;
-      paint(f.icon, p.x, p.y, 22 * (1 - 0.35 * e));
+      paint(f.icon, p.x, p.y, f.size * (1 - 0.35 * e));
       ctx.restore();
     }
     this.flights = remaining;

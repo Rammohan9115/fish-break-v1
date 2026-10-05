@@ -15,3 +15,6 @@ qa/**/report.json
 # Playwright
 test-results
 playwright-report
+
+# Overlay audit screenshots (large; regenerate with scripts/audit/overlays.mjs). REPORT.md and metrics.json stay.
+qa/overlays/*/*.png

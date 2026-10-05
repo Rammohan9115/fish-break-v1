@@ -162,7 +162,7 @@ The sim runs on a 1-second fixed tick. Rendering is separate at 60fps.
 - Every `species.dropMinutes`, an adult drops a shell of `species.dropValue` onto the sand.
 - 2% chance the drop is a pearl instead.
 - Max 20 uncollected drops per tank. When the cap is exceeded the oldest is auto-collected at 50% of its value while the game is open, and lost during offline catch-up.
-- Click to collect: +value, +1 XP, coin-pop animation.
+- Click to collect: +value, +1 XP, coin-pop animation. Drops are sized by how big they look on screen (about 40 px wide: ≈ 2× on phones, ≈ 1.4× on desktop; `dropDrawWidth` in `render/dropSize.ts`), glow and bob gently, and the tap area is centred on the sprite and at least 44 px across on every screen (`dropHitTest`: the nearest centre wins among overlaps). New drops pick the roomiest spot so shells don't pile up.
 
 **Offline catch-up**
 - On load, simulate elapsed time since `lastTickAt`, capped at 8 hours, in 60-second steps.
@@ -487,6 +487,27 @@ These keep the interface calm on every screen. `src/ui/kit/index.ts` points here
 7. **Never rely on colour or sound alone.** Meters have icon + word; every action has a visible label; accessible names start with the visible text.
 8. **Everything works without a mouse.** Arrow keys pick fish and nudge decor (Shift = bigger steps), Space pets, Esc closes the top layer.
 9. **Quiet and kind.** Sound starts muted, no streaks, no guilt, motion respects `prefers-reduced-motion`.
+
+## Overlay system (`src/ui/overlay/`)
+One responsive system for every popup, panel and card (Phases 1–2 are live; the card/popover redesign is Phase 3).
+- **Variants, picked by size and input, never by user agent** (`pickVariant` in `overlay/rules.ts`, live via `useOverlayVariant`):
+  **Dialog** (confirmations, celebrations: centred, `clamp(280px, 92vw, 400px)`, always fits without scrolling),
+  **Sheet** (panels on narrow screens < 600 px wide: bottom sheet, snap 40/60/92 %, drag handle, swipe down to close),
+  **SidePanel** (panels everywhere else, including landscape phones and zoomed-in desktops: docked right,
+  `clamp(320px, 30vw, 440px)`; the tank, HUD, dock, banners and toasts make room through `--panel-w`, so fish stay visible and playable),
+  **Popover** (cards on a wide screen with a mouse; Phase 3: until then FishCard / DecorCard are the legacy inline sheets).
+- **Structure for all** (`OverlayFrame`): sticky Header (title + ✕, optional pinned `tabs` row) → Body (the ONLY scrolling region,
+  `overscroll-behavior: contain`) → sticky Footer (primary actions). Never nest scrollers.
+- **Infrastructure:** overlays render into `OverlayRoot` (a portal inside `.app`); a modal overlay makes the rest of the app `inert`;
+  `overlayStore` decides what Esc closes (dialog > panel > popover, newest first); `useVisualViewportVars` publishes `--vvh`/`--vv-top`/`--kb`
+  so overlays follow the visual viewport and stay above the on-screen keyboard; heights use `100dvh` (with a `100vh` fallback), never raw `100vh`.
+  One side panel at a time (opening a panel puts a fish/decor card away, and vice versa).
+- **Use the kit:** `<Sheet>` / `<ConfirmDialog>` pick the right primitive (`kind="dialog"` for dialogs, default panel). Put tabs/filters in `tabs`, actions in `footer`.
+  z-index values are only the `--z-*` tokens (`tokens.ts`); no literals.
+- **Every new overlay must be added to `e2e/overlays/registry.js` (and to `enforced.js` once it passes).** `e2e/overlays.spec.ts` opens every
+  registered overlay on 19 screens (phones, tablets, desktops, and 125/150/200 % zoom) and fails when one is outside the viewport, scrolls while it
+  has a fit budget, has a hidden header/footer, has targets under 44 px (touch) / 32 px (mouse) or overlapping, text under 12 px or clipped, or leaves
+  < 55 % of the tank beside a panel. `node scripts/audit/overlays.mjs` + `node scripts/audit/overlay-report.mjs` write `qa/overlays/REPORT.md`.
 
 ## Out of scope (for now)
 Custom backend servers, multiplayer/visiting friends, payments, leaderboards.

@@ -35,7 +35,7 @@ function BreakSetup() {
   const [breathing, setBreathing] = useState(true);
 
   return (
-    <Sheet title="☕ Take a break" size="sm" onClose={() => openPanel(null)}>
+    <Sheet kind="dialog" title="☕ Take a break" size="sm" onClose={() => openPanel(null)}>
       <p className="lead">Just you and the fish. Everything else hides; press Esc or tap the timer to come back anytime.</p>
       <Tabs
         kind="radiogroup"

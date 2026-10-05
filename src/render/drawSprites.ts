@@ -229,6 +229,8 @@ export interface SandItemOpts {
   scale?: number;
   /** Width override (defaults to the icon's config width). */
   width?: number;
+  /** A soft glow behind the item so it stands out from the sand (colour + pulse 0…1). */
+  halo?: { color: string; pulse: number };
 }
 
 /** A shell, pearl or egg resting on the sand at x, with its contact shadow. */
@@ -243,6 +245,14 @@ export function drawSandItem(ctx: Ctx, id: IconId, x: number, grid: PixelGrid, o
   dropShadow(ctx, x, SAND_Y + 1, width * 0.45 * scale, width * 0.1 * scale, 0.28 * Math.max(0.3, 1 + lift / 20));
   ctx.save();
   ctx.translate(x, SAND_Y + h * art.sink + lift);
+  if (opts.halo) {
+    const r = width * 0.95;
+    const g = ctx.createRadialGradient(0, -h / 2, 0, 0, -h / 2, r);
+    g.addColorStop(0, rgba(opts.halo.color, 0.5 * (0.7 + 0.3 * opts.halo.pulse)));
+    g.addColorStop(1, rgba(opts.halo.color, 0));
+    ctx.fillStyle = g;
+    ctx.fillRect(-r, -h / 2 - r, r * 2, r * 2);
+  }
   if (opts.angle) ctx.rotate(opts.angle);
   if (scale !== 1) ctx.scale(scale, scale);
   ctx.drawImage(iconCanvas(id, sprite, width * scale, grid.k), -width / 2, -h, width, h);

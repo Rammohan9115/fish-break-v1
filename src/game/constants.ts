@@ -857,7 +857,21 @@ export const PAN_TIP_KEY = 'fishbowl-pan-tip-shown';
 /** localStorage flag: the iPhone "Add to Home Screen for fullscreen" hint was dismissed. */
 export const IOS_INSTALL_HINT_KEY = 'fishbowl-ios-install-hint-dismissed';
 /** Click radius for collecting a shell/pearl on the sand (tank units). */
-export const DROP_HIT_RADIUS = 16;
+/**
+ * Shell and pearl drops are sized by how big they look on screen, so they stay easy to see and tap on every device:
+ * the target width in CSS px (turned into tank units with the camera scale), kept between MIN and MAX times the
+ * icon's base width (so desktop gets a modest bump, small landscape phones a big one).
+ */
+export const DROP_TARGET_PX = { shell: 40, pearl: 34 } as const;
+export const DROP_SCALE_MIN = 1.4;
+export const DROP_SCALE_MAX = 3;
+/** The tap area is never smaller than this on screen (CSS px across), and a little larger than the drawn sprite. */
+export const DROP_HIT_MIN_PX = 44;
+export const DROP_HIT_PAD = 1.15;
+/** A drop bobs this many tank units, and its glow pulses (both skipped under reduced motion). */
+export const DROP_BOB_AMP = 1.5;
+/** New drops pick the roomiest of this many random spots, so shells don't pile on top of each other. */
+export const DROP_SPACING_TRIES = 6;
 export const POP_TEXT_DURATION_MS = 900;
 /** Notification budget: one toast at a time; the rest wait in a short queue (oldest dropped beyond it). */
 export const MAX_VISIBLE_TOASTS = 1;

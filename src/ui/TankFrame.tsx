@@ -30,13 +30,20 @@ const SKINS: Record<string, Skin> = {
   neon: { stops: [[0, '#2a1b5e'], [1, '#160d38']], edge: '#ff4fd8', shade: '#3ff0ff' },
 };
 
-function useWindowSize(): { w: number; h: number } {
+/** The frame's own size (it shrinks when a side panel takes space on the right), falling back to the window until measured. */
+function useElementSize(el: HTMLElement | null): { w: number; h: number } {
   const [size, setSize] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
   useEffect(() => {
-    const onResize = () => setSize({ w: window.innerWidth, h: window.innerHeight });
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
+    if (!el) return undefined;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) setSize((s) => (s.w === Math.round(r.width) && s.h === Math.round(r.height) ? s : { w: Math.round(r.width), h: Math.round(r.height) }));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [el]);
   return size;
 }
 
@@ -49,7 +56,8 @@ export function TankFrame() {
   const tank = useGameStore((s) => s.game.tanks.find((t) => t.id === s.game.activeTankId));
   const preview = useGameStore((s) => s.stylePreview);
   const onBreak = useGameStore((s) => s.breakSession !== null);
-  const { w, h } = useWindowSize();
+  const [el, setEl] = useState<HTMLDivElement | null>(null);
+  const { w, h } = useElementSize(el);
   if (!tank) return null;
   const style = { ...(tank.style ?? DEFAULT_TANK_STYLE), ...preview };
   const key = style.frame.replace('frame:', '');
@@ -59,7 +67,7 @@ export function TankFrame() {
   const joints: number[] = [];
   if (skin.joints) for (let x = 60; x < w - 30; x += 90) joints.push(x);
   return (
-    <div className={`tank-frame frame-${key}`} aria-hidden="true">
+    <div className={`tank-frame frame-${key}`} aria-hidden="true" ref={setEl}>
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
         <defs>
           <linearGradient id="frame-fill" x1="0" y1="0" x2="0" y2="1">

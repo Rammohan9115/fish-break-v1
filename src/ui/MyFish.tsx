@@ -97,22 +97,31 @@ export function MyFish() {
   if (panel !== 'myfish') return null;
   const empty = game.fish.length === 0 && game.nursery.length === 0;
   return (
-    <Sheet title="🐟 My Fish" onClose={() => openPanel(null)} className="myfish" scrollKey={sortBy}>
+    <Sheet
+      title="🐟 My Fish"
+      onClose={() => openPanel(null)}
+      className="myfish"
+      scrollKey={sortBy}
+      tabs={
+        empty ? undefined : (
+          <Tabs
+                      kind="radiogroup"
+                      ariaLabel="Sort by"
+                      value={sortBy}
+                      onChange={setSortBy}
+                      items={[
+                        { id: 'bond', label: '💕 Bond' },
+                        { id: 'name', label: '🔤 Name' },
+                        { id: 'species', label: '🐠 Species' },
+                      ]}
+                    />
+        )
+      }
+    >
       {empty ? (
         <EmptyState icon="🐟" title="No fish yet" body="Visit the shop to adopt your first fish." />
       ) : (
         <>
-          <Tabs
-            kind="radiogroup"
-            ariaLabel="Sort by"
-            value={sortBy}
-            onChange={setSortBy}
-            items={[
-              { id: 'bond', label: '💕 Bond' },
-              { id: 'name', label: '🔤 Name' },
-              { id: 'species', label: '🐠 Species' },
-            ]}
-          />
           <Groups game={game} sortBy={sortBy} />
         </>
       )}

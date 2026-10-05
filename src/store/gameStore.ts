@@ -646,12 +646,12 @@ export const useGameStore = create<GameStore>()((set, get) => {
     },
 
     selectFish: (fishId) => {
-      set(fishId ? { selectedFishId: fishId, selectedDecorId: null, quickFishId: null } : { selectedFishId: null });
+      set(fishId ? { selectedFishId: fishId, selectedDecorId: null, quickFishId: null, panel: null } : { selectedFishId: null });
       if (fishId) get().completeOnboardingStep(1);
     },
 
     showQuickActions: (fishId) => {
-      set(fishId ? { quickFishId: fishId, selectedFishId: null, selectedDecorId: null } : { quickFishId: null });
+      set(fishId ? { quickFishId: fishId, selectedFishId: null, selectedDecorId: null, panel: null } : { quickFishId: null });
       if (fishId) get().completeOnboardingStep(1);
     },
 
@@ -712,7 +712,9 @@ export const useGameStore = create<GameStore>()((set, get) => {
 
     skipOnboarding: () => set({ onboardingStep: null }),
 
-    openPanel: (panel, tab) => set((s) => ({ panel, mode: 'look', shopTab: tab ?? s.shopTab })),
+    // A panel and a fish/decor card never share the screen: opening one puts the other away.
+    openPanel: (panel, tab) =>
+      set((s) => ({ panel, mode: 'look', shopTab: tab ?? s.shopTab, ...(panel ? { selectedFishId: null, selectedDecorId: null, quickFishId: null } : {}) })),
 
     buyFish: (speciesId) => {
       const before = new Set(get().game.fish.map((f) => f.id));
@@ -1000,7 +1002,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
       if (result.ok) set({ game: result.state });
     },
 
-    selectDecor: (placedId) => set(placedId ? { selectedDecorId: placedId, selectedFishId: null, quickFishId: null } : { selectedDecorId: null }),
+    selectDecor: (placedId) => set(placedId ? { selectedDecorId: placedId, selectedFishId: null, quickFishId: null, panel: null } : { selectedDecorId: null }),
 
     startBreak: (minutes, breathing) =>
       set({

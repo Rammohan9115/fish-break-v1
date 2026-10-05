@@ -15,7 +15,7 @@ import {
   SHADOW_SHIFT,
   EGG_EDGE_MARGIN,
   PAIR_LINGER_MS,
-  DROP_HIT_RADIUS,
+  DROP_BOB_AMP,
   EXTRA_HEIGHT_ABOVE,
   EYE_CURSOR_RANGE,
   GAZE_SMOOTHING,
@@ -80,6 +80,8 @@ import { drawThemeScenery } from './drawScenery';
 import { drawEgg, eggProgress } from './drawEgg';
 import { iconSprite } from './assets';
 import { ThemeBackground } from './background';
+import { dropCenterY, dropDrawWidth, dropHitTest, DEFAULT_DROP_ASPECT, type DropKind } from './dropSize';
+import { hash01 } from './ambient/sandItems';
 import { decorBox, decorSpriteSize, depthOf, drawIconAt, drawSandItem, dropSquash, sizeScale, type PixelGrid } from './drawSprites';
 import { THEME_ART, type IconId } from './artConfig';
 import { BackgroundFx, type FxFrame } from './ambient/backgroundFx';
@@ -238,6 +240,8 @@ export class Renderer {
   private scale = 1;
   /** Camera: tank-space x of the view's left edge, and y of its top edge. */
   private camX = 0;
+  /** The camera has been placed (so a resize keeps the player's pan instead of recentring). */
+  private camSet = false;
   private camY = 0;
   private viewW = TANK_WIDTH;
   private panMin = 0;
@@ -274,6 +278,7 @@ export class Renderer {
     setFishViewBoost(!wide && cssWidth <= PORTRAIT_FISH_BOOST_MAX_WIDTH ? PORTRAIT_FISH_BOOST : 1);
     const vw = cssWidth / this.scale;
     const vh = cssHeight / this.scale;
+    const prevViewW = this.viewW;
     this.viewW = vw;
     this.camY = -(vh - TANK_HEIGHT) * EXTRA_HEIGHT_ABOVE;
     if (vw >= TANK_WIDTH) {
@@ -282,8 +287,12 @@ export class Renderer {
       this.panMin = 0;
       this.panMax = TANK_WIDTH - vw;
     }
-    // Start centered (re-centers on rotation/resize).
-    this.camX = vw < TANK_WIDTH ? (TANK_WIDTH - vw) / 2 : this.panMin;
+    // Start centered the first time; after that keep looking at the same spot (a docked panel opening or closing resizes
+    // the canvas: the player's pan must survive it).
+    if (vw >= TANK_WIDTH) this.camX = this.panMin;
+    else if (this.camSet) this.camX = Math.min(this.panMax, Math.max(this.panMin, this.camX + prevViewW / 2 - vw / 2));
+    else this.camX = (TANK_WIDTH - vw) / 2;
+    this.camSet = vw < TANK_WIDTH;
     this.extent = {
       x0: Math.min(0, this.panMin),
       x1: Math.max(TANK_WIDTH, this.panMax + vw),
@@ -460,16 +469,24 @@ export class Renderer {
     if (placed) this.particles.spawnSandPuff(placed.x, SAND_Y + depthOf(placed).dy, decorBox(placed.decorId)[0] * sizeScale(placed), DECOR_DROP_PUFFS);
   }
 
-  /** Uncollected shell/pearl drop under a tank-space point, or null. */
+  /** Uncollected shell/pearl drop under a tank-space point, or null (see dropHitTest: ≥ 44 px targets on every screen). */
   dropAt(x: number, y: number): string | null {
     const game = this.deps.getGame();
     const tank = game.tanks.find((t) => t.id === game.activeTankId);
     if (!tank) return null;
-    for (let i = tank.shells.length - 1; i >= 0; i--) {
-      const drop = tank.shells[i]!;
-      if (Math.hypot(x - drop.x, y - (SAND_Y + 6)) <= DROP_HIT_RADIUS) return drop.id;
-    }
-    return null;
+    return dropHitTest(tank.shells, x, y, this.scale, (kind) => this.dropAspect(kind));
+  }
+
+  /** Height / width of a drop's sprite. */
+  private dropAspect(kind: DropKind): number {
+    const sprite = iconSprite(kind);
+    return sprite ? sprite.h / sprite.w : DEFAULT_DROP_ASPECT;
+  }
+
+  /** A tank-space point in client (viewport) px, e.g. to click a drop in a test. */
+  tankToClient(x: number, y: number): { x: number; y: number } {
+    const rect = this.canvas.getBoundingClientRect();
+    return { x: rect.left + (x - this.camX) * this.scale, y: rect.top + (y - this.camY) * this.scale };
   }
 
   /** Coin-pop animation at a drop's position. Call before collecting it. */
@@ -479,8 +496,10 @@ export class Renderer {
     if (!drop) return;
     const icon = drop.pearl ? 'pearl' : 'shell';
     const color = drop.pearl ? '#8a6be0' : '#e07a5f';
+    const width = dropDrawWidth(icon, this.scale);
+    const centerY = dropCenterY(icon, this.scale, this.dropAspect(icon));
     const target = this.deps.getHudTarget?.(icon);
-    if (target && iconSprite(icon)) this.sandItems.fly(icon, { x: drop.x, y: SAND_Y - 8 }, this.toTank(target.x, target.y), performance.now());
+    if (target && iconSprite(icon)) this.sandItems.fly(icon, { x: drop.x, y: centerY }, this.toTank(target.x, target.y), performance.now(), width * 0.9);
     if (iconSprite(icon)) this.particles.spawnPop(drop.x, SAND_Y - 4, `+${drop.value}`, color, icon);
     else this.particles.spawnPop(drop.x, SAND_Y - 4, drop.pearl ? `+${drop.value} ⚪` : `+${drop.value} 🐚`, color);
   }
@@ -1089,8 +1108,14 @@ export class Renderer {
     }
     for (const drop of tank.shells) {
       const lift = this.sandItems.lift(drop.id, now);
-      if (!drawSandItem(ctx, drop.pearl ? 'pearl' : 'shell', drop.x, grid, { lift: -lift })) drawDrop(ctx, drop, px, timeSec);
-      else if (lift === 0) this.sandItems.drawGlint(ctx, drop, timeSec, px);
+      const kind: DropKind = drop.pearl ? 'pearl' : 'shell';
+      // Sized for the screen (about 40 px wide), with a soft glow and a gentle bob so it stands out from the sand.
+      const width = dropDrawWidth(kind, this.scale);
+      const phase = hash01(drop.id) * Math.PI * 2;
+      const bob = reduced || lift !== 0 ? 0 : Math.sin(timeSec * 1.8 + phase) * DROP_BOB_AMP;
+      const halo = { color: drop.pearl ? '#c9b5ff' : '#fff0b8', pulse: reduced ? 1 : 0.5 + 0.5 * Math.sin(timeSec * 2.2 + phase) };
+      if (!drawSandItem(ctx, kind, drop.x, grid, { lift: -lift + bob, width, halo })) drawDrop(ctx, drop, px, timeSec);
+      else if (lift === 0) this.sandItems.drawGlint(ctx, drop, timeSec, px, width);
     }
     // Scene-wide light: the theme's ambient tint (e.g. moonlit blue), then the time of day.
     this.drawSceneLight(tank.theme, view);

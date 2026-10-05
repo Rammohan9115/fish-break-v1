@@ -20,6 +20,7 @@ import {
   CLEANLINESS_MAX,
   CLEANLINESS_MIN,
   DROP_PEARL_CHANCE,
+  DROP_SPACING_TRIES,
   FULL_HUNGER,
   GROWTH_HAPPINESS_BASE,
   GROWTH_HAPPINESS_DIVISOR,
@@ -248,12 +249,18 @@ function addDrop(ctx: TickCtx, tank: Tank, fish: Fish): void {
   const pearl = ctx.rng() < DROP_PEARL_CHANCE;
   const value = pearl ? PEARL_DROP_VALUE : bondDropValue(fish, species.dropValue);
   const dropId = ctx.newId('drop');
-  tank.shells.push({
-    id: dropId,
-    x: TANK_EDGE_MARGIN + ctx.rng() * (TANK_WIDTH - 2 * TANK_EDGE_MARGIN),
-    value,
-    pearl,
-  });
+  // Pick the roomiest of a few random spots so shells land apart from each other.
+  let x = TANK_EDGE_MARGIN + ctx.rng() * (TANK_WIDTH - 2 * TANK_EDGE_MARGIN);
+  let gap = Math.min(Infinity, ...tank.shells.map((d) => Math.abs(d.x - x)));
+  for (let i = 1; i < DROP_SPACING_TRIES; i++) {
+    const candidate = TANK_EDGE_MARGIN + ctx.rng() * (TANK_WIDTH - 2 * TANK_EDGE_MARGIN);
+    const g = Math.min(Infinity, ...tank.shells.map((d) => Math.abs(d.x - candidate)));
+    if (g > gap) {
+      x = candidate;
+      gap = g;
+    }
+  }
+  tank.shells.push({ id: dropId, x, value, pearl });
   ctx.events.push({ type: 'drop', tankId: tank.id, fishId: fish.id, dropId, value, pearl });
 
   // Over the cap: the oldest drop leaves the sand, auto-collected at a fraction of its value (none offline).

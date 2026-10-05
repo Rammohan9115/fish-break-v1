@@ -30,7 +30,7 @@ export function PairSheet() {
   const mins = hatchMinutes(a.speciesId);
 
   return (
-    <Sheet
+    <Sheet kind="dialog"
       title="A perfect match? 💕"
       size="sm"
       onClose={cancel}

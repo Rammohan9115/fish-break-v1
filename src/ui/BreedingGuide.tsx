@@ -94,7 +94,7 @@ export function BreedingGuide() {
   const last = index === CARDS.length - 1;
 
   return (
-    <Sheet
+    <Sheet kind="dialog"
       title="How breeding works 💕"
       size="sm"
       onClose={close}

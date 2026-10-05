@@ -399,6 +399,16 @@ describe('shell drops', () => {
     expect(tankOf(state).shells).toHaveLength(0);
   });
 
+  it('new drops pick spots apart from the existing ones', () => {
+    // Fill the sand with drops clustered on the left; a new one should not land on top of them.
+    const existing = Array.from({ length: 8 }, (_, i) => ({ id: `s${i}`, x: 100 + i * 12, value: 1, pearl: false }));
+    const state = makeState({ fish: [adult()], tank: { shells: existing } });
+    const next = tick(state, SECOND_MS, seededRng(7)).state;
+    const added = tankOf(next).shells.find((d) => !existing.some((e) => e.id === d.id))!;
+    const nearest = Math.min(...existing.map((d) => Math.abs(d.x - added.x)));
+    expect(nearest).toBeGreaterThan(40);
+  });
+
   it('non-adults never drop', () => {
     const fish = adult({ stage: 'juvenile', growth: 600 });
     const { state } = tick(makeState({ fish: [fish] }), HOUR_MS / 4, rng());

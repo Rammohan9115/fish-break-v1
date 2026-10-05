@@ -71,7 +71,7 @@ export function DecorToolbar() {
       const node = ref.current;
       if (p && node) {
         // A tray docked at the right (tablet, desktop, landscape) is off limits; the toolbar wraps to fit.
-        const tray = document.querySelector('.sheet-inline');
+        const tray = document.querySelector('.ov-sidepanel, .sheet-inline');
         const trayLeft = tray ? tray.getBoundingClientRect().left : Infinity;
         const right = Math.min(window.innerWidth, trayLeft > window.innerWidth * 0.4 ? trayLeft - EDGE_PX : window.innerWidth) - EDGE_PX;
         node.style.maxWidth = `${Math.max(160, right - EDGE_PX)}px`;

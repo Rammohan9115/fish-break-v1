@@ -692,6 +692,7 @@ export function Shop() {
       onClose={() => openPanel(null)}
       scrollKey={tab}
       className="shop"
+      tabs={<Tabs items={TABS} value={tab} onChange={(t) => openPanel("shop", t)} ariaLabel="Shop sections" />}
       headerExtra={
         <span className="shop-wallet" aria-label="Your wallet">
           <CurrencyTag currency="shells" amount={game.shells} />
@@ -699,12 +700,6 @@ export function Shop() {
         </span>
       }
     >
-      <Tabs
-        items={TABS}
-        value={tab}
-        onChange={(t) => openPanel("shop", t)}
-        ariaLabel="Shop sections"
-      />
       {tab === "fish" && <FishTab game={game} />}
       {tab === "food" && <FoodTab game={game} />}
       {tab === "decor" && <DecorTab game={game} />}

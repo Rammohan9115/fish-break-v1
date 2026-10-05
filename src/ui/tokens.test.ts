@@ -16,6 +16,10 @@ describe('design tokens', () => {
     expect(new Set(values).size).toBe(values.length);
     expect(layer.toast).toBeGreaterThan(layer.coachmark);
     expect(layer.confirm).toBeGreaterThan(layer.sheet);
+    expect(layer.popover).toBeGreaterThan(layer.toast);
+    expect(layer.popover).toBeLessThan(layer.sheet);
+    expect(layer.hint).toBeGreaterThan(layer.banner);
+    expect(layer.hint).toBeLessThan(layer.coachmark);
   });
 
   it('zeroes travel durations for reduced motion', () => {

@@ -199,16 +199,22 @@ export function BreedingPanel() {
 
   const waiting = game.eggs.filter((e) => e.waiting).length;
   return (
-    <Sheet title="Breeding 💕" onClose={() => openPanel(null)} scrollKey={tab}>
-      <Tabs
-        ariaLabel="Breeding sections"
-        value={tab}
-        onChange={(t) => openBreeding(t)}
-        items={[
-          { id: 'pairs', label: '💕 Pairs' },
-          { id: 'nursery', label: `🍼 Nursery${game.nursery.length > 0 ? ` (${game.nursery.length})` : ''}` },
-        ]}
-      />
+    <Sheet
+      title="Breeding 💕"
+      onClose={() => openPanel(null)}
+      scrollKey={tab}
+      tabs={
+        <Tabs
+                ariaLabel="Breeding sections"
+                value={tab}
+                onChange={(t) => openBreeding(t)}
+                items={[
+                  { id: 'pairs', label: '💕 Pairs' },
+                  { id: 'nursery', label: `🍼 Nursery${game.nursery.length > 0 ? ` (${game.nursery.length})` : ''}` },
+                ]}
+              />
+      }
+    >
       {tab === 'nursery' && game.nursery.length >= NURSERY_MAX && (
         <p className="meta nursery-full">
           🍼 The Nursery is full ({NURSERY_MAX}). New eggs wait safely until you move or rehome a baby

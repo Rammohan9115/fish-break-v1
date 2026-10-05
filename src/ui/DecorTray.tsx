@@ -210,27 +210,31 @@ export function DecorTray() {
   if (mode !== 'decorate') return null;
   return (
     <Sheet
-      inline
+      modal={false}
+      snap="half"
+      collapsed={collapsed}
       title="🎨 Decorate"
       onClose={() => setMode('look')}
       className={`decor-tray${collapsed ? ' decor-tray-collapsed' : ''}`}
       scrollKey={tab}
+      tabs={
+        <Tabs<TrayTab>
+                ariaLabel="Decorate"
+                value={tab}
+                onChange={setTab}
+                items={[
+                  { id: 'box', label: `📦 Box${boxed > 0 ? ` (${boxed})` : ''}`, title: `Box${boxed > 0 ? ` (${boxed})` : ''}: your decor box` },
+                  { id: 'layouts', label: '💾 Layouts' },
+                  { id: 'style', label: '✨ Tank Style' },
+                ]}
+              />
+      }
       headerExtra={
         <button type="button" className="mini-btn tray-fold" aria-expanded={!collapsed} aria-label={collapsed ? 'Show the decor tray' : 'Fold the decor tray'} onClick={() => setCollapsed((c) => !c)}>
           {collapsed ? '▲' : '▼'}
         </button>
       }
     >
-      <Tabs<TrayTab>
-        ariaLabel="Decorate"
-        value={tab}
-        onChange={setTab}
-        items={[
-          { id: 'box', label: `📦 Box${boxed > 0 ? ` (${boxed})` : ''}`, title: `Box${boxed > 0 ? ` (${boxed})` : ''}: your decor box` },
-          { id: 'layouts', label: '💾 Layouts' },
-          { id: 'style', label: '✨ Tank Style' },
-        ]}
-      />
       {tab === 'box' && <BoxTab />}
       {tab === 'layouts' && <LayoutsTab />}
       {tab === 'style' && <StylePicker />}

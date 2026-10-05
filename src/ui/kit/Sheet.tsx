@@ -3,6 +3,8 @@
 // One close pattern everywhere: ✕ top-right, tap outside, Esc (topmost sheet only), swipe down on phones.
 // Modal sheets trap focus and give it back to whatever opened them.
 import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { Dialog } from '../overlay/Dialog';
+import { Panel } from '../overlay/Panel';
 import { CloseButton } from './Button';
 import { pushSheet } from './sheetStack';
 
@@ -31,9 +33,66 @@ export interface SheetProps {
   plainHeader?: boolean;
   /** Changes when the content swaps (tabs) so the body scrolls back to the top. */
   scrollKey?: string;
+  /** A row pinned under the header (tabs, filters) that never scrolls away. */
+  tabs?: ReactNode;
+  /** Panels only: false leaves the tank playable around a bottom sheet (the Decorate tray). Default true. */
+  modal?: boolean;
+  /** Panels only: header only (the Decorate tray folds). */
+  collapsed?: boolean;
+  /** Panels only: where the bottom sheet opens. */
+  snap?: 'peek' | 'half' | 'full';
+  /** panel (Shop, Settings…) or dialog (confirmations, celebrations: centred, always fits). Defaults by `layer`. */
+  kind?: 'panel' | 'dialog';
 }
 
-export function Sheet({
+/**
+ * The container for every panel, card and dialog. Dialogs (kind="dialog", or any confirm/celebrate layer) are rendered by
+ * the overlay system's Dialog; panels and inline cards still use the sheet below until they are migrated.
+ */
+export function Sheet(props: SheetProps) {
+  const kind = props.kind ?? (props.layer && props.layer !== 'sheet' ? 'dialog' : 'panel');
+  if (kind === 'dialog' && !props.inline) {
+    return (
+      <Dialog
+        title={props.title}
+        onClose={props.onClose}
+        footer={props.footer}
+        headerExtra={props.headerExtra}
+        layer={props.layer}
+        ariaLabel={props.ariaLabel}
+        role={props.role}
+        className={props.className}
+        plainHeader={props.plainHeader}
+        scrollKey={props.scrollKey}
+      >
+        {props.children}
+      </Dialog>
+    );
+  }
+  if (!props.inline) {
+    return (
+      <Panel
+        title={props.title}
+        onClose={props.onClose}
+        footer={props.footer}
+        headerExtra={props.headerExtra}
+        tabs={props.tabs}
+        ariaLabel={props.ariaLabel}
+        className={props.className}
+        plainHeader={props.plainHeader}
+        scrollKey={props.scrollKey}
+        modal={props.modal}
+        collapsed={props.collapsed}
+        snap={props.snap}
+      >
+        {props.children}
+      </Panel>
+    );
+  }
+  return <PanelSheet {...props} />;
+}
+
+function PanelSheet({
   title,
   onClose,
   children,

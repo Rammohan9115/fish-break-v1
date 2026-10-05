@@ -508,10 +508,12 @@ export function TankView() {
     }
     // Hover: decor glows and the cursor hints it can be grabbed (look mode only; other modes use their CSS cursors).
     const look = useGameStore.getState().mode === 'look';
-    const hover = look && e.pointerType === 'mouse' && !renderer.fishAt(point.x, point.y) ? renderer.decorAt(point.x, point.y) : null;
+    const mouse = e.pointerType === 'mouse';
+    const overDrop = mouse && (look || ['feed', 'premium', 'clean'].includes(useGameStore.getState().mode)) && renderer.dropAt(point.x, point.y) !== null;
+    const hover = look && mouse && !overDrop && !renderer.fishAt(point.x, point.y) ? renderer.decorAt(point.x, point.y) : null;
     renderer.setHoverDecor(hover);
-    // Only a picked-up piece can be grabbed straight away; others need a hold.
-    e.currentTarget.style.cursor = !hover ? '' : hover === useGameStore.getState().selectedDecorId ? 'grab' : 'pointer';
+    // Only a picked-up piece can be grabbed straight away; others need a hold. A shell under the pointer is clickable.
+    e.currentTarget.style.cursor = overDrop ? 'pointer' : !hover ? '' : hover === useGameStore.getState().selectedDecorId ? 'grab' : 'pointer';
   };
 
   /** Space is held down on a fish (keyboard petting). */
