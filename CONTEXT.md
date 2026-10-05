@@ -440,3 +440,9 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
 - Toasts: desktop bottom-left; with `.sheet-layer-modal` open they sit at the top above the scrim (z `--z-celebrate`). Button: `title` = `aria-label` for `variant="icon"`.
 - Tests: `e2e/phase4.spec.ts`; the overlay matrix (589 measurements) still passes. A regression it caught: compact spacing made a chip 41 px wide (fixed with `min-width: var(--tap-min)`).
 - Still not done: Coachmark / Tooltip as Popovers, DailyGift as a Dialog (kept as the auto-fading card).
+
+## Windows (big frosted browse windows)
+- Feedback: the docked right-hand panel felt cramped and needed lots of scrolling. Browse/manage panels (Shop, My Fish, Breeding, Tanks, Settings) are now **Windows**: `pickVariant('panel')` → `window` (≥ 600 px) / `sheet` (narrow); `pickVariant('dock')` → `sidepanel` / `sheet` is used only by the Decorate tray (and docked cards).
+- `overlay/rules.ts`: `OverlayKind` = panel | dock | card | dialog, `windowSize(size, viewport)`, `WINDOW_SIZES` (lg 1120×860, md 820×760, sm 560×720), `WINDOW_MARGIN` (94 % × 88 %). `Panel` props `layout` ('window' | 'dock') and `size`; `Sheet` forwards both (Shop `size="lg"`, Settings `sm`, others md).
+- CSS (`overlay.css`): `.ov-window` frosted glass (`rgba(255,255,255,.84)` + `backdrop-filter: blur(18px)`), `.ov-layer-window` scrim with a 3 px blur; phone `.ov-sheet` frosted too; roomier shop grid (`minmax(168px, 1fr)`); slimmer frame under 560 px tall; desktop toasts sit in the margin under the window.
+- The overlay matrix: `kind: 'dock'` for the Decorate tray entries; the tank-share rule now applies to docks only.

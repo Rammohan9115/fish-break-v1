@@ -14,9 +14,15 @@ export interface ScreenEnv {
   hover: boolean;
 }
 
-/** What an overlay IS (its role), as opposed to the primitive it is shown with. */
-export type OverlayKind = 'panel' | 'card' | 'dialog';
-export type OverlayVariant = 'sheet' | 'sidepanel' | 'popover' | 'dialog';
+/**
+ * What an overlay IS (its role), as opposed to the primitive it is shown with.
+ *  panel  = a browse/manage window (Shop, My Fish, Breeding, Tanks, Settings)
+ *  dock   = a tool you use WITH the tank visible (the Decorate tray)
+ *  card   = info about a thing in the tank (fish, decor piece)
+ *  dialog = a confirmation or celebration
+ */
+export type OverlayKind = 'panel' | 'dock' | 'card' | 'dialog';
+export type OverlayVariant = 'sheet' | 'window' | 'sidepanel' | 'popover' | 'dialog';
 
 export const OVERLAY_BREAKPOINTS = {
   /** Below this CSS width panels and cards are bottom sheets (portrait phones, very narrow windows). */
@@ -26,7 +32,8 @@ export const OVERLAY_BREAKPOINTS = {
 } as const;
 
 /**
- * panel  → bottom Sheet on narrow screens, otherwise a SidePanel (landscape phones, tablets, desktop, zoomed-in desktop).
+ * panel  → bottom Sheet on narrow screens, otherwise a big centred Window (frosted glass over the scene, like a game menu).
+ * dock   → bottom Sheet on narrow screens, otherwise a SidePanel docked right (the tank stays visible and playable beside it).
  * card   → anchored Popover for a mouse on a wide screen; a docked SidePanel for a finger on a wide screen (tablet,
  *          landscape phone: the fish stay visible beside it); a bottom Sheet on narrow screens.
  * dialog → always a centred Dialog.
@@ -34,7 +41,8 @@ export const OVERLAY_BREAKPOINTS = {
 export function pickVariant(kind: OverlayKind, env: ScreenEnv): OverlayVariant {
   if (kind === 'dialog') return 'dialog';
   const narrow = env.width < OVERLAY_BREAKPOINTS.sheetBelow;
-  if (kind === 'panel') return narrow ? 'sheet' : 'sidepanel';
+  if (kind === 'panel') return narrow ? 'sheet' : 'window';
+  if (kind === 'dock') return narrow ? 'sheet' : 'sidepanel';
   if (narrow) return 'sheet';
   return env.hover && !env.coarse && env.width >= OVERLAY_BREAKPOINTS.popoverMinWidth ? 'popover' : 'sidepanel';
 }
@@ -44,6 +52,20 @@ export const PANEL_WIDTH = { min: 320, vw: 0.3, max: 440 } as const;
 /** Side panel width: clamp(320px, 30vw, 440px). */
 export function panelWidth(viewportWidth: number): number {
   return Math.min(PANEL_WIDTH.max, Math.max(PANEL_WIDTH.min, Math.round(viewportWidth * PANEL_WIDTH.vw)));
+}
+
+/** The big window: width and height as fractions of the screen (and absolute caps), by size. */
+export const WINDOW_SIZES = {
+  lg: { w: 1120, h: 860 },
+  md: { w: 820, h: 760 },
+  sm: { w: 560, h: 720 },
+} as const;
+export const WINDOW_MARGIN = { w: 0.94, h: 0.88 } as const;
+
+/** Size of a centred window on this screen: at most the cap for its size, at most 94 % × 88 % of the screen. */
+export function windowSize(size: keyof typeof WINDOW_SIZES, viewport: { width: number; height: number }): { w: number; h: number } {
+  const cap = WINDOW_SIZES[size];
+  return { w: Math.round(Math.min(cap.w, viewport.width * WINDOW_MARGIN.w)), h: Math.round(Math.min(cap.h, viewport.height * WINDOW_MARGIN.h)) };
 }
 
 /** Share of the screen's width the tank keeps next to a side panel. */

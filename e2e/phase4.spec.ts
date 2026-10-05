@@ -57,7 +57,7 @@ test.describe('shop', () => {
 });
 
 test.describe('toasts', () => {
-  test('bottom-left on a desktop, away from the right-hand panel', async ({ page }) => {
+  test('bottom-left on a desktop, in the margin under the window', async ({ page }) => {
     await page.setViewportSize({ width: 1366, height: 768 });
     await freshGame(page, { seed: true });
     await openShop(page);
@@ -67,8 +67,9 @@ test.describe('toasts', () => {
     const box = (await toast.boundingBox())!;
     expect(box.x).toBeLessThan(40);
     expect(box.y + box.height).toBeGreaterThan(768 - 60);
-    const panel = (await page.locator('.ov-sidepanel').boundingBox())!;
-    expect(box.x + box.width).toBeLessThan(panel.x);
+    // It sits in the margin below the big window, not on top of it.
+    const win = (await page.locator('.ov-window').boundingBox())!;
+    expect(box.y).toBeGreaterThanOrEqual(win.y + win.height - 8);
   });
 
   test('on a phone with a sheet open, the toast is visible at the top (not hidden behind the sheet)', async ({ page }) => {

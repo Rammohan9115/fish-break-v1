@@ -211,6 +211,7 @@ export function DecorTray() {
   return (
     <Sheet
       modal={false}
+      layout="dock"
       snap="half"
       collapsed={collapsed}
       title="🎨 Decorate"

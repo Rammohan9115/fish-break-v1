@@ -15,7 +15,7 @@ export interface SheetProps {
   footer?: ReactNode;
   /** Extra header content (wallet, badge) between the title and ✕. */
   headerExtra?: ReactNode;
-  /** Kept for the call sites; widths now come from the variant (dialog 280–400, side panel 320–440, sheet full width). */
+  /** Window size for panels (lg: Shop / My Fish, md: Breeding / Tanks, sm: Settings). Dialogs, docks and sheets ignore it. */
   size?: 'sm' | 'md' | 'lg';
   /** Dialog above other sheets (confirmations). */
   layer?: 'sheet' | 'confirm' | 'celebrate';
@@ -35,6 +35,8 @@ export interface SheetProps {
   collapsed?: boolean;
   /** Panels only: where the bottom sheet opens. */
   snap?: 'peek' | 'half' | 'full';
+  /** Panels only: 'window' (default) or 'dock' (the Decorate tray, used beside the tank). */
+  layout?: 'window' | 'dock';
   /** panel (Shop, Settings…) or dialog (confirmations, celebrations: centred, always fits). Defaults by `layer`. */
   kind?: 'panel' | 'dialog';
 }
@@ -73,6 +75,8 @@ export function Sheet(props: SheetProps) {
       modal={props.modal}
       collapsed={props.collapsed}
       snap={props.snap}
+      layout={props.layout}
+      size={props.size}
     >
       {props.children}
     </Panel>

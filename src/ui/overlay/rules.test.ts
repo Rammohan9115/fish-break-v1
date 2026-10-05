@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { densityVars, dialogWidth, needsReplace, pickDensity, pickVariant, placePopover, panelWidth, settleSheet, SHEET_SNAPS, tankShareBesidePanel, uiZoom, type ScreenEnv } from './rules';
+import { densityVars, dialogWidth, windowSize, needsReplace, pickDensity, pickVariant, placePopover, panelWidth, settleSheet, SHEET_SNAPS, tankShareBesidePanel, uiZoom, type ScreenEnv } from './rules';
 
 const env = (width: number, height: number, mode: 'touch' | 'mouse'): ScreenEnv => ({ width, height, coarse: mode === 'touch', hover: mode === 'mouse' });
 
@@ -8,13 +8,19 @@ describe('pickVariant', () => {
     for (const e of [env(360, 640, 'touch'), env(1920, 1080, 'mouse')]) expect(pickVariant('dialog', e)).toBe('dialog');
   });
 
-  it('panels are bottom sheets on narrow screens and side panels everywhere else', () => {
+  it('panels are bottom sheets on narrow screens and big centred windows everywhere else', () => {
     expect(pickVariant('panel', env(390, 844, 'touch'))).toBe('sheet');
     expect(pickVariant('panel', env(360, 640, 'touch'))).toBe('sheet');
-    expect(pickVariant('panel', env(844, 390, 'touch'))).toBe('sidepanel'); // landscape phone
-    expect(pickVariant('panel', env(820, 1180, 'touch'))).toBe('sidepanel'); // tablet portrait
-    expect(pickVariant('panel', env(1366, 768, 'mouse'))).toBe('sidepanel');
-    expect(pickVariant('panel', env(911, 512, 'mouse'))).toBe('sidepanel'); // 1366×768 at 150% zoom
+    expect(pickVariant('panel', env(844, 390, 'touch'))).toBe('window'); // landscape phone
+    expect(pickVariant('panel', env(820, 1180, 'touch'))).toBe('window'); // tablet portrait
+    expect(pickVariant('panel', env(1366, 768, 'mouse'))).toBe('window');
+    expect(pickVariant('panel', env(911, 512, 'mouse'))).toBe('window'); // 1366×768 at 150% zoom
+  });
+
+  it('docks (the Decorate tray) stay beside the tank: side panel when wide, sheet when narrow', () => {
+    expect(pickVariant('dock', env(1366, 768, 'mouse'))).toBe('sidepanel');
+    expect(pickVariant('dock', env(844, 390, 'touch'))).toBe('sidepanel');
+    expect(pickVariant('dock', env(390, 844, 'touch'))).toBe('sheet');
   });
 
   it('cards: a popover for a mouse on a wide screen, a docked panel for a finger on a wide screen, a sheet when narrow', () => {
@@ -27,6 +33,27 @@ describe('pickVariant', () => {
 
   it('is decided by size and input, not by device name: same size, different input → different result', () => {
     expect(pickVariant('card', env(1024, 768, 'mouse'))).not.toBe(pickVariant('card', env(1024, 768, 'touch')));
+  });
+});
+
+describe('windowSize', () => {
+  it('takes most of the screen, up to a cap', () => {
+    expect(windowSize('lg', { width: 1366, height: 768 })).toEqual({ w: 1120, h: 676 });
+    expect(windowSize('lg', { width: 2560, height: 1440 })).toEqual({ w: 1120, h: 860 });
+    expect(windowSize('lg', { width: 667, height: 375 })).toEqual({ w: 627, h: 330 });
+  });
+
+  it('smaller windows are narrower but still never exceed the screen', () => {
+    expect(windowSize('sm', { width: 1366, height: 768 }).w).toBe(560);
+    expect(windowSize('md', { width: 700, height: 900 }).w).toBeLessThanOrEqual(700 * 0.94);
+  });
+
+  it('is always inside the screen with a margin', () => {
+    for (const [w, h] of [[600, 400], [820, 1180], [1280, 720], [1920, 1080]] as const) {
+      const size = windowSize('lg', { width: w, height: h });
+      expect(size.w).toBeLessThan(w);
+      expect(size.h).toBeLessThan(h);
+    }
   });
 });
 

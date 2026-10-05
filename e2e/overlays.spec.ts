@@ -103,29 +103,35 @@ test.describe('closing overlays', () => {
 
 // ---- the variant follows the screen live, without a reload ------------------------------------------------------------
 
-test('resizing from desktop to phone with a panel open switches side panel → bottom sheet (and back) without a reload', async ({ page }) => {
+test('resizing from desktop to phone with a window open switches big window → bottom sheet (and back) without a reload', async ({ page }) => {
   await start(page, { w: 1440, h: 900 });
   await page.evaluate(RESET);
   await page.evaluate("window.__fishbowl.store.getState().openPanel('shop', 'fish')");
-  await expect(page.locator('.ov-sidepanel')).toBeVisible();
-  expect(await page.evaluate("getComputedStyle(document.querySelector('.app')).getPropertyValue('--panel-w').trim()")).toMatch(/^4\d\dpx$|^3\d\dpx$/);
+  await expect(page.locator('.ov-window')).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator('.ov-sheet')).toBeVisible();
-  await expect(page.locator('.ov-sidepanel')).toHaveCount(0);
-  expect(await page.evaluate("getComputedStyle(document.querySelector('.app')).getPropertyValue('--panel-w').trim()")).toBe('0px');
+  await expect(page.locator('.ov-window')).toHaveCount(0);
   await expect(page.locator('.shop')).toBeVisible(); // still the same Shop, same tab
   await page.setViewportSize({ width: 1440, height: 900 });
-  await expect(page.locator('.ov-sidepanel')).toBeVisible();
+  await expect(page.locator('.ov-window')).toBeVisible();
 });
 
-test('a docked side panel leaves the tank usable beside it (≥ 55 % of the width on a desktop)', async ({ page }) => {
+test('the Shop is a big window that takes most of the screen; the Decorate tray stays docked beside the tank', async ({ page }) => {
   await start(page, { w: 1366, h: 768 });
   await page.evaluate(RESET);
   await page.evaluate("window.__fishbowl.store.getState().openPanel('shop', 'fish')");
-  const box = await page.locator('.ov-sidepanel').boundingBox();
-  expect(box!.width / 1366).toBeLessThan(0.45);
-  const tank = await page.locator('.app .tank').boundingBox();
-  expect(tank!.width / 1366).toBeGreaterThanOrEqual(0.55);
+  const win = (await page.locator('.ov-window').boundingBox())!;
+  expect(win.width / 1366).toBeGreaterThan(0.6);
+  expect(win.height / 768).toBeGreaterThan(0.8);
+  // Frosted glass: translucent, so the scene shows through.
+  const bg = await page.evaluate("getComputedStyle(document.querySelector('.ov-window')).backgroundColor");
+  expect(bg as string).toMatch(/rgba\(.*0\.\d+\)/);
+  await page.evaluate(RESET);
+  await page.evaluate("window.__fishbowl.store.getState().setMode('decorate')");
+  const dock = (await page.locator('.ov-sidepanel').boundingBox())!;
+  expect(dock.width / 1366).toBeLessThan(0.45);
+  const tank = (await page.locator('.app .tank').boundingBox())!;
+  expect(tank.width / 1366).toBeGreaterThanOrEqual(0.55);
   // The renderer fitted itself to the smaller area: a click in the visible tank still works (toTank / tankToClient agree).
   const p = await page.evaluate("(() => { const r = window.__fishbowl.renderer(); const c = r.tankToClient(500, 300); return r.toTank(c.x, c.y); })()");
   expect(Math.round((p as any).x)).toBe(500);

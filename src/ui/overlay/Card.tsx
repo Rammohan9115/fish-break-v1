@@ -42,7 +42,7 @@ export function Card({ title, onClose, anchor, onLost, tabs, footer, headerExtra
     );
   }
   return (
-    <Panel title={title} onClose={onClose} headerExtra={headerExtra} tabs={tabs} footer={footer} ariaLabel={ariaLabel} className={`ov-card ${className}`} modal={false} snap="half" shiftScene={false} scrollKey={scrollKey}>
+    <Panel title={title} onClose={onClose} headerExtra={headerExtra} tabs={tabs} footer={footer} ariaLabel={ariaLabel} className={`ov-card ${className}`} modal={false} snap="half" shiftScene={false} layout="dock" scrollKey={scrollKey}>
       {children}
     </Panel>
   );

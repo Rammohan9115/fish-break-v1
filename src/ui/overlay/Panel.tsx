@@ -1,8 +1,11 @@
-// Panel: the container for Shop, My Fish, Breeding, Tanks, Settings, the Decorate tray…
-//  - narrow screens (portrait phones, very narrow windows): a bottom Sheet with snap points (peek 40 / half 60 / full 92 %),
-//    a drag handle and swipe-down to close. Modal by default (scrim, tap outside closes, rest of the app inert).
-//  - everywhere else (landscape phones, tablets, desktop, zoomed-in desktop): a SidePanel docked right,
-//    width clamp(320px, 30vw, 440px). The tank, HUD and dock make room (--panel-w) so the fish stay visible and playable.
+// Panel: the container for Shop, My Fish, Breeding, Tanks, Settings and the Decorate tray.
+//  layout 'window' (default, the browse/manage windows):
+//    - narrow screens: a bottom Sheet with snap points (peek 40 / half 60 / full 92 %), drag handle, swipe-down to close;
+//    - everywhere else: a big centred Window (up to 94 % × 88 % of the screen, frosted glass over the scene).
+//    Both are modal: scrim, tap outside closes, the rest of the app is inert.
+//  layout 'dock' (the Decorate tray, which you use WITH the tank visible):
+//    - narrow screens: a non-modal bottom Sheet; wider: a SidePanel docked right, width clamp(320px, 30vw, 440px),
+//      and the tank, HUD and dock make room (--panel-w) so the fish stay visible and playable.
 // The variant follows the screen live (resize / rotate / zoom) without remounting the content.
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { OverlayFrame } from './OverlayFrame';
@@ -11,6 +14,7 @@ import { registerOverlay } from './overlayStore';
 import { panelWidth, settleSheet, SHEET_SNAPS } from './rules';
 import { useFocusTrap } from './useFocusTrap';
 import { useOverlayVariant, useScreenEnv } from './useScreenEnv';
+import type { WINDOW_SIZES } from './rules';
 
 export type PanelSnap = 'peek' | 'half' | 'full';
 const SNAP_FRACTION: Record<PanelSnap, number> = { peek: SHEET_SNAPS[0], half: SHEET_SNAPS[1], full: SHEET_SNAPS[2] };
@@ -35,12 +39,18 @@ export interface PanelProps {
   collapsed?: boolean;
   /** A docked side panel makes the scene (tank, HUD, dock) shift to make room. Cards leave the tank alone (default true). */
   shiftScene?: boolean;
+  /** 'window' (default): browse/manage windows. 'dock': tools used beside the tank (the Decorate tray, docked cards). */
+  layout?: 'window' | 'dock';
+  /** Window size: lg (Shop, My Fish), md (Breeding, Tanks), sm (Settings). */
+  size?: keyof typeof WINDOW_SIZES;
 }
 
-export function Panel({ title, onClose, children, footer, headerExtra, tabs, ariaLabel, className = '', plainHeader = false, scrollKey, modal = true, snap = 'full', collapsed = false, shiftScene = true }: PanelProps) {
-  const variant = useOverlayVariant('panel');
+export function Panel({ title, onClose, children, footer, headerExtra, tabs, ariaLabel, className = '', plainHeader = false, scrollKey, modal = true, snap = 'full', collapsed = false, shiftScene = true, layout = 'window', size = 'md' }: PanelProps) {
+  const variant = useOverlayVariant(layout === 'dock' ? 'dock' : 'panel');
   const { width } = useScreenEnv();
   const sheet = variant === 'sheet';
+  const win = variant === 'window';
+  const side = variant === 'sidepanel';
   const titleId = useId();
   const ref = useRef<HTMLElement>(null);
   const closeRef = useRef(onClose);
@@ -51,27 +61,27 @@ export function Panel({ title, onClose, children, footer, headerExtra, tabs, ari
 
   // Esc closes the topmost overlay; a modal sheet also makes the rest of the app inert.
   const dismissible = onClose !== undefined;
-  useEffect(() => registerOverlay(() => closeRef.current?.(), { rank: 'panel', modal: sheet && modal }), [sheet, modal]);
-  useFocusTrap(ref, sheet && modal);
+  useEffect(() => registerOverlay(() => closeRef.current?.(), { rank: 'panel', modal: (sheet || win) && modal }), [sheet, win, modal]);
+  useFocusTrap(ref, (sheet || win) && modal);
   // Side panels are not modal: move focus in once, but never trap it (the tank beside it stays usable).
   useEffect(() => {
-    if (sheet) return undefined;
+    if (!side) return undefined;
     const opener = document.activeElement as HTMLElement | null;
     ref.current?.focus({ preventScroll: true });
     return () => {
       if (opener && document.contains(opener)) opener.focus({ preventScroll: true });
     };
-  }, [sheet]);
+  }, [side]);
 
   // The tank, HUD and dock make room for a docked side panel.
   useLayoutEffect(() => {
-    if (sheet || !shiftScene) return undefined;
+    if (!side || !shiftScene) return undefined;
     const app = document.querySelector<HTMLElement>('.app');
     app?.style.setProperty('--panel-w', `${panelWidth(width)}px`);
     return () => {
       app?.style.setProperty('--panel-w', '0px');
     };
-  }, [sheet, shiftScene, width]);
+  }, [side, shiftScene, width]);
 
   // Bottom sheet: drag the handle / header. Down past the lowest snap (or a hard flick) closes; otherwise it snaps.
   const onDragStart = (e: React.PointerEvent) => {
@@ -113,7 +123,7 @@ export function Panel({ title, onClose, children, footer, headerExtra, tabs, ari
   const section = (
     <section
       ref={ref}
-      className={`sheet ${sheet ? 'ov-sheet' : 'ov-sidepanel'}${collapsed ? ' ov-collapsed' : ''} ${className}`}
+      className={`sheet ${sheet ? 'ov-sheet' : win ? `ov-window ov-window-${size}` : 'ov-sidepanel'}${collapsed ? ' ov-collapsed' : ''} ${className}`}
       role="dialog"
       aria-modal={sheet && modal ? true : undefined}
       aria-labelledby={ariaLabel ? undefined : titleId}
@@ -129,9 +139,9 @@ export function Panel({ title, onClose, children, footer, headerExtra, tabs, ari
 
   return (
     <OverlayPortal>
-      {sheet ? (
+      {sheet || win ? (
         <div
-          className={`sheet-layer ov-layer ov-layer-sheet${modal ? ' sheet-layer-modal' : ' ov-layer-free'}`}
+          className={`sheet-layer ov-layer ${win ? 'ov-layer-window' : 'ov-layer-sheet'}${modal ? ' sheet-layer-modal' : ' ov-layer-free'}`}
           onPointerDown={(e) => {
             if (modal && onClose && e.target === e.currentTarget) onClose();
           }}

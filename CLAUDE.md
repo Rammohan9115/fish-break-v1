@@ -492,9 +492,11 @@ These keep the interface calm on every screen. `src/ui/kit/index.ts` points here
 One responsive system for every popup, panel and card (Phases 1–4).
 - **Variants, picked by size and input, never by user agent** (`pickVariant` in `overlay/rules.ts`, live via `useOverlayVariant`):
   **Dialog** (confirmations, celebrations: centred, `clamp(280px, 92vw, 400px)`, always fits without scrolling),
-  **Sheet** (panels on narrow screens < 600 px wide: bottom sheet, snap 40/60/92 %, drag handle, swipe down to close),
-  **SidePanel** (panels everywhere else, including landscape phones and zoomed-in desktops: docked right,
-  `clamp(320px, 30vw, 440px)`; the tank, HUD, dock, banners and toasts make room through `--panel-w`, so fish stay visible and playable),
+  **Window** (browse/manage panels: Shop, My Fish, Breeding, Tanks, Settings: a big centred window, up to 94 % × 88 % of the screen
+  (lg 1120 / md 820 / sm 560 px wide), **frosted glass** (translucent + blur) over a soft scrim so the scene glows through, like a game menu),
+  **Sheet** (the same panels on narrow screens < 600 px: bottom sheet, snap 40/60/92 %, drag handle, swipe down to close, also frosted),
+  **SidePanel** (`layout="dock"`: the Decorate tray, which you use WITH the tank: docked right, `clamp(320px, 30vw, 440px)`; the tank, HUD,
+  dock, banners and toasts make room through `--panel-w`, so fish stay visible and playable),
   **Popover** (cards for things in the tank on a wide screen with a mouse: anchored to the fish / decor piece, follows it, arrow, flips and shifts to stay in the free area). `overlay/Card` picks: Popover (mouse, wide) → docked card (finger, wide: tank NOT shifted) → non-modal bottom sheet (narrow). Quick actions and the decor toolbar are small Popovers (no arrow).
 - **Structure for all** (`OverlayFrame`): sticky Header (title + ✕, optional pinned `tabs` row) → Body (the ONLY scrolling region,
   `overscroll-behavior: contain`) → sticky Footer (primary actions). Never nest scrollers.
@@ -512,8 +514,8 @@ One responsive system for every popup, panel and card (Phases 1–4).
   z-index values are only the `--z-*` tokens (`tokens.ts`); no literals.
 - **Every new overlay must be added to `e2e/overlays/registry.js` (and to `enforced.js` once it passes).** `e2e/overlays.spec.ts` opens every
   registered overlay on 19 screens (phones, tablets, desktops, and 125/150/200 % zoom) and fails when one is outside the viewport, scrolls while it
-  has a fit budget, has a hidden header/footer, has targets under 44 px (touch) / 32 px (mouse) or overlapping, text under 12 px or clipped, or leaves
-  < 55 % of the tank beside a panel. `node scripts/audit/overlays.mjs` + `node scripts/audit/overlay-report.mjs` write `qa/overlays/REPORT.md`.
+  has a fit budget, has a hidden header/footer, has targets under 44 px (touch) / 32 px (mouse) or overlapping, text under 12 px or clipped, or (for the docked Decorate tray) leaves
+  < 55 % of the tank beside it. Browse windows are big on purpose; they only have to fit the screen. `node scripts/audit/overlays.mjs` + `node scripts/audit/overlay-report.mjs` write `qa/overlays/REPORT.md`.
 
 ## Out of scope (for now)
 Custom backend servers, multiplayer/visiting friends, payments, leaderboards.
