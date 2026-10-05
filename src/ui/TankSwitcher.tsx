@@ -1,5 +1,6 @@
 // Tanks panel: every tank at a glance, switch between them, rename, and buy the next tank.
-import { CAPACITY_UPGRADE, MAX_DECOR_PER_TANK, TANK_NAME_MAX_LENGTH, THEMES } from '../game/constants';
+import { CAPACITY_UPGRADE, COLLECTIONS, TANK_NAME_MAX_LENGTH, THEMES } from '../game/constants';
+import { activeSets, maxDecor } from '../game/decor';
 import { checkBuyTank, nextTankPurchase } from '../game/economy';
 import { tankOccupancy } from '../game/sim';
 import type { GameState, Tank } from '../game/types';
@@ -26,9 +27,14 @@ function TankCard({ tank, game }: { tank: Tank; game: GameState }) {
           {eggs > 0 ? ` · 🥚 ${eggs}` : ''} · {tank.upgrades}/{CAPACITY_UPGRADE.maxPurchases} upgrades
         </div>
         <div className="meta">
-          🪴 {tank.decor.length}/{MAX_DECOR_PER_TANK} decor · 🧽 {Math.round(tank.cleanliness)}% clean
+          🪸 {tank.decor.length}/{maxDecor(tank)} decor · 🧽 {Math.round(tank.cleanliness)}% clean
           {drops > 0 && ` · 🐚 ${formatCount(drops)} to collect`}
         </div>
+        {activeSets(tank).length > 0 && (
+          <div className="meta">
+            ✨ Set bonus: {activeSets(tank).map((c) => `${COLLECTIONS[c].icon} ${COLLECTIONS[c].name}`).join(' · ')}
+          </div>
+        )}
       </div>
       {active ? (
         <Badge tone="brand">Viewing</Badge>

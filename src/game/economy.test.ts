@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BREEDING, FEED_XP_MAX_PER_HOUR, HOUR_MS, MAX_DECOR_PER_TANK, TANK_BASE_CAPACITY, XP } from './constants';
+import { BREEDING, DECOR_LIMIT, FEED_XP_MAX_PER_HOUR, HOUR_MS, TANK_BASE_CAPACITY, XP } from './constants';
 import {
   applyTheme,
   buyCapacityUpgrade,
@@ -160,11 +160,10 @@ describe('feeding XP cap', () => {
 });
 
 describe('decor', () => {
-  it('unlocks at L3 (castle L6, chest L9, shipwreck L13)', () => {
-    expect(reason(buyDecor(rich({ level: 2 }), 'rock', T0, seededRng(1)))).toBe('locked');
-    expect(reason(buyDecor(rich({ level: 5 }), 'castle', T0, seededRng(1)))).toBe('locked');
-    expect(reason(buyDecor(rich({ level: 6 }), 'castle', T0, seededRng(1)))).toBe('ok');
-    expect(reason(buyDecor(rich({ level: 12 }), 'shipwreck', T0, seededRng(1)))).toBe('locked');
+  it('is never level-gated: a level-1 player can buy any decor they can afford', () => {
+    for (const id of ['rock', 'castle', 'shipwreck', 'stone_head', 'tiny_cottage'] as const) {
+      expect(reason(buyDecor(rich({ level: 1 }), id, T0, seededRng(1)))).toBe('ok');
+    }
   });
 
   it('places the item on the active tank and charges for it', () => {
@@ -174,14 +173,17 @@ describe('decor', () => {
     expect(next.tanks[0]!.decor[0]!.decorId).toBe('plant_tall');
   });
 
-  it('caps at 8 per tank', () => {
+  it('places up to 15 per tank, then new purchases go to the decor box', () => {
     let state = rich();
-    for (let i = 0; i < MAX_DECOR_PER_TANK; i++) state = okState(buyDecor(state, 'rock', T0 + i, seededRng(i)));
-    expect(reason(buyDecor(state, 'rock', T0, seededRng(99)))).toBe('max');
+    for (let i = 0; i < DECOR_LIMIT.base; i++) state = okState(buyDecor(state, 'rock', T0 + i, seededRng(i)));
+    expect(state.tanks[0]!.decor).toHaveLength(15);
+    const extra = buyDecor(state, 'rock', T0, seededRng(99));
+    expect(extra.ok && extra.boxed).toBe(true);
+    expect(okState(extra).decorInventory).toEqual({ rock: 1 });
   });
 
   it('spreads new decor away from existing items', () => {
-    const tank = makeTank({ decor: [{ id: 'a', decorId: 'rock', x: 500 }] });
+    const tank = makeTank({ decor: [{ id: 'a', decorId: 'rock', x: 500, flipped: false, size: 'M' as const, depth: 'back' as const }] });
     const x = pickDecorX(tank, seededRng(3));
     expect(Math.abs(x - 500)).toBeGreaterThan(150);
   });
@@ -190,7 +192,7 @@ describe('decor', () => {
     expect(decorRefund('plant_tall')).toEqual({ currency: 'shells', amount: 17 });
     expect(decorRefund('shipwreck')).toEqual({ currency: 'pearls', amount: 3 });
     const state = rich({ shells: 0 });
-    state.tanks = [makeTank({ decor: [{ id: 'd1', decorId: 'castle', x: 300 }] })];
+    state.tanks = [makeTank({ decor: [{ id: 'd1', decorId: 'castle', x: 300, flipped: false, size: 'M' as const, depth: 'back' as const }] })];
     const next = okState(sellDecor(state, 'tank-1', 'd1'));
     expect(next.shells).toBe(75);
     expect(next.tanks[0]!.decor).toHaveLength(0);
@@ -281,7 +283,7 @@ describe('daily gift', () => {
 describe('decor placement', () => {
   it('slides decor along the sand, clamped away from the glass', () => {
     const state = rich();
-    state.tanks = [makeTank({ decor: [{ id: 'd1', decorId: 'rock', x: 300 }] })];
+    state.tanks = [makeTank({ decor: [{ id: 'd1', decorId: 'rock', x: 300, flipped: false, size: 'M' as const, depth: 'back' as const }] })];
     expect(okState(moveDecor(state, 'tank-1', 'd1', 640)).tanks[0]!.decor[0]!.x).toBe(640);
     expect(okState(moveDecor(state, 'tank-1', 'd1', -100)).tanks[0]!.decor[0]!.x).toBe(clampDecorX(-100));
     expect(clampDecorX(-100)).toBeGreaterThan(0);

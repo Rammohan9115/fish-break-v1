@@ -8,7 +8,8 @@ type Ctx = CanvasRenderingContext2D;
 const TAU = Math.PI * 2;
 
 /** Approximate drawn size [width, height] of each decor item (base-centered), for hit tests and previews. */
-export const DECOR_BOUNDS: Record<DecorId, [number, number]> = {
+/** Code-art sizes [width, height] for the drawn fallbacks; sprite-only items use FALLBACK_BOUNDS. */
+const CODE_BOUNDS: Partial<Record<DecorId, [number, number]>> = {
   plant_small: [64, 46],
   plant_tall: [50, 160],
   rock: [76, 44],
@@ -473,6 +474,14 @@ function drawShipwreck(ctx: Ctx, x: number, y: number, lw: number): void {
 }
 
 /** Draws one decor item with its base centered at (x, baseY). `px` = tank units per CSS pixel. */
+/** Size of the soft placeholder pebble drawn for sprite-only decor whose sprite failed to load. */
+const FALLBACK_BOUNDS: [number, number] = [44, 26];
+
+/** [width, height] of the code-drawn art (hit tests and previews when the sprite is missing). */
+export function decorBounds(decorId: DecorId): [number, number] {
+  return CODE_BOUNDS[decorId] ?? FALLBACK_BOUNDS;
+}
+
 export function drawDecor(ctx: Ctx, decorId: DecorId, x: number, baseY: number, timeMs: number, px: number): void {
   const t = timeMs / SECOND_MS;
   const lw = 1.6 * px;
@@ -489,5 +498,8 @@ export function drawDecor(ctx: Ctx, decorId: DecorId, x: number, baseY: number, 
       return drawChest(ctx, x, baseY, timeMs, lw);
     case 'shipwreck':
       return drawShipwreck(ctx, x, baseY, lw);
+    default:
+      // A sprite-only item whose sprite is missing: a soft placeholder pebble, never a crash.
+      return drawRock(ctx, x, baseY, lw);
   }
 }

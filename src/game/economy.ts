@@ -1,4 +1,5 @@
 // Shop purchases, selling, feeding XP, and the daily gift. Pure: (state, ...) → result.
+import { decorAvailable, maxDecor, newPlaced } from './decor';
 import {
   BREAK_XP_COOLDOWN_MS,
   CAPACITY_UPGRADE,
@@ -10,7 +11,8 @@ import {
   FEED_XP_MAX_PER_HOUR,
   HOUR_MS,
   JUVENILE_SELL_FRACTION,
-  MAX_DECOR_PER_TANK,
+  LAYOUT_PRESET_SLOTS,
+  STYLE_OPTIONS,
   BREEDING,
   TANK_BASE_CAPACITY,
   PREMIUM_FOOD_PACK,
@@ -25,7 +27,7 @@ import { isCourting } from './breeding';
 import { grantXp } from './levels';
 import { createFish, createTank, tankOccupancy } from './sim';
 import { SPECIES } from './species';
-import type { DecorId, Fish, GameState, Price, Rng, SpeciesId, Tank, ThemeId } from './types';
+import type { DecorId, Fish, GameState, PlacedDecor, Price, Rng, SpeciesId, StyleCategory, Tank, ThemeId } from './types';
 
 export type PurchaseError =
   | 'locked'
@@ -37,7 +39,8 @@ export type PurchaseError =
   | 'notFound'
   | 'notSellable'
   | 'claimed'
-  | 'courting';
+  | 'courting'
+  | 'event';
 
 export type Result = { ok: true; state: GameState; levelsGained: number[] } | { ok: false; reason: PurchaseError };
 
@@ -149,12 +152,12 @@ export function feedingXp(state: GameState, now: number): { xp: number; feedXp: 
 // Decor
 // ---------------------------------------------------------------------------
 
-export function checkBuyDecor(state: GameState, decorId: DecorId): PurchaseError | null {
+/** Why `decorId` can't be bought right now (at wall time `now`), or null. No level gates. */
+export function checkBuyDecor(state: GameState, decorId: DecorId, now: number): PurchaseError | null {
   const decor = DECOR[decorId];
   const tank = activeTank(state);
   if (!tank) return 'notFound';
-  if (state.level < Math.max(UNLOCK_LEVEL.decorShop, decor.unlockLevel)) return 'locked';
-  if (tank.decor.length >= MAX_DECOR_PER_TANK) return 'max';
+  if (!decorAvailable(decorId, new Date(now))) return 'event';
   if (!canAfford(state, decor.cost)) return 'cost';
   return null;
 }
@@ -174,12 +177,147 @@ export function pickDecorX(tank: Tank, rng: Rng): number {
   return best;
 }
 
-export function buyDecor(state: GameState, decorId: DecorId, now: number, rng: Rng): Result {
-  const error = checkBuyDecor(state, decorId);
+/** Buys decor: it's placed in the active tank if there's room, otherwise it goes to the decor box. */
+export function buyDecor(state: GameState, decorId: DecorId, now: number, rng: Rng): Result & { boxed?: boolean } {
+  const error = checkBuyDecor(state, decorId, now);
   if (error) return fail(error);
   const tank = activeTank(state)!;
-  const placed = { id: newId('decor', now, rng), decorId, x: pickDecorX(tank, rng) };
+  const paid = pay(state, DECOR[decorId].cost);
+  if (tank.decor.length >= maxDecor(tank)) return { ...ok(addToBox(paid, decorId, 1)), boxed: true };
+  const placed = newPlaced(newId('decor', now, rng), decorId, pickDecorX(tank, rng));
+  return ok(mapTank(paid, tank.id, (t) => ({ ...t, decor: [...t.decor, placed] })));
+}
+
+/** "Try it" → Buy & Place: buys decor and places it at `x` with the previewed look (needs room). */
+export function buyAndPlaceDecor(state: GameState, decorId: DecorId, x: number, look: Pick<PlacedDecor, 'flipped' | 'size' | 'depth'>, now: number, rng: Rng): Result {
+  const error = checkBuyDecor(state, decorId, now);
+  if (error) return fail(error);
+  const tank = activeTank(state)!;
+  if (tank.decor.length >= maxDecor(tank)) return fail('full');
+  const placed = { ...newPlaced(newId('decor', now, rng), decorId, clampDecorX(x)), ...look };
   return ok(mapTank(pay(state, DECOR[decorId].cost), tank.id, (t) => ({ ...t, decor: [...t.decor, placed] })));
+}
+
+function addToBox(state: GameState, decorId: DecorId, n: number): GameState {
+  const count = (state.decorInventory[decorId] ?? 0) + n;
+  const decorInventory = { ...state.decorInventory };
+  if (count > 0) decorInventory[decorId] = count;
+  else delete decorInventory[decorId];
+  return { ...state, decorInventory };
+}
+
+/** Places one item from the decor box into a tank at `x`. */
+export function placeFromBox(state: GameState, tankId: string, decorId: DecorId, x: number, now: number, rng: Rng): Result {
+  const tank = state.tanks.find((t) => t.id === tankId);
+  if (!tank) return fail('notFound');
+  if ((state.decorInventory[decorId] ?? 0) <= 0) return fail('notFound');
+  if (tank.decor.length >= maxDecor(tank)) return fail('full');
+  const placed = newPlaced(newId('decor', now, rng), decorId, clampDecorX(x));
+  return ok(mapTank(addToBox(state, decorId, -1), tankId, (t) => ({ ...t, decor: [...t.decor, placed] })));
+}
+
+/** Puts a placed item back in the decor box. */
+export function storeDecor(state: GameState, tankId: string, placedId: string): Result {
+  const tank = state.tanks.find((t) => t.id === tankId);
+  const placed = tank?.decor.find((d) => d.id === placedId);
+  if (!tank || !placed) return fail('notFound');
+  const next = mapTank(state, tankId, (t) => ({ ...t, decor: t.decor.filter((d) => d.id !== placedId) }));
+  return ok(addToBox(next, placed.decorId, 1));
+}
+
+/** Changes a placed item's look: flip, size, or (sand items) back/front. */
+export function updateDecor(state: GameState, tankId: string, placedId: string, change: Partial<Pick<PlacedDecor, 'flipped' | 'size' | 'depth'>>): Result {
+  const tank = state.tanks.find((t) => t.id === tankId);
+  if (!tank?.decor.some((d) => d.id === placedId)) return fail('notFound');
+  return ok(mapTank(state, tankId, (t) => ({ ...t, decor: t.decor.map((d) => (d.id === placedId ? { ...d, ...change } : d)) })));
+}
+
+/** Sells one item from the decor box for 50%. */
+export function sellBoxedDecor(state: GameState, decorId: DecorId): Result {
+  if ((state.decorInventory[decorId] ?? 0) <= 0) return fail('notFound');
+  return ok(earn(addToBox(state, decorId, -1), decorRefund(decorId)));
+}
+
+// ---------------------------------------------------------------------------
+// Layout presets
+// ---------------------------------------------------------------------------
+
+/** Saves the tank's current decor layout into a slot (0..2). */
+export function savePreset(state: GameState, tankId: string, slot: number, name: string): Result {
+  const tank = state.tanks.find((t) => t.id === tankId);
+  if (!tank || slot < 0 || slot >= LAYOUT_PRESET_SLOTS) return fail('notFound');
+  const items = tank.decor.map(({ decorId, x, flipped, size, depth }) => ({ decorId, x, flipped, size, depth }));
+  const layoutPresets = Array.from({ length: LAYOUT_PRESET_SLOTS }, (_, i) => (i === slot ? { name: name.trim() || `Layout ${slot + 1}`, items } : (tank.layoutPresets[i] ?? null)));
+  return ok(mapTank(state, tankId, (t) => ({ ...t, layoutPresets })));
+}
+
+/**
+ * Applies a saved layout: everything placed goes back to the decor box, then the layout's items are placed
+ * from the box in order. Items no longer owned (or beyond the decor limit) are skipped and counted.
+ */
+export function applyPreset(state: GameState, tankId: string, slot: number, now: number, rng: Rng): Result & { skipped?: number } {
+  const tank = state.tanks.find((t) => t.id === tankId);
+  const preset = tank?.layoutPresets[slot];
+  if (!tank || !preset) return fail('notFound');
+  let next = state;
+  for (const d of tank.decor) next = addToBox(next, d.decorId, 1);
+  const decor: PlacedDecor[] = [];
+  let skipped = 0;
+  for (const item of preset.items) {
+    if ((next.decorInventory[item.decorId] ?? 0) <= 0 || decor.length >= maxDecor(tank)) {
+      skipped++;
+      continue;
+    }
+    next = addToBox(next, item.decorId, -1);
+    decor.push({ ...item, id: newId('decor', now + decor.length, rng) });
+  }
+  return { ...ok(mapTank(next, tankId, (t) => ({ ...t, decor }))), skipped };
+}
+
+// ---------------------------------------------------------------------------
+// Tank styles
+// ---------------------------------------------------------------------------
+
+export function styleOption(optionId: string) {
+  return STYLE_OPTIONS.find((o) => o.id === optionId) ?? null;
+}
+
+/** Free options and bought ones can be used on any tank. */
+export function ownsStyle(state: GameState, optionId: string): boolean {
+  const opt = styleOption(optionId);
+  return opt !== null && (opt.price === null || state.ownedStyles.includes(optionId));
+}
+
+export function checkBuyStyle(state: GameState, optionId: string): PurchaseError | null {
+  const opt = styleOption(optionId);
+  if (!opt) return 'notFound';
+  if (ownsStyle(state, optionId)) return 'owned';
+  if (opt.price && !canAfford(state, opt.price)) return 'cost';
+  return null;
+}
+
+/** Buys a style option and applies it to the tank. */
+export function buyStyle(state: GameState, tankId: string, optionId: string): Result {
+  const error = checkBuyStyle(state, optionId);
+  if (error) return fail(error);
+  const opt = styleOption(optionId)!;
+  const bought = { ...pay(state, opt.price!), ownedStyles: [...state.ownedStyles, optionId] };
+  return applyStyle(bought, tankId, optionId);
+}
+
+/** Uses an owned (or free) style option on a tank. */
+export function applyStyle(state: GameState, tankId: string, optionId: string): Result {
+  const opt = styleOption(optionId);
+  if (!opt || !state.tanks.some((t) => t.id === tankId)) return fail('notFound');
+  if (!ownsStyle(state, optionId)) return fail('locked');
+  const category: StyleCategory = opt.category;
+  return ok(mapTank(state, tankId, (t) => ({ ...t, style: { ...t.style, [category]: optionId } })));
+}
+
+/** Custom lighting color and the nameplate switch (both free). */
+export function setTankStyleExtras(state: GameState, tankId: string, change: { lightingColor?: string; nameplate?: boolean }): Result {
+  if (!state.tanks.some((t) => t.id === tankId)) return fail('notFound');
+  return ok(mapTank(state, tankId, (t) => ({ ...t, style: { ...t.style, ...change } })));
 }
 
 /** Sells placed decor back for 50% (rounded down) in its original currency. */

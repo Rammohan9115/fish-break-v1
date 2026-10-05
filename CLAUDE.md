@@ -96,7 +96,9 @@ interface Tank {
   upgrades: number;       // capacity upgrades bought (0..5)
   cleanliness: number;    // 0..100
   algaeSpots: { id: string; x: number; y: number; size: number }[];
-  decor: { id: string; decorId: string; x: number }[];
+  decor: { id: string; decorId: string; x: number; flipped: boolean; size: 'S' | 'M' | 'L'; depth: 'back' | 'front' }[];
+  style: { frame; substrate; lighting; lightingColor; water; bubbler; nameplate: boolean }; // STYLE_OPTIONS ids
+  layoutPresets: ({ name: string; items: Omit<PlacedDecor, 'id'>[] } | null)[];  // 3 slots
   pellets: { id: string; x: number; y: number; vy: number; premium: boolean; landedAt: number | null }[];
   shells: { id: string; x: number; value: number; pearl: boolean }[]; // on the sand, click to collect
 }
@@ -119,6 +121,8 @@ interface GameState {
   lastDailyGift: string | null; // 'YYYY-MM-DD' local date
   settings: { muted: boolean; reducedMotion: boolean };
   stats: { fed: number; hatched: number; cleaned: number };
+  decorInventory: Partial<Record<DecorId, number>>; // the decor box: owned, not placed
+  ownedStyles: string[];  // bought tank style options (free ones aren't listed)
 }
 ```
 Note: pellets, shells, and algae are part of saved state. Fish x/y positions and velocities are NOT saved; they live in the renderer only.
@@ -136,7 +140,7 @@ The sim runs on a 1-second fixed tick. Rendering is separate at 60fps.
 - Base target 50.
 - +20 if hunger ≥ 40; -20 if hunger < 20
 - +15 if cleanliness ≥ 60; -15 if cleanliness < 30
-- +3 per decor item (max +15)
+- Decor rewards variety: +3 per different item, +1 per duplicate (max +20), plus +5 per active collection set (see Decor)
 - -10 if the tank holds more than 90% of its capacity in hatched fish (eggs don't count)
 - Clamp 0..100
 
@@ -196,7 +200,6 @@ a glow flash, bubbles and a heart. On the night theme it glows (brighter on each
 
 Unlocks beyond species:
 - L2: Premium food in shop (10 shells for 3)
-- L3: Decor shop (plants, rocks)
 - L4: Tank capacity upgrade (+3 slots, 150 shells, up to 5× per tank, cost ×1.6 each time: 150 / 240 / 384 / 614 / 983)
 - L5: Breeding (guide + "Your first baby" quest)
 - L8: Second tank (500 shells, capacity 12)
@@ -250,15 +253,76 @@ randomness only affects the baby's color and shiny chance.
 - Then the "Your first baby" quest highlights the next action at each step, and rewards 50 shells + 1 pearl on the first hatch.
 
 ## Decor
-| decorId | name | unlock | cost |
-|---|---|---|---|
-| plant_small | Sprout | L3 | 20 shells |
-| plant_tall | Tall Weed | L3 | 35 shells |
-| rock | Smooth Rock | L3 | 25 shells |
-| castle | Tiny Castle | L6 | 150 shells |
-| chest | Treasure Chest | L9 | 250 shells (opens and puffs bubbles every ~30s) |
-| shipwreck | Shipwreck | L13 | 6 pearls |
-Decor sits on the sand and is placed by dragging horizontally. Max 8 decor items per tank. Sell back for 50%.
+**No decor is ever locked by player level.** Everything can be bought at any level, limited only by price (and the October event).
+No "Unlocks at Lv X" labels for decor. Theme level gates (Night/Coral/Pond) stay.
+
+| decorId | name | collection | cost | placement | behaviors |
+|---|---|---|---|---|---|
+| plant_small | Sprout | Classic | 20 shells | sand | sway |
+| plant_tall | Tall Weed | Classic | 35 shells | sand | sway |
+| rock | Smooth Rock | Classic | 25 shells | sand | bubble stream, sheen |
+| castle | Tiny Castle | Classic | 150 shells | sand | flag, window glow, doorway fish |
+| chest | Treasure Chest | Classic | 250 shells | sand | opens and puffs bubbles every ~30s |
+| shipwreck | Shipwreck | Classic | 6 pearls | sand | rocking, bubble trail, lanterns |
+| moss_ball | Moss Ball | Nature | 15 shells | sand | rolls gently with the current |
+| driftwood | Driftwood | Nature | 60 shells | sand | — |
+| flower_plant | Flower Plant | Nature | 50 shells | sand | sway; flowers glow softly at night |
+| coral_branch | Coral Branch | Nature | 120 shells | sand | glints |
+| anemone | Anemone | Nature | 150 shells | sand | sway; clownfish love to hover in it |
+| sea_fan | Sea Fan | Nature | 130 shells | sand | slow sway |
+| lily_pad | Lily Pad | Nature | 40 shells | surface | bobs, soft shadow below |
+| column | Old Column | Ancient Ruins | 180 shells | sand | sheen |
+| sunken_vase | Sunken Vase | Ancient Ruins | 200 shells | sand | bubbles from its mouth |
+| broken_arch | Broken Arch | Ancient Ruins | 260 shells | sand | fish swim through the gap |
+| stone_head | Stone Head | Ancient Ruins | 6 pearls | sand | blows a bubble ring every ~40s |
+| bench | Park Bench | Cozy Village | 60 shells | sand | — |
+| mailbox | Mailbox | Cozy Village | 70 shells | sand | flag up when the daily gift is ready; tap it to open the gift |
+| lantern | Lantern | Cozy Village | 90 shells | sand | warm glow + halo at night |
+| tiny_cottage | Tiny Cottage | Cozy Village | 300 shells | sand | windows glow at night, chimney bubbles, a fish peeks out |
+| rubber_duck | Rubber Duck | Playful | 30 shells | surface | bobs and slowly turns |
+| diver | Diver | Playful | 100 shells | sand | bubble stream from the helmet |
+| volcano_bubbler | Bubble Volcano | Playful | 220 shells | sand | calm bubbling, big burst every ~45s |
+| bubble_wall_base | Bubble Curtain | Playful | 150 shells | sand | code-drawn bubble curtain; fish swim through it |
+| toy_submarine | Toy Submarine | Playful | 5 pearls | mid-water | drifts side to side, spinning propeller |
+| pumpkin | Jack-o'-Lantern | Halloween | 80 shells | sand | glows orange at night |
+| spooky_tree | Spooky Tree | Halloween | 120 shells | sand | gentle sway |
+
+- **Placement:** sand items sit on the sand line, surface items float just below the HUD band at the top of the view, and mid-water items drift at ~40% depth.
+  Everything is moved by dragging horizontally. Up to **15 placed items per tank, +3 per capacity upgrade**. Buying with a full tank puts the piece in the decor box. Sell back for 50% (from the tank or the box).
+- **Art:** the collection sprites are cut from sheets in `public/assets/elements/` (`nature`, `ruins`, `village`, `playful`, `halloween`.PNG) by the `rect` in `DECOR_ART`.
+- **Halloween is an October event** (local date): buyable only in October. Owned pieces stay forever and keep working.
+
+**Decorate mode 🎨** (toolbar, or the DecorCard's "🎨 Decorate"; never times out)
+- Fish fade to 50%, decor gets an edit outline, and the banner shows `🪸 9/15 · ↶ ↷ · ✕`.
+- **Tray** (docked right on desktop; a bottom sheet folded to its header on phones):
+  - **Box**: drag a piece into the water, or tap it to drop it in the middle. Each piece can also be sold from here.
+  - **Layouts**: 3 slots per tank. Save the current layout, or apply one. Applying puts everything in the box first, then places the layout's pieces; pieces you no longer own are skipped and counted in a toast.
+  - **Tank Style**: see below.
+- **Pieces:** a press drags straight away. Snap guides line a piece up with the tank center or another piece's center or edges (6 units).
+  The selected piece gets a floating toolbar: ⇋ Flip · To front/back (sand pieces) · S/M/L (0.8/1.0/1.2) · 📦 To box · Sell.
+- **Undo/redo** (last 20 steps, this session): the banner buttons, Ctrl/Cmd+Z (Shift to redo), or a two-finger tap on touch. Selling clears the history, because money can't be undone.
+- **Try it** (shop): a ghost of the piece in the tank. Drag it, then **Buy & Place** or cancel.
+
+**Tank styles** (code-drawn; no level gates; owned styles work on every tank; tap to preview live, then Use or Buy):
+
+| Category | Options (free ones marked) |
+|---|---|
+| Frame (slim bezel at the screen edges) | Classic Glass (free), Warm Wood (free), Bamboo 120, Pastel Pink 150, Retro Chrome 200, Night Neon 4 pearls (glowing edge) |
+| Substrate (drawn over the picture's sand) | Golden Sand (free, the picture's own sand), White Sand (free), Black Gravel 150 (sparkles), Pastel Pebbles 180, Glow Gravel 5 pearls (glows at night) |
+| Lighting (soft tint over the scene) | Natural (free), Warm Sunset (free), Cool Moonlight 100, Tropical 100, Soft Pink 100, Custom color 3 pearls |
+| Water | Crystal (free), Lagoon Blue (free), Emerald 120, Twilight 160 |
+| Bubbler | Classic (free), Off (free), Bubble Curtain 120, Heart Bubbles 200 |
+
+The nameplate (an engraved plaque on the bezel's bottom edge showing the tank name) can be switched off per tank.
+
+**Collections & set bonuses**
+- 3 *different* items from one collection in a tank (both pieces for Halloween, which has only 2) activate its set bonus: +5 happiness for that tank's fish, plus an ambient effect:
+  - Nature: drifting pollen
+  - Ruins: slow sand motes in the light
+  - Cozy Village: fireflies at night
+  - Playful: rainbow bubbles
+  - Halloween: cute little ghosts at night
+- The shop groups decor by collection, with progress (owned/total), a ✓ when complete, the set status for the current tank, and what each piece would add to happiness.
 
 ## Petting & Bond
 Press and hold a fish to pet it. Petting builds a **bond** that unlocks tricks and small perks. It's a fidget toy for
@@ -317,7 +381,7 @@ Once per local calendar day, on first open: 20 shells + 3 premium food, with a 1
 ## UI
 - The tank fills the viewport (max aspect ~16:10, letterboxed with a soft gradient).
 - **Top HUD:** level badge + XP bar, shells, pearls, mute toggle
-- **Bottom toolbar (big rounded buttons with emoji icons):** Feed 🍤, Premium 🌟 (shows count), Clean 🧽, Shop 🛒, Breeding 💕, My Fish 🐟, Tanks 🏠, Break ☕
+- **Bottom toolbar (big rounded buttons with emoji icons):** Feed 🍤, Premium 🌟 (shows count), Clean 🧽, Decorate 🎨, Shop 🛒 (Fish / Food / Decor / Styles / Tanks), Breeding 💕, My Fish 🐟, Tanks 🏠, Break ☕
 - **Capacity** shows as "🐟 7/10" on the HUD tank tag and in the tank switcher, with an "Upgrade" shortcut once a tank is 80%+ full.
 - **Feed mode:** clicking in the water drops 1 pellet at that x position (max 1 pellet per 150ms).
 - **Clean mode:** the cursor becomes a sponge; drag across algae to wipe.

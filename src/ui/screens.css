@@ -1109,3 +1109,356 @@
   outline: 3px solid var(--color-gold);
   outline-offset: -3px;
 }
+
+/* ---- Shop: decor collections ---- */
+.collection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.collection-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.collection-head .section-title {
+  margin: 0;
+}
+
+.collection-hint {
+  flex-basis: 100%;
+}
+
+/* ---- Tank Style: frame bezel + nameplate ---- */
+.tank-frame {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-frame);
+  pointer-events: none;
+}
+
+.tank-frame svg {
+  display: block;
+}
+
+.frame-neon .frame-edge {
+  filter: drop-shadow(0 0 4px #ff4fd8) drop-shadow(0 0 8px #3ff0ff);
+  animation: neon-pulse 3s ease-in-out infinite;
+}
+
+@keyframes neon-pulse {
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.nameplate {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  transform: translateX(-50%);
+  padding: 1px var(--space-3);
+  font-family: var(--font-display);
+  font-size: var(--text-small);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #5a4220;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+  background: linear-gradient(#ffe7a3, #d9a948);
+  border: 2px solid #9c7424;
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+}
+
+.frame-neon .nameplate {
+  color: #ffd6f6;
+  text-shadow: 0 0 6px #ff4fd8;
+  background: #1c1240;
+  border-color: #ff4fd8;
+}
+
+/* ---- Decorate mode ---- */
+.decorate-undo {
+  display: inline-flex;
+  gap: var(--space-1);
+  margin-left: var(--space-2);
+  pointer-events: auto;
+}
+
+.mini-btn {
+  min-width: 36px;
+  min-height: 32px;
+  font: inherit;
+  font-weight: 800;
+  color: var(--color-brand-edge);
+  background: var(--color-surface);
+  border: 2px solid var(--color-brand-edge);
+  border-radius: var(--radius-pill, 999px);
+  cursor: pointer;
+}
+
+.mini-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.tray-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tray-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+}
+
+.tray-grab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap-min);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: grab;
+  touch-action: none;
+}
+
+.tray-grab .preview {
+  width: 56px !important;
+  height: 44px !important;
+}
+
+.tray-name {
+  flex: 1;
+  font-weight: 700;
+}
+
+.tray-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: var(--z-toast);
+  padding: var(--space-1) var(--space-3);
+  font-weight: 800;
+  color: var(--color-brand-edge);
+  background: var(--color-surface);
+  border: 2px dashed var(--color-brand);
+  border-radius: var(--radius-lg);
+  pointer-events: none;
+  opacity: 0.92;
+}
+
+.layout-slot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.layout-name {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+}
+
+.decor-tools .quick-row {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.size-seg {
+  display: inline-flex;
+  border: 2px solid var(--color-secondary-edge);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.size-btn {
+  min-width: 36px;
+  min-height: 36px;
+  font: inherit;
+  font-weight: 800;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: none;
+  cursor: pointer;
+}
+
+.size-btn + .size-btn {
+  border-left: 2px solid var(--color-secondary-edge);
+}
+
+.size-on {
+  color: var(--color-text-on-brand);
+  background: var(--color-brand);
+}
+
+/* ---- Tank Style picker ---- */
+.style-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.style-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: var(--space-2);
+}
+
+.style-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--tap-min);
+  padding: var(--space-2);
+  font: inherit;
+  color: inherit;
+  background: var(--color-surface);
+  border: 2px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+}
+
+.style-tile-on {
+  border-color: var(--color-brand);
+  box-shadow: 0 0 0 2px var(--color-brand-soft);
+}
+
+.style-tile-preview {
+  border-color: var(--color-gold-edge);
+  border-style: dashed;
+}
+
+.style-swatch {
+  width: 44px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  border: 2px solid rgba(0, 0, 0, 0.15);
+}
+
+.style-name {
+  font-weight: 700;
+  font-size: var(--text-small);
+  text-align: center;
+}
+
+.style-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.style-actions .meta {
+  flex: 1;
+}
+
+.style-color {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 700;
+}
+
+.style-color input {
+  width: 56px;
+  height: 36px;
+  border: none;
+  background: none;
+}
+
+/* ---- Shop: decor filters ---- */
+.filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+.filter-row {
+  display: flex;
+  gap: var(--space-1);
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.chip {
+  flex: none;
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: 700;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 2px solid var(--color-line);
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.chip-on {
+  color: var(--color-text-on-brand);
+  background: var(--color-brand);
+  border-color: var(--color-brand-edge);
+}
+
+.shop-art {
+  position: relative;
+}
+
+.shop-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--color-gold-text);
+  background: var(--color-gold);
+  border: 2px solid var(--color-gold-edge);
+  border-radius: 999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frame-neon .frame-edge {
+    animation: none;
+  }
+}
+
+.decorate-banner {
+  max-width: calc(100vw - 24px);
+}
+
+.decorate-banner .banner-sub {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.decor-tray-collapsed .sheet-body {
+  display: none;
+}
+
+.tray-fold {
+  margin-left: auto;
+}

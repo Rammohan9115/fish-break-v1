@@ -1,7 +1,7 @@
 // All balance numbers live here. Logic must not contain magic numbers.
-import type { DecorDef, DecorId, Price, ThemeId } from './types';
+import type { CollectionDef, CollectionId, DecorDef, DecorId, DecorSize, Price, StyleCategory, StyleOption, TankStyle, ThemeId } from './types';
 
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 // ---------------------------------------------------------------------------
 // Time
@@ -55,8 +55,14 @@ export const HAPPINESS_CLEAN_THRESHOLD = 60;
 export const HAPPINESS_CLEAN_BONUS = 15;
 export const HAPPINESS_DIRTY_THRESHOLD = 30;
 export const HAPPINESS_DIRTY_PENALTY = 15;
-export const HAPPINESS_PER_DECOR = 3;
-export const HAPPINESS_DECOR_MAX = 15;
+/** Decor rewards variety: each different item +3, each duplicate +1, up to +20 in total. */
+export const HAPPINESS_PER_UNIQUE_DECOR = 3;
+export const HAPPINESS_PER_DUPLICATE_DECOR = 1;
+export const HAPPINESS_DECOR_MAX = 20;
+/** Each active collection set (3+ different items of one collection in a tank) adds this, on top of the decor cap. */
+export const HAPPINESS_PER_SET = 5;
+/** Different items of one collection needed in a tank for its set bonus (all of them, for a collection smaller than this). */
+export const SET_BONUS_ITEMS = 3;
 /** Fraction of capacity above which the tank counts as crowded. */
 export const HAPPINESS_CROWDED_FRACTION = 0.9;
 export const HAPPINESS_CROWDED_PENALTY = 10;
@@ -166,7 +172,6 @@ export const FEED_XP_MAX_PER_HOUR = 30;
 // ---------------------------------------------------------------------------
 export const UNLOCK_LEVEL = {
   premiumFood: 2,
-  decorShop: 3,
   breeding: 5,
   capacityUpgrade: 4,
   secondTank: 8,
@@ -220,16 +225,121 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
 // ---------------------------------------------------------------------------
 // Decor
 // ---------------------------------------------------------------------------
+const shells = (amount: number): Price => ({ currency: 'shells', amount });
+const pearls = (amount: number): Price => ({ currency: 'pearls', amount });
+
+/** Every decor item. No level gates: price (and the October event) is the only limit. */
 export const DECOR: Record<DecorId, DecorDef> = {
-  plant_small: { id: 'plant_small', name: 'Sprout', unlockLevel: 3, cost: { currency: 'shells', amount: 20 } },
-  plant_tall: { id: 'plant_tall', name: 'Tall Weed', unlockLevel: 3, cost: { currency: 'shells', amount: 35 } },
-  rock: { id: 'rock', name: 'Smooth Rock', unlockLevel: 3, cost: { currency: 'shells', amount: 25 } },
-  castle: { id: 'castle', name: 'Tiny Castle', unlockLevel: 6, cost: { currency: 'shells', amount: 150 } },
-  chest: { id: 'chest', name: 'Treasure Chest', unlockLevel: 9, cost: { currency: 'shells', amount: 250 } },
-  shipwreck: { id: 'shipwreck', name: 'Shipwreck', unlockLevel: 13, cost: { currency: 'pearls', amount: 6 } },
+  // Classic
+  plant_small: { id: 'plant_small', name: 'Sprout', cost: shells(20), collection: null, placement: 'sand' },
+  plant_tall: { id: 'plant_tall', name: 'Tall Weed', cost: shells(35), collection: null, placement: 'sand' },
+  rock: { id: 'rock', name: 'Smooth Rock', cost: shells(25), collection: null, placement: 'sand' },
+  castle: { id: 'castle', name: 'Tiny Castle', cost: shells(150), collection: null, placement: 'sand' },
+  chest: { id: 'chest', name: 'Treasure Chest', cost: shells(250), collection: null, placement: 'sand' },
+  shipwreck: { id: 'shipwreck', name: 'Shipwreck', cost: pearls(6), collection: null, placement: 'sand' },
+  // Nature
+  moss_ball: { id: 'moss_ball', name: 'Moss Ball', cost: shells(15), collection: 'nature', placement: 'sand' },
+  driftwood: { id: 'driftwood', name: 'Driftwood', cost: shells(60), collection: 'nature', placement: 'sand' },
+  flower_plant: { id: 'flower_plant', name: 'Flower Plant', cost: shells(50), collection: 'nature', placement: 'sand' },
+  coral_branch: { id: 'coral_branch', name: 'Coral Branch', cost: shells(120), collection: 'nature', placement: 'sand' },
+  anemone: { id: 'anemone', name: 'Anemone', cost: shells(150), collection: 'nature', placement: 'sand' },
+  sea_fan: { id: 'sea_fan', name: 'Sea Fan', cost: shells(130), collection: 'nature', placement: 'sand' },
+  lily_pad: { id: 'lily_pad', name: 'Lily Pad', cost: shells(40), collection: 'nature', placement: 'surface' },
+  // Ancient Ruins
+  column: { id: 'column', name: 'Old Column', cost: shells(180), collection: 'ruins', placement: 'sand' },
+  sunken_vase: { id: 'sunken_vase', name: 'Sunken Vase', cost: shells(200), collection: 'ruins', placement: 'sand' },
+  broken_arch: { id: 'broken_arch', name: 'Broken Arch', cost: shells(260), collection: 'ruins', placement: 'sand' },
+  stone_head: { id: 'stone_head', name: 'Stone Head', cost: pearls(6), collection: 'ruins', placement: 'sand' },
+  // Cozy Village
+  bench: { id: 'bench', name: 'Park Bench', cost: shells(60), collection: 'village', placement: 'sand' },
+  mailbox: { id: 'mailbox', name: 'Mailbox', cost: shells(70), collection: 'village', placement: 'sand' },
+  lantern: { id: 'lantern', name: 'Lantern', cost: shells(90), collection: 'village', placement: 'sand' },
+  tiny_cottage: { id: 'tiny_cottage', name: 'Tiny Cottage', cost: shells(300), collection: 'village', placement: 'sand' },
+  // Playful
+  rubber_duck: { id: 'rubber_duck', name: 'Rubber Duck', cost: shells(30), collection: 'playful', placement: 'surface' },
+  diver: { id: 'diver', name: 'Diver', cost: shells(100), collection: 'playful', placement: 'sand' },
+  volcano_bubbler: { id: 'volcano_bubbler', name: 'Bubble Volcano', cost: shells(220), collection: 'playful', placement: 'sand' },
+  bubble_wall_base: { id: 'bubble_wall_base', name: 'Bubble Curtain', cost: shells(150), collection: 'playful', placement: 'sand' },
+  toy_submarine: { id: 'toy_submarine', name: 'Toy Submarine', cost: pearls(5), collection: 'playful', placement: 'mid' },
+  // Halloween (October event)
+  pumpkin: { id: 'pumpkin', name: 'Jack-o\'-Lantern', cost: shells(80), collection: 'halloween', placement: 'sand' },
+  spooky_tree: { id: 'spooky_tree', name: 'Spooky Tree', cost: shells(120), collection: 'halloween', placement: 'sand' },
 };
+
+export const COLLECTIONS: Record<CollectionId, CollectionDef> = {
+  nature: { id: 'nature', name: 'Nature', icon: '🌿', event: null },
+  ruins: { id: 'ruins', name: 'Ancient Ruins', icon: '🏛️', event: null },
+  village: { id: 'village', name: 'Cozy Village', icon: '🏡', event: null },
+  playful: { id: 'playful', name: 'Playful', icon: '🦆', event: null },
+  halloween: { id: 'halloween', name: 'Halloween', icon: '🎃', event: 'october' },
+};
+export const COLLECTION_LIST: CollectionDef[] = Object.values(COLLECTIONS);
+/** The month (0-based, local time) of the October event. */
+export const OCTOBER_MONTH = 9;
+/**
+ * Surface decor floats with its middle this far below the top of the view (clear of the floating HUD);
+ * mid-water decor sits at this fraction of the water depth.
+ */
+export const DECOR_SURFACE_Y = 80;
+export const DECOR_MID_FRACTION = 0.42;
 export const DECOR_LIST: DecorDef[] = Object.values(DECOR);
-export const MAX_DECOR_PER_TANK = 8;
+/** Placed decor per tank: 15, plus 3 per capacity upgrade. */
+export const DECOR_LIMIT = { base: 15, perUpgrade: 3 } as const;
+/** S/M/L decor sizes. */
+export const DECOR_SIZE_SCALE: Record<DecorSize, number> = { S: 0.8, M: 1, L: 1.2 };
+/** Saved layouts per tank, and Decorate-mode undo steps. */
+export const LAYOUT_PRESET_SLOTS = 3;
+export const DECOR_UNDO_STEPS = 20;
+/** Decorate mode: snap to the tank center or another item's center/edge within this distance (tank units). */
+export const DECOR_SNAP_DIST = 6;
+
+// ---------------------------------------------------------------------------
+// Tank styles (code-drawn; no level gates; at least 2 free per category)
+// ---------------------------------------------------------------------------
+const style = (category: StyleCategory, key: string, name: string, price: Price | null): StyleOption => ({ id: `${category}:${key}`, category, key, name, price });
+export const STYLE_OPTIONS: StyleOption[] = [
+  style('frame', 'glass', 'Classic Glass', null),
+  style('frame', 'wood', 'Warm Wood', null),
+  style('frame', 'bamboo', 'Bamboo', { currency: 'shells', amount: 120 }),
+  style('frame', 'chrome', 'Retro Chrome', { currency: 'shells', amount: 200 }),
+  style('frame', 'pink', 'Pastel Pink', { currency: 'shells', amount: 150 }),
+  style('frame', 'neon', 'Night Neon', { currency: 'pearls', amount: 4 }),
+  style('substrate', 'golden', 'Golden Sand', null),
+  style('substrate', 'white', 'White Sand', null),
+  style('substrate', 'gravel', 'Black Gravel', { currency: 'shells', amount: 150 }),
+  style('substrate', 'pebbles', 'Pastel Pebbles', { currency: 'shells', amount: 180 }),
+  style('substrate', 'glow', 'Glow Gravel', { currency: 'pearls', amount: 5 }),
+  style('lighting', 'natural', 'Natural', null),
+  style('lighting', 'sunset', 'Warm Sunset', null),
+  style('lighting', 'moon', 'Cool Moonlight', { currency: 'shells', amount: 100 }),
+  style('lighting', 'tropical', 'Tropical', { currency: 'shells', amount: 100 }),
+  style('lighting', 'pink', 'Soft Pink', { currency: 'shells', amount: 100 }),
+  style('lighting', 'custom', 'Custom Color', { currency: 'pearls', amount: 3 }),
+  style('water', 'crystal', 'Crystal', null),
+  style('water', 'lagoon', 'Lagoon Blue', null),
+  style('water', 'emerald', 'Emerald', { currency: 'shells', amount: 120 }),
+  style('water', 'twilight', 'Twilight', { currency: 'shells', amount: 160 }),
+  style('bubbler', 'classic', 'Classic', null),
+  style('bubbler', 'off', 'Off', null),
+  style('bubbler', 'curtain', 'Bubble Curtain', { currency: 'shells', amount: 120 }),
+  style('bubbler', 'hearts', 'Heart Bubbles', { currency: 'shells', amount: 200 }),
+];
+export const STYLE_CATEGORIES: { id: StyleCategory; name: string; icon: string }[] = [
+  { id: 'frame', name: 'Frame', icon: '🖼️' },
+  { id: 'substrate', name: 'Substrate', icon: '🏖️' },
+  { id: 'lighting', name: 'Lighting', icon: '💡' },
+  { id: 'water', name: 'Water', icon: '💧' },
+  { id: 'bubbler', name: 'Bubbler', icon: '🫧' },
+];
+export const DEFAULT_TANK_STYLE: TankStyle = {
+  frame: 'frame:glass',
+  substrate: 'substrate:golden',
+  lighting: 'lighting:natural',
+  lightingColor: '#ffb3d9',
+  water: 'water:crystal',
+  bubbler: 'bubbler:classic',
+  nameplate: true,
+};
 export const DECOR_SELL_FRACTION = 0.5;
 export const CHEST_BUBBLE_INTERVAL_MS = 30 * SECOND_MS;
 
@@ -362,6 +472,8 @@ export const GREET_MS = 3500;
 export const GREET_START_DELAY_MS = 1200;
 /** localStorage flag: the "press and hold to pet" tip was shown. */
 export const PET_TIP_KEY = 'fishbowl-pet-tip-shown';
+/** localStorage: decor ids already seen in the shop (for the "New" badge). */
+export const DECOR_SEEN_KEY = 'fishbowl-decor-seen';
 
 // ---------------------------------------------------------------------------
 // Behavior (renderer)
@@ -641,6 +753,33 @@ export const LID_CLOSE_DAMPING = 3.4;
 export const WRECK_ROCK_DEG = 1;
 export const WRECK_ROCK_SPEED = 0.45;
 export const WRECK_TRAIL_GAP = [0.45, 0.9] as const;
+/** Collection decor behaviors (seconds unless noted). */
+export const BUBBLE_RING_GAP = [35, 45] as const;
+export const ERUPTION_GAP = [40, 50] as const;
+export const ERUPTION_BUBBLES = 16;
+export const SPARKLE_GAP = [5, 10] as const;
+/** Bubble curtain: bubbles per second per 100 units of bar. */
+export const CURTAIN_RATE = 14;
+/** Floating decor bobs this far (units) at this speed (rad/s); toys turn around at SPIN_SPEED. */
+export const DECOR_BOB_AMP = 3;
+export const DECOR_BOB_SPEED = 1.3;
+export const DECOR_SPIN_SPEED = 0.22;
+/** Mid-water toys drift this far each way around their spot, at this speed (rad/s). */
+export const DECOR_DRIFT_RANGE = 45;
+export const DECOR_DRIFT_SPEED = 0.12;
+/** Moss balls roll this far with a full-strength current. */
+export const DECOR_ROLL_RANGE = 12;
+/** Propeller spin (rad/s). */
+export const PROPELLER_SPEED = 16;
+/** Mailbox flag: degrees it lies down by when there's no gift waiting. */
+export const GIFT_FLAG_DOWN_DEG = 85;
+/** Floating decor casts a fainter shadow on the sand. */
+export const FLOATING_SHADOW = 0.35;
+/** Fish visiting decor (renderer ms): any visit every so often, favorites (clownfish → anemone) more often. */
+export const DECOR_VISIT_GAP = [7000, 14000] as const;
+export const DECOR_VISIT_FAVORITE_GAP = [5000, 9000] as const;
+export const DECOR_VISIT_HOVER_MS = 9000;
+export const DECOR_VISIT_THROUGH_MS = 7000;
 /** Shell/pearl drops: landing bounce length (ms) and drop height (tank units); glint gaps (s); fly-to-HUD length (ms). */
 export const DROP_LAND_MS = 900;
 export const DROP_FALL_HEIGHT = 26;

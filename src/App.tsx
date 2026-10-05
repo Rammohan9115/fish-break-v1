@@ -21,6 +21,9 @@ import { Toolbar } from './ui/Toolbar';
 import { BreedingGuide } from './ui/BreedingGuide';
 import { BreedingPanel } from './ui/BreedingPanel';
 import { MyFish } from './ui/MyFish';
+import { DecorTray } from './ui/DecorTray';
+import { DecorToolbar } from './ui/DecorToolbar';
+import { TankFrame } from './ui/TankFrame';
 import { PairingBanner } from './ui/PairingBanner';
 import { PairSheet } from './ui/PairSheet';
 import { TopChip } from './ui/TopChip';
@@ -123,6 +126,7 @@ export function App() {
   return (
     <div className={`app${onBreak ? ' app-break' : ''}`}>
       <TankView />
+      <TankFrame />
       {/* Break Mode hides every other piece of UI. */}
       {!onBreak && (
         <>
@@ -138,6 +142,8 @@ export function App() {
           <TankSwitcher />
           <BreedingPanel />
           <MyFish />
+          <DecorTray />
+          <DecorToolbar />
           <PairingBanner />
           <PairSheet />
           <TopChip />

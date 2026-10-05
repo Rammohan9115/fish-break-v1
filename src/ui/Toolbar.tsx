@@ -129,6 +129,7 @@ export function Toolbar() {
         <ToolButton icon="🍤" label="Feed" active={mode === 'feed'} hidden={!open} pulse={questTool === 'feed'} onClick={() => toggle('feed')} onboarding="feed" />
         <ToolButton icon="🌟" label="Premium" active={mode === 'premium'} badge={premiumFood} hidden={!open} onClick={() => toggle('premium')} />
         <ToolButton icon="🧽" label="Clean" active={mode === 'clean'} hidden={!open} onClick={() => toggle('clean')} />
+        <ToolButton icon="🎨" label="Decorate" active={mode === 'decorate'} hidden={!open} onClick={() => toggle('decorate')} />
         <ToolButton icon="🛒" label="Shop" active={panel === 'shop'} hidden={!open} pulse={questTool === 'shop'} onClick={() => togglePanel('shop')} />
         <ToolButton
           icon="💕"

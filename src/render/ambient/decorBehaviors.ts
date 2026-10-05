@@ -3,6 +3,24 @@
 // fish, sheens, glints) and particles (bubbles). Each decor id lists its behaviors in artConfig, so new
 // decor reuses them without new code. Everything is slow and springy; nothing snaps.
 import {
+  BUBBLE_RING_GAP,
+  DECOR_SIZE_SCALE,
+  CURTAIN_RATE,
+  DECOR_BOB_AMP,
+  DECOR_BOB_SPEED,
+  DECOR_DRIFT_RANGE,
+  DECOR_DRIFT_SPEED,
+  DECOR_MID_FRACTION,
+  DECOR_ROLL_RANGE,
+  DECOR_SPIN_SPEED,
+  DECOR_SURFACE_Y,
+  ERUPTION_BUBBLES,
+  ERUPTION_GAP,
+  FLOATING_SHADOW,
+  GIFT_FLAG_DOWN_DEG,
+  PROPELLER_SPEED,
+  SPARKLE_GAP,
+  DECOR,
   CHEST_OPEN_GAP,
   CHEST_OPEN_HOLD_MS,
   DECOR_BREATHE,
@@ -25,7 +43,7 @@ import {
   WRECK_ROCK_SPEED,
   WRECK_TRAIL_GAP,
 } from '../../game/constants';
-import type { Tank, ThemeId } from '../../game/types';
+import type { DecorId, SpeciesId, Tank, ThemeId } from '../../game/types';
 import { DECOR_ART, lidConfig, type DecorBehavior, type UV } from '../artConfig';
 import { makeCanvas } from '../assets';
 import { drawStar } from '../drawFish';
@@ -112,6 +130,32 @@ interface DecorState {
   glints: Glint[];
   trailNext: number;
   trailIndex: number;
+  ringNext: number;
+  eruptNext: number;
+  sparkleNext: number;
+  curtainAcc: number;
+  /** Moss ball roll (tank units), springing with the current. */
+  roll: Spring;
+  /** Mailbox flag angle (degrees). */
+  flag: Spring;
+}
+
+/** How a decor item is offset this frame (bob, drift, roll, spin), around its resting spot. */
+interface Motion {
+  dx: number;
+  dy: number;
+  /** Rotation around the sprite's center (radians). */
+  rot: number;
+  /** Horizontal scale (spinning toys, drifting subs facing their way). */
+  sx: number;
+}
+
+/** A point fish like to visit: swim through (arch, bubble curtain) or hover at (anemone; `species` favor it). */
+export interface DecorAttractor {
+  x: number;
+  y: number;
+  kind: 'through' | 'hover';
+  species?: SpeciesId;
 }
 
 export interface BehaviorEnv {
@@ -135,6 +179,8 @@ export interface DecorPose {
   shadowShift: number;
   timeSec: number;
   preset: QualityPreset;
+  /** Fade (the Try-it ghost); 1 when omitted. */
+  alpha?: number;
 }
 
 const DOOR_FISH_COLORS = ['#ff9f43', '#feca57', '#ff6b9d', '#54a0ff', '#5fd68a'];
@@ -174,6 +220,74 @@ export class DecorBehaviors {
   private readonly states = new Map<string, DecorState>();
   /** Seconds since start (schedules run on this clock). */
   private time = 0;
+  /** Top of the visible water (tank units): surface decor floats just below it. Set by the renderer each frame. */
+  surfaceTop = 0;
+  /** The daily gift is waiting (the mailbox raises its flag). Set by the renderer each frame. */
+  giftReady = false;
+  private readonly motionOut: Motion = { dx: 0, dy: 0, rot: 0, sx: 1 };
+
+  /** Where a decor item's base rests (before sink): the sand line, just under the water line, or mid-water. */
+  restY(decorId: DecorId, h: number): number {
+    const placement = DECOR[decorId].placement;
+    if (placement === 'surface') return this.surfaceTop + DECOR_SURFACE_Y + h / 2;
+    if (placement === 'mid') return SAND_Y * DECOR_MID_FRACTION + h / 2;
+    return SAND_Y;
+  }
+
+  /** This frame's bob / drift / roll / spin offsets for an item (shared object; read immediately). */
+  motion(d: Placed, w: number): Motion {
+    const m = this.motionOut;
+    const s = this.states.get(d.id);
+    m.dx = 0;
+    m.dy = 0;
+    m.rot = 0;
+    m.sx = 1;
+    if (!s) return m;
+    const t = this.time;
+    if (this.has(d, 'bob')) m.dy = Math.sin(t * DECOR_BOB_SPEED + s.phase) * DECOR_BOB_AMP;
+    if (this.has(d, 'drift')) {
+      const a = t * DECOR_DRIFT_SPEED + s.phase;
+      m.dx += Math.sin(a) * DECOR_DRIFT_RANGE;
+      // Face the way it's drifting (the sprite faces right), turning smoothly at each end.
+      const c = Math.max(-1, Math.min(1, Math.cos(a) * 4));
+      m.sx = Math.sign(c || 1) * Math.max(0.2, Math.abs(c));
+    }
+    if (this.has(d, 'roll')) {
+      m.dx += s.roll.x;
+      m.rot = s.roll.x / (w / 2);
+    }
+    if (this.has(d, 'spin')) {
+      const c = Math.cos(t * DECOR_SPIN_SPEED + s.phase);
+      m.sx *= Math.sign(c || 1) * Math.max(0.15, Math.abs(c));
+    }
+    return m;
+  }
+
+  /**
+   * Where a point of the sprite (uv) is in the tank right now: placement, bob/drift offsets, size and flip
+   * included. `w`/`h` are the drawn size at M; `sink` is how far the base sits below its resting line.
+   */
+  pointAt(d: Placed, w: number, h: number, sink: number, uv: UV, m: Motion): { x: number; y: number } {
+    const k = DECOR_SIZE_SCALE[d.size ?? 'M'];
+    const fx = d.flipped ? -1 : 1;
+    return {
+      x: d.x + m.dx + fx * k * (-w / 2 + uv[0] * w),
+      y: this.restY(d.decorId, h) + sink + m.dy + k * (-h + uv[1] * h),
+    };
+  }
+
+  /** Points fish like to visit (arch gap, bubble curtain, anemone), in tank units. */
+  attractors(decor: Placed[], out: DecorAttractor[]): DecorAttractor[] {
+    out.length = 0;
+    for (const d of decor) {
+      const a = DECOR_ART[d.decorId].anchors?.attract;
+      const size = a ? decorSpriteSize(d.decorId) : null;
+      if (!a || !size) continue;
+      const p = this.pointAt(d, size.w, size.h, size.h * DECOR_ART[d.decorId].sink, a.uv, this.motion(d, size.w));
+      out.push({ x: p.x, y: p.y, kind: a.kind, species: a.species });
+    }
+    return out;
+  }
 
   constructor(private readonly rng: () => number = Math.random) {}
 
@@ -198,6 +312,12 @@ export class DecorBehaviors {
         glints: [],
         trailNext: this.time + r(),
         trailIndex: 0,
+        ringNext: this.time + between(r, BUBBLE_RING_GAP) * 0.3,
+        eruptNext: this.time + between(r, ERUPTION_GAP) * 0.4,
+        sparkleNext: this.time + between(r, SPARKLE_GAP) * 0.5,
+        curtainAcc: 0,
+        roll: { x: 0, v: 0 },
+        flag: { x: this.giftReady ? 0 : GIFT_FLAG_DOWN_DEG, v: 0 },
       };
       this.states.set(d.id, s);
     }
@@ -234,8 +354,37 @@ export class DecorBehaviors {
     const size = decorSpriteSize(d.decorId);
     if (!size) return;
     const { w, h } = size;
-    const top = SAND_Y + h * art.sink - h;
-    const at = (uv: UV) => ({ x: d.x - w / 2 + uv[0] * w, y: top + uv[1] * h });
+    if (this.has(d, 'roll')) stepSpring(s.roll, env.current.total * DECOR_ROLL_RANGE, PLANT_STIFFNESS * 0.5, PLANT_DAMPING, dt);
+    if (this.has(d, 'giftFlag')) stepSpring(s.flag, this.giftReady ? 0 : GIFT_FLAG_DOWN_DEG, PLANT_STIFFNESS, PLANT_DAMPING * 0.7, dt);
+    const m = this.motion(d, w);
+    const mx = m.dx;
+    const my = m.dy;
+    const at = (uv: UV) => this.pointAt(d, w, h, h * art.sink, uv, { dx: mx, dy: my, rot: 0, sx: 1 });
+
+    if (this.has(d, 'bubbleRing') && art.anchors?.mouth && t >= s.ringNext) {
+      const p = at(art.anchors.mouth);
+      env.particles.spawnRing(p.x, p.y, 13, 3.2);
+      s.ringNext = t + between(this.rng, BUBBLE_RING_GAP);
+    }
+    if (this.has(d, 'eruption') && art.anchors?.trail?.[0] && t >= s.eruptNext) {
+      const p = at(art.anchors.trail[0]);
+      const n = env.reduced ? 5 : ERUPTION_BUBBLES;
+      for (let i = 0; i < n; i++) env.particles.spawnBubble(p.x + (this.rng() - 0.5) * w * 0.25, p.y - this.rng() * 14, 2 + this.rng() * 4);
+      s.eruptNext = t + between(this.rng, ERUPTION_GAP);
+    }
+    if (this.has(d, 'sparkle') && t >= s.sparkleNext) {
+      for (const [i, uv] of (art.anchors?.glint ?? []).entries()) s.glints.push({ at: t + i * 0.3, uv });
+      s.sparkleNext = t + between(this.rng, SPARKLE_GAP);
+    }
+    if (this.has(d, 'curtain') && art.anchors?.curtain) {
+      const c = art.anchors.curtain;
+      s.curtainAcc += dt * CURTAIN_RATE * ((c.u1 - c.u0) * w / 100) * (env.reduced ? 0.35 : 1);
+      while (s.curtainAcc >= 1) {
+        s.curtainAcc -= 1;
+        const p = at([c.u0 + this.rng() * (c.u1 - c.u0), c.v]);
+        env.particles.spawnBubble(p.x, p.y, 1 + this.rng() * 2.2);
+      }
+    }
 
     if (this.has(d, 'sway')) {
       const target = env.current.total * PLANT_CURRENT_LEAN + fishPush(d.x, SAND_Y, w, h, env.fish);
@@ -324,19 +473,32 @@ export class DecorBehaviors {
     const { k } = pose.grid;
     const { dw, dh } = img;
 
-    decorShadow(ctx, d.decorId, d.x, pose.lift, pose.shadowShift);
+    const m = this.motion(d, dw);
+    const floating = DECOR[d.decorId].placement !== 'sand';
+    const sizeK = DECOR_SIZE_SCALE[d.size ?? 'M'];
+    decorShadow(ctx, d.decorId, d.x + m.dx, pose.lift, pose.shadowShift, (floating ? FLOATING_SHADOW : 1) * (pose.alpha ?? 1), sizeK);
 
     const breathe = this.has(d, 'breathe') ? 1 + DECOR_BREATHE * Math.sin(t * s.breatheFreq + s.phase) : 1;
     const rock = this.has(d, 'rocking') ? Math.sin(t * WRECK_ROCK_SPEED + s.phase) * WRECK_ROCK_DEG * DEG : 0;
     const lifted = pose.lift > 0.001 || pose.squash !== 0;
     const lift = 1 + pose.lift * DECOR_LIFT_SCALE;
     // At rest the base point lands on a whole device pixel; anything moving stays subpixel-smooth.
-    const baseX = lifted ? d.x : snapTo(d.x, pose.grid.camX, k);
-    const baseY = lifted ? SAND_Y + img.sinkY - pose.lift * DECOR_LIFT : snapTo(SAND_Y + img.sinkY, pose.grid.camY, k);
+    const moving = lifted || m.dx !== 0 || m.dy !== 0;
+    const rest = this.restY(d.decorId, dh) + img.sinkY;
+    const baseX = moving ? d.x + m.dx : snapTo(d.x, pose.grid.camX, k);
+    const baseY = moving ? rest + m.dy - pose.lift * DECOR_LIFT : snapTo(rest, pose.grid.camY, k);
 
     ctx.save();
     ctx.translate(baseX, baseY);
     if (rock) ctx.rotate(rock);
+    if (m.rot) {
+      ctx.translate(0, -dh / 2);
+      ctx.rotate(m.rot);
+      ctx.translate(0, dh / 2);
+    }
+    if (m.sx !== 1) ctx.scale(m.sx, 1);
+    if (sizeK !== 1 || d.flipped) ctx.scale(d.flipped ? -sizeK : sizeK, sizeK);
+    if (pose.alpha !== undefined && pose.alpha < 1) ctx.globalAlpha *= pose.alpha;
     ctx.scale(lift * breathe * (1 + pose.squash), lift * breathe * (1 - pose.squash));
 
     const sway = this.has(d, 'sway') ? art.sway : undefined;
@@ -356,9 +518,32 @@ export class DecorBehaviors {
     }
 
     const flag = this.has(d, 'flag') ? art.anchors?.flag : undefined;
+    const giftFlag = this.has(d, 'giftFlag') ? art.anchors?.flag : undefined;
+    const propeller = this.has(d, 'propeller') ? art.anchors?.propeller : undefined;
     const lid = this.has(d, 'lidOpen') ? lidConfig(d.decorId) : null;
     if (offset) {
       drawStrips(ctx, img.canvas, -dw / 2, -dh, dw, dh, pose.preset.plantStrips, offset);
+    } else if (giftFlag) {
+      // The mailbox flag pivots at the bottom of its pole: up when a gift is waiting, lying down otherwise.
+      const parts = cutParts(img, `${img.key}:giftflag`, giftFlag);
+      ctx.drawImage(parts.base, -dw / 2, -dh, dw, dh);
+      const pivot = art.anchors?.flagPivot ?? [giftFlag.x0, giftFlag.y1];
+      const px = -dw / 2 + pivot[0] * dw;
+      const py = -dh + pivot[1] * dh;
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(s.flag.x * DEG);
+      ctx.drawImage(parts.part, -dw / 2 + giftFlag.x0 * dw - px, -dh + giftFlag.y0 * dh - py, (giftFlag.x1 - giftFlag.x0) * dw, (giftFlag.y1 - giftFlag.y0) * dh);
+      ctx.restore();
+    } else if (propeller) {
+      // The propeller spins around the shaft: its blades squash and stretch vertically.
+      const parts = cutParts(img, `${img.key}:prop`, propeller);
+      ctx.drawImage(parts.base, -dw / 2, -dh, dw, dh);
+      const pw = (propeller.x1 - propeller.x0) * dw;
+      const ph = (propeller.y1 - propeller.y0) * dh;
+      const cy = -dh + (propeller.y0 + propeller.y1) / 2 * dh;
+      const spin = Math.max(0.15, Math.abs(Math.cos(this.time * PROPELLER_SPEED + s.phase)));
+      ctx.drawImage(parts.part, -dw / 2 + propeller.x0 * dw, cy - (ph * spin) / 2, pw, ph * spin);
     } else if (flag) {
       const parts = cutParts(img, `${img.key}:flag`, flag);
       ctx.drawImage(parts.base, -dw / 2, -dh, dw, dh);
@@ -405,7 +590,10 @@ export class DecorBehaviors {
     }
     ctx.restore();
 
-    if (s.doorFish && art.anchors?.door) this.drawDoorFish(ctx, s.doorFish, d.x - dw / 2 + art.anchors.door[0] * dw, SAND_Y + img.sinkY - dh + art.anchors.door[1] * dh);
+    if (s.doorFish && art.anchors?.door) {
+      const door = this.pointAt(d, dw, dh, img.sinkY, art.anchors.door, m);
+      this.drawDoorFish(ctx, s.doorFish, door.x, door.y);
+    }
     return true;
   }
 
@@ -477,28 +665,54 @@ export class DecorBehaviors {
     if (lights < 0.02) return;
     const img = decorImage(d.decorId, theme, k);
     if (!img) return;
-    const art = DECOR_ART[d.decorId];
-    const pts: { uv: UV; r: number }[] = [];
-    if (this.has(d, 'windowGlow')) for (const uv of art.anchors?.windows ?? []) pts.push({ uv, r: 0.1 });
-    if (this.has(d, 'lanternGlow')) for (const uv of art.anchors?.lanterns ?? []) pts.push({ uv, r: 0.07 });
+    const pts = lightPoints(d.decorId, (b) => this.has(d, b));
     if (pts.length === 0) return;
     const s = this.state(d);
+    const m = this.motion(d, img.dw);
+    const sizeK = DECOR_SIZE_SCALE[d.size ?? 'M'];
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for (const [i, p] of pts.entries()) {
-      const x = d.x - img.dw / 2 + p.uv[0] * img.dw;
-      const y = SAND_Y + img.sinkY - img.dh + p.uv[1] * img.dh;
+      const { x, y } = this.pointAt(d, img.dw, img.dh, img.sinkY, p.uv, m);
       const flicker = 0.88 + 0.12 * Math.sin(timeSec * 2.3 + s.phase + i * 1.7) * Math.sin(timeSec * 0.9 + i);
-      const r = p.r * img.dw;
+      const r = p.r * img.dw * sizeK;
       const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, `rgba(255, 220, 130, ${0.95 * lights * flicker})`);
-      g.addColorStop(0.35, `rgba(255, 170, 70, ${0.42 * lights * flicker})`);
-      g.addColorStop(1, 'rgba(255, 150, 60, 0)');
+      g.addColorStop(0, `rgba(${p.core}, ${0.95 * p.strength * lights * flicker})`);
+      g.addColorStop(0.35, `rgba(${p.color}, ${0.42 * p.strength * lights * flicker})`);
+      g.addColorStop(1, `rgba(${p.color}, 0)`);
       ctx.fillStyle = g;
       ctx.fillRect(x - r, y - r, r * 2, r * 2);
     }
     ctx.restore();
   }
+}
+
+/** Warm window and lantern light, unless a glow overrides the color. */
+const WARM_CORE = '255, 220, 130';
+const WARM = '255, 170, 70';
+
+interface LightPoint {
+  uv: UV;
+  r: number;
+  core: string;
+  color: string;
+  strength: number;
+}
+
+const lightCache = new Map<string, LightPoint[]>();
+
+/** The night lights of a decor item: windows, lanterns and colored glows (cached per item). */
+function lightPoints(decorId: DecorId, has: (b: DecorBehavior) => boolean): LightPoint[] {
+  const hit = lightCache.get(decorId);
+  if (hit) return hit;
+  const a = DECOR_ART[decorId].anchors;
+  const pts: LightPoint[] = [];
+  if (has('windowGlow')) for (const uv of a?.windows ?? []) pts.push({ uv, r: 0.1, core: WARM_CORE, color: WARM, strength: 1 });
+  if (has('lanternGlow')) for (const uv of a?.lanterns ?? []) pts.push({ uv, r: 0.07, core: WARM_CORE, color: WARM, strength: 1 });
+  // Colored glows (flowers, the pumpkin face, a lantern's halo): a warm white core fading into their color.
+  for (const g of a?.glows ?? []) pts.push({ uv: g.uv, r: g.r, core: '255, 240, 200', color: g.color, strength: 1 });
+  lightCache.set(decorId, pts);
+  return pts;
 }
 
 /**

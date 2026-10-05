@@ -39,9 +39,12 @@ import {
   JELLY_CONTRACT_MS,
   JELLY_EXPAND_MS,
   PET_HITBOX_PAD,
+  DECOR,
+  DECOR_SIZE_SCALE,
+  DEFAULT_TANK_STYLE,
 } from '../game/constants';
 import { getSpecies, getVariant, SHINY_OUTLINE, SHINY_SPARKLE } from '../game/species';
-import type { BondLevel, Fish, GameState, Tank, ThemeId } from '../game/types';
+import type { BondLevel, Fish, GameState, PlacedDecor, Tank, TankStyle, ThemeId } from '../game/types';
 import {
   createActor,
   heartPoint,
@@ -76,7 +79,7 @@ import { drawThemeScenery } from './drawScenery';
 import { drawEgg, eggProgress } from './drawEgg';
 import { iconSprite } from './assets';
 import { ThemeBackground } from './background';
-import { decorBox, decorLayer, decorSpriteSize, drawIconAt, drawSandItem, dropSquash, type PixelGrid } from './drawSprites';
+import { decorBox, decorSpriteSize, drawIconAt, drawSandItem, dropSquash, type PixelGrid } from './drawSprites';
 import { THEME_ART, type IconId } from './artConfig';
 import { BackgroundFx, type FxFrame } from './ambient/backgroundFx';
 import { Currents } from './ambient/currents';
@@ -88,6 +91,12 @@ import type { Courtship, DecorId, Egg } from '../game/types';
 import type { SimEvent } from '../game/sim';
 import { drawDrop, drawPellet, Particles } from './particles';
 import { BondFx, type PetOutcome } from './bondFx';
+import { DecorVisits } from './ambient/decorVisits';
+import { SetEffects } from './ambient/setEffects';
+import { drawLightingTint, drawWaterTint, SubstrateLayer } from './drawSubstrate';
+import { activeSets } from '../game/decor';
+import type { DecorAttractor } from './ambient/decorBehaviors';
+import { dailyGiftAvailable, localDateKey } from '../game/economy';
 import type { TrickId } from '../game/bond';
 
 type Ctx = CanvasRenderingContext2D;
@@ -107,6 +116,8 @@ export interface RendererDeps {
   getBreedingView?: () => BreedingView;
   /** A pet session's meter filled: the store pays out (or the fish is just content). Null if the fish is gone. */
   onPetComplete?: (fishId: string) => PetOutcome | null;
+  /** Decorate mode, the shop's "Try it" ghost, and a live Tank Style preview (read once per frame). */
+  getDecorView?: () => DecorView;
   /** The pet meter moved (0..1), or petting stopped (null). */
   onPetProgress?: (fishId: string, progress: number | null) => void;
 }
@@ -122,6 +133,18 @@ export interface BreedingView {
   /** The first-baby quest points at this fish. */
   questFishId: string | null;
 }
+
+/** What the tank shows for decorating. */
+export interface DecorView {
+  decorating: boolean;
+  tryDecor: (Pick<PlacedDecor, 'decorId' | 'x' | 'flipped' | 'size' | 'depth'>) | null;
+  stylePreview: Partial<TankStyle> | null;
+}
+
+const NO_DECOR_VIEW: DecorView = { decorating: false, tryDecor: null, stylePreview: null };
+
+/** The "Try it" ghost's id (never a real decor id). */
+export const TRY_DECOR_ID = '__try';
 
 const NO_BREEDING: BreedingView = { readyIds: new Set(), pairing: null, courtships: [], questFishId: null };
 
@@ -161,6 +184,16 @@ export class Renderer {
   private readonly actors = new Map<string, FishActor>();
   private readonly particles = new Particles();
   private readonly bond = new BondFx(this.particles);
+  private readonly visits = new DecorVisits();
+  private readonly setFx = new SetEffects();
+  private readonly substrate = new SubstrateLayer();
+  private decorView: DecorView = NO_DECOR_VIEW;
+  /** Decorate mode: the snap guide's x while dragging, or null. */
+  private snapGuide: number | null = null;
+  private readonly tryPlaced: PlacedDecor = { id: TRY_DECOR_ID, decorId: 'rock', x: 0, flipped: false, size: 'M', depth: 'back' };
+  private readonly attractors: DecorAttractor[] = [];
+  /** When the daily-gift check (mailbox flag) last ran (renderer ms). */
+  private giftCheckedAt = -Infinity;
   /** Static background (water, distant ridges) and foreground (sand, stones), re-baked on theme/size change. */
   private backLayer: BakedLayer | null = null;
   private frontLayer: BakedLayer | null = null;
@@ -331,16 +364,63 @@ export class Renderer {
     if (!tank) return null;
     for (let i = tank.decor.length - 1; i >= 0; i--) {
       const d = tank.decor[i]!;
-      const [w, h] = decorBox(d.decorId);
-      const baseY = this.decorBaseY(d.decorId);
-      if (Math.abs(x - d.x) <= w / 2 && y <= baseY && y >= baseY - h) return d.id;
+      const k = DECOR_SIZE_SCALE[d.size];
+      const [w0, h0] = decorBox(d.decorId);
+      const w = w0 * k;
+      const h = h0 * k;
+      const m = this.behaviors.motion(d, w0);
+      const baseY = this.decorBaseY(d.decorId) + m.dy;
+      if (Math.abs(x - d.x - m.dx) <= w / 2 && y <= baseY && y >= baseY - h) return d.id;
     }
     return null;
   }
 
   /** Where a decor item's base sits: sprites rest on the sand line, the drawn art slightly below it. */
   private decorBaseY(decorId: DecorId): number {
-    return decorSpriteSize(decorId) ? SAND_Y : SAND_Y + DECOR_BASE_OFFSET;
+    const size = decorSpriteSize(decorId);
+    return size ? this.behaviors.restY(decorId, size.h) : SAND_Y + DECOR_BASE_OFFSET;
+  }
+
+  /** A placed decor item's top-center in client (viewport) px, for floating toolbars; null if not in the active tank. */
+  decorScreenPoint(placedId: string): { x: number; top: number; bottom: number } | null {
+    const game = this.deps.getGame();
+    const d = game.tanks.find((t) => t.id === game.activeTankId)?.decor.find((dd) => dd.id === placedId);
+    if (!d) return null;
+    const k = DECOR_SIZE_SCALE[d.size];
+    const [w0, h0] = decorBox(d.decorId);
+    const m = this.behaviors.motion(d, w0);
+    const baseY = this.decorBaseY(d.decorId) + m.dy;
+    const rect = this.canvas.getBoundingClientRect();
+    return {
+      x: rect.left + (d.x + m.dx - this.camX) * this.scale,
+      top: rect.top + (baseY - h0 * k - this.camY) * this.scale,
+      bottom: rect.top + (baseY - this.camY) * this.scale,
+    };
+  }
+
+  /** Decorate mode: show (or hide, with null) the dashed snap guide at x. */
+  setSnapGuide(x: number | null): void {
+    this.snapGuide = x;
+  }
+
+  /** The tank's style with any live preview applied. */
+  private styleOf(tank: Tank): TankStyle {
+    const base = tank.style ?? DEFAULT_TANK_STYLE;
+    const preview = this.decorView.stylePreview;
+    return preview ? { ...base, ...preview } : base;
+  }
+
+  /** The decor to update/draw this frame: the tank's, plus the "Try it" ghost. */
+  private decorList(tank: Tank): Tank['decor'] {
+    const t = this.decorView.tryDecor;
+    if (!t) return tank.decor;
+    Object.assign(this.tryPlaced, t);
+    return [...tank.decor, this.tryPlaced];
+  }
+
+  /** Front-depth sand decor draws over the fish; everything else behind them. */
+  private isFront(d: PlacedDecor): boolean {
+    return DECOR[d.decorId].placement === 'sand' && d.depth === 'front' && decorSpriteSize(d.decorId) !== null;
   }
 
   /** Decor under the cursor (look mode) gets a soft outline glow; null clears it. */
@@ -634,6 +714,7 @@ export class Renderer {
     const tank = game.tanks.find((tk) => tk.id === game.activeTankId) ?? game.tanks[0];
     if (tank) {
       this.breeding = this.deps.getBreedingView?.() ?? NO_BREEDING;
+      this.decorView = this.deps.getDecorView?.() ?? NO_DECOR_VIEW;
       this.update(game, tank, t, dt);
       this.draw(game, tank, t, dt);
     }
@@ -669,7 +750,7 @@ export class Renderer {
         beatTempo,
         reduced,
         jellies: zones,
-        ...this.bond.steer(f.id, this.pointer, reduced),
+        ...this.steer(f.id, now, reduced),
       });
       this.updateGaze(actor, food, dt);
       if (eaten) {
@@ -724,12 +805,22 @@ export class Renderer {
     const currentNow = this.currents.update(dt);
     this.day = dayLight(currentHour());
     this.fx.update(this.fxFrame(dt, now / SECOND_MS, reduced, tank));
-    this.behaviors.update(dt, tank.decor, {
+    // Floating decor rides just under the top of the view; the mailbox flag shows the daily gift.
+    this.behaviors.surfaceTop = this.view.y0;
+    if (now - this.giftCheckedAt > SECOND_MS) {
+      this.giftCheckedAt = now;
+      this.behaviors.giftReady = dailyGiftAvailable(game, localDateKey(new Date()));
+    }
+    const courting = new Set(this.breeding.courtships.flatMap((c) => c.fishIds));
+    this.visits.update(now, this.behaviors.attractors(tank.decor, this.attractors), fish, this.actors, (id) => courting.has(id) || this.bond.pettingId === id);
+    this.particles.bubbler = this.styleOf(tank).bubbler;
+    this.behaviors.update(dt, this.decorList(tank), {
       current: currentNow,
       fish: fish.map((f) => this.actors.get(f.id)!).map((a) => ({ x: a.x, y: a.y })),
       particles: this.particles,
       reduced,
     });
+    this.setFx.update(dt, activeSets(tank), this.view, Math.max(this.day.lights, THEME_ART[tank.theme].minLights), reduced);
     this.sandItems.update(tank.shells, now);
     // Food dropping in leaves a ripple ring on the surface.
     const ids = new Set(tank.pellets.map((p) => p.id));
@@ -737,6 +828,14 @@ export class Renderer {
     this.seenPellets = ids;
     this.particles.update(dt, reduced, currentNow.total);
     this.updateBond(fish, now, dt, reduced);
+  }
+
+  /** Bond steering (petting, tricks, follow, hellos) first; otherwise maybe a decor visit. */
+  private steer(fishId: string, now: number, reduced: boolean): ReturnType<BondFx['steer']> {
+    const bond = this.bond.steer(fishId, this.pointer, reduced);
+    if (bond.pet || bond.seek) return bond;
+    const seek = this.visits.seek(fishId, now);
+    return seek ? { seek } : bond;
   }
 
   /** Petting meter, hellos, tricks; pays out a completed pet session through the store. */
@@ -860,20 +959,24 @@ export class Renderer {
       this.drawBaked('back', tank.theme, pal, px);
       this.drawBaked('front', tank.theme, pal, px);
     }
+    const style = this.styleOf(tank);
+    this.substrate.draw(ctx, style.substrate, this.extent, grid.k, px);
     // Far layer: distant school and the farthest specks, then light shafts and the floor's caustics.
     this.fx.drawSchool(fx);
     this.fx.drawSpecks(fx, 0);
     this.fx.drawRays(fx);
     this.fx.drawCaustics(fx);
     this.fx.drawSurface(fx, px);
-    drawBubbler(ctx, px);
+    if (style.bubbler !== 'bubbler:off') drawBubbler(ctx, px);
     // The pictures already paint their own coral, lily pads and glow plants.
     if (!picture) drawThemeScenery(ctx, tank.theme, timeSec, px, reduced);
     // Shadows slide gently with the sun angle and the swaying rays.
     const shadowShift = (-day.sunX + Math.sin(timeSec * RAY_SPEED) * 0.25) * SHADOW_SHIFT;
-    for (const d of tank.decor) {
-      if (decorLayer(d.decorId) === 'back' || !decorSpriteSize(d.decorId)) this.drawDecorItem(d, tank, now, timeSec, px, grid, shadowShift, fx);
+    const decor = this.decorList(tank);
+    for (const d of decor) {
+      if (!this.isFront(d)) this.drawDecorItem(d, tank, now, timeSec, px, grid, shadowShift, fx);
     }
+    drawWaterTint(ctx, style.water, view);
     this.particles.drawSandPuffs(ctx, pal.sandLight);
     this.fx.drawSpecks(fx, 1);
     for (const p of tank.pellets) drawPellet(ctx, p.x, Math.min(pelletY(p, game), SAND_Y - 1), p.premium, px, timeSec);
@@ -915,6 +1018,7 @@ export class Renderer {
       if (glowing || chooser) this.drawSelection(actor, f, timeSec, px, chooser ? '#ffffff' : '#ff8fb8', bob);
       ctx.save();
       if (pairing && !glowing && !chooser) ctx.globalAlpha = 0.35;
+      else if (this.decorView.decorating) ctx.globalAlpha = 0.5;
       // A newborn's (or a just-petted fish's) happy spin: one full turn, easing out.
       const spinAt = this.spinAt.get(f.id);
       if (spinAt !== undefined && !reduced) {
@@ -962,9 +1066,10 @@ export class Renderer {
       if (actor?.indicator && f.tankId === tank.id) this.drawIndicator(actor, f, now, px);
     }
     this.drawBreedingMarkers(game.fish.filter((f) => f.tankId === tank.id), timeSec, reduced);
-    for (const d of tank.decor) {
-      if (decorLayer(d.decorId) === 'front' && decorSpriteSize(d.decorId)) this.drawDecorItem(d, tank, now, timeSec, px, grid, shadowShift, fx);
+    for (const d of decor) {
+      if (this.isFront(d)) this.drawDecorItem(d, tank, now, timeSec, px, grid, shadowShift, fx);
     }
+    if (this.snapGuide !== null) this.drawSnapGuide(this.snapGuide, view, px);
     if (!picture) drawFrontPlants(ctx, pal, sceneTime, px, view);
     // Eggs and shell drops sit in front of everything on the sand, so they're never hidden behind decor or fish.
     const wallNow = Date.now();
@@ -978,8 +1083,11 @@ export class Renderer {
     }
     // Scene-wide light: the theme's ambient tint (e.g. moonlit blue), then the time of day.
     this.drawSceneLight(tank.theme, view);
+    drawLightingTint(ctx, style, view);
     const lights = Math.max(day.lights, THEME_ART[tank.theme].minLights);
-    for (const d of tank.decor) this.behaviors.drawLights(ctx, d, tank.theme, grid.k, lights, timeSec);
+    this.substrate.drawGlow(ctx, style.substrate, lights, timeSec);
+    for (const d of decor) this.behaviors.drawLights(ctx, d, tank.theme, grid.k, lights, timeSec);
+    this.setFx.draw(ctx, px, timeSec);
     this.fx.drawSpecks(fx, 2);
     this.particles.drawRings(ctx, px);
     this.particles.drawStreaks(ctx, px);
@@ -1027,8 +1135,11 @@ export class Renderer {
   private drawDecorItem(d: Tank['decor'][number], tank: Tank, now: number, timeSec: number, px: number, grid: PixelGrid, shadowShift: number, fx: FxFrame): void {
     const selected = d.id === this.deps.getSelectedDecorId();
     const lift = this.decorLift.get(d.id)?.v ?? 0;
-    const glow = selected ? 0.75 + 0.25 * Math.sin(timeSec * 3) : d.id === this.hoverDecorId ? 0.6 : 0;
+    const ghost = d.id === TRY_DECOR_ID;
+    const editGlow = this.decorView.decorating ? 0.4 : 0;
+    const glow = selected || ghost ? 0.75 + 0.25 * Math.sin(timeSec * 3) : d.id === this.hoverDecorId ? 0.6 : editGlow;
     const drawn = this.behaviors.draw(this.ctx, d, {
+      alpha: ghost ? 0.65 : 1,
       theme: tank.theme,
       grid,
       lift,
@@ -1038,7 +1149,7 @@ export class Renderer {
       timeSec,
       preset: fx.preset,
     });
-    if (selected) this.drawDecorSelection(d.decorId, d.x, timeSec, px, drawn);
+    if (selected) this.drawDecorSelection(d, timeSec, px, drawn);
     if (!drawn) drawDecor(this.ctx, d.decorId, d.x, SAND_Y + DECOR_BASE_OFFSET, now, px);
   }
 
@@ -1063,10 +1174,29 @@ export class Renderer {
   }
 
   /** Behind the selected decor: a dashed box for the drawn art (sprites glow instead), plus ◀ ▶ drag hints. */
-  private drawDecorSelection(decorId: DecorId, x: number, timeSec: number, px: number, sprite: boolean): void {
+  /** A dashed vertical line where a dragged item snapped (tank center or another item). */
+  private drawSnapGuide(x: number, view: Extent, px: number): void {
     const { ctx } = this;
-    const [w, h] = decorBox(decorId);
-    const baseY = this.decorBaseY(decorId);
+    ctx.save();
+    ctx.setLineDash([6 * px, 6 * px]);
+    ctx.lineWidth = 1.5 * px;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.beginPath();
+    ctx.moveTo(x, view.y0 + 40);
+    ctx.lineTo(x, SAND_Y + 30);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  private drawDecorSelection(d: PlacedDecor, timeSec: number, px: number, sprite: boolean): void {
+    const { ctx } = this;
+    const k = DECOR_SIZE_SCALE[d.size];
+    const [w0, h0] = decorBox(d.decorId);
+    const w = w0 * k;
+    const h = h0 * k;
+    const m = this.behaviors.motion(d, w0);
+    const x = d.x + m.dx;
+    const baseY = this.decorBaseY(d.decorId) + m.dy;
     const pad = 8 + Math.sin(timeSec * 4) * 2;
     ctx.save();
     if (!sprite) {

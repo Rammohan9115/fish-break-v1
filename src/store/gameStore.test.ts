@@ -486,7 +486,7 @@ describe('breeding events (store)', () => {
 describe('decor & tanks (store)', () => {
   it('selecting decor and fish are mutually exclusive', () => {
     const fish = makeFish();
-    load(makeState({ fish: [fish], tank: { decor: [{ id: 'd1', decorId: 'rock', x: 300 }] } }));
+    load(makeState({ fish: [fish], tank: { decor: [{ id: 'd1', decorId: 'rock', x: 300, flipped: false, size: 'M' as const, depth: 'back' as const }] } }));
     store().selectFish(fish.id);
     store().selectDecor('d1');
     expect(store().selectedFishId).toBeNull();
@@ -495,7 +495,7 @@ describe('decor & tanks (store)', () => {
   });
 
   it('drags decor in the active tank and sells it back, clearing the selection', () => {
-    load(makeState({ tank: { decor: [{ id: 'd1', decorId: 'castle', x: 300 }] }, overrides: { shells: 0 } }));
+    load(makeState({ tank: { decor: [{ id: 'd1', decorId: 'castle', x: 300, flipped: false, size: 'M' as const, depth: 'back' as const }] }, overrides: { shells: 0 } }));
     store().moveDecor('d1', 512);
     expect(tank().decor[0]!.x).toBe(512);
     store().selectDecor('d1');
@@ -697,5 +697,38 @@ describe('petting & bond', () => {
     store().advanceTo(T0 + 50 * MINUTE_MS);
     off();
     expect(seen).toEqual([{ type: 'greet', fishIds: [friend.id] }]);
+  });
+});
+
+describe('decorate mode undo/redo', () => {
+  it('undoes and redoes box moves, and keeps at most 20 steps', () => {
+    const decor = [{ id: 'a', decorId: 'rock' as const, x: 200, flipped: false, size: 'M' as const, depth: 'back' as const }];
+    load(makeState({ tank: { decor } }));
+    store().setMode('decorate');
+    store().storeDecor('a');
+    expect(tank().decor).toHaveLength(0);
+    expect(game().decorInventory).toEqual({ rock: 1 });
+    store().undoDecor();
+    expect(tank().decor.map((d) => d.id)).toEqual(['a']);
+    expect(game().decorInventory).toEqual({});
+    store().redoDecor();
+    expect(tank().decor).toHaveLength(0);
+    for (let i = 0; i < 30; i++) {
+      store().recordDecor();
+    }
+    expect(store().decorHistory.past).toHaveLength(20);
+    // Leaving Decorate mode clears the history.
+    store().setMode('look');
+    expect(store().decorHistory.past).toHaveLength(0);
+  });
+
+  it('selling clears the history (money changes are not undoable)', () => {
+    const decor = [{ id: 'a', decorId: 'castle' as const, x: 200, flipped: false, size: 'M' as const, depth: 'back' as const }];
+    load(makeState({ tank: { decor } }));
+    store().setMode('decorate');
+    store().updateDecor('a', { flipped: true });
+    expect(store().decorHistory.past).toHaveLength(1);
+    store().sellDecor('tank-1', 'a');
+    expect(store().decorHistory.past).toHaveLength(0);
   });
 });

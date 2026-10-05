@@ -16,7 +16,45 @@ export type SpeciesId =
   | 'axolotl'
   | 'koi';
 
-export type DecorId = 'plant_small' | 'plant_tall' | 'rock' | 'castle' | 'chest' | 'shipwreck';
+export type DecorId =
+  | 'plant_small'
+  | 'plant_tall'
+  | 'rock'
+  | 'castle'
+  | 'chest'
+  | 'shipwreck'
+  // Nature
+  | 'moss_ball'
+  | 'driftwood'
+  | 'flower_plant'
+  | 'coral_branch'
+  | 'anemone'
+  | 'sea_fan'
+  | 'lily_pad'
+  // Ancient Ruins
+  | 'column'
+  | 'sunken_vase'
+  | 'broken_arch'
+  | 'stone_head'
+  // Cozy Village
+  | 'bench'
+  | 'mailbox'
+  | 'lantern'
+  | 'tiny_cottage'
+  // Playful
+  | 'rubber_duck'
+  | 'diver'
+  | 'volcano_bubbler'
+  | 'bubble_wall_base'
+  | 'toy_submarine'
+  // Halloween (October event)
+  | 'pumpkin'
+  | 'spooky_tree';
+
+export type CollectionId = 'nature' | 'ruins' | 'village' | 'playful' | 'halloween';
+
+/** Where a decor item lives: on the sand, floating at the surface, or drifting mid-water. */
+export type DecorPlacement = 'sand' | 'surface' | 'mid';
 
 export type ThemeId = 'classic' | 'night' | 'coral' | 'pond';
 
@@ -94,11 +132,22 @@ export interface SpeciesDef {
   bellSplitY?: { adult: number; baby: number };
 }
 
+/** A decor item. Never level-gated: anyone can buy anything they can afford (event items only in season). */
 export interface DecorDef {
   id: DecorId;
   name: string;
-  unlockLevel: number;
   cost: Price;
+  /** null = the original "Classic" pieces. */
+  collection: CollectionId | null;
+  placement: DecorPlacement;
+}
+
+export interface CollectionDef {
+  id: CollectionId;
+  name: string;
+  icon: string;
+  /** Seasonal: only buyable during this event (owned pieces stay forever). */
+  event: 'october' | null;
 }
 
 export interface Fish {
@@ -163,10 +212,52 @@ export interface AlgaeSpot {
   size: number;
 }
 
+export type DecorSize = 'S' | 'M' | 'L';
+export type DecorDepth = 'back' | 'front';
+
 export interface PlacedDecor {
   id: string;
   decorId: DecorId;
   x: number;
+  /** Mirrored horizontally. */
+  flipped: boolean;
+  /** S/M/L = 0.8 / 1.0 / 1.2 scale. */
+  size: DecorSize;
+  /** Sand items: behind the fish ('back') or in front of them ('front'). Surface and mid-water items ignore it. */
+  depth: DecorDepth;
+}
+
+/** One item of a saved layout (no id: it's placed from the decor box when applied). */
+export type PresetItem = Omit<PlacedDecor, 'id'>;
+
+export interface LayoutPreset {
+  name: string;
+  items: PresetItem[];
+}
+
+export type StyleCategory = 'frame' | 'substrate' | 'lighting' | 'water' | 'bubbler';
+
+/** A tank's look (all code-drawn). Values are option ids from STYLE_OPTIONS. */
+export interface TankStyle {
+  frame: string;
+  substrate: string;
+  lighting: string;
+  /** Custom lighting color ('#rrggbb'), used when lighting is 'custom'. */
+  lightingColor: string;
+  water: string;
+  bubbler: string;
+  /** Show the tank's name on a plaque on the frame. */
+  nameplate: boolean;
+}
+
+export interface StyleOption {
+  /** `${category}:${key}`, e.g. 'frame:wood'. */
+  id: string;
+  category: StyleCategory;
+  key: string;
+  name: string;
+  /** null = free. */
+  price: Price | null;
 }
 
 export interface Pellet {
@@ -199,6 +290,9 @@ export interface Tank {
   pellets: Pellet[];
   /** Uncollected drops on the sand; click to collect. */
   shells: ShellDrop[];
+  style: TankStyle;
+  /** Up to 3 saved decor layouts (null = empty slot). */
+  layoutPresets: (LayoutPreset | null)[];
 }
 
 export interface Settings {
@@ -240,4 +334,8 @@ export interface GameState {
   ownedThemes: ThemeId[];
   /** When Break Mode last granted XP (once per hour), or null. */
   lastBreakXpAt: number | null;
+  /** Decor owned but not placed in any tank (the decor box): count per item. */
+  decorInventory: Partial<Record<DecorId, number>>;
+  /** Tank style options bought (option ids); reusable on every tank. Free options aren't listed. */
+  ownedStyles: string[];
 }

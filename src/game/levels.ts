@@ -1,7 +1,6 @@
 // Level curve, XP application, and the unlock table.
 import {
   CAPACITY_UPGRADE,
-  DECOR_LIST,
   LEVEL_UP_SHELLS_PER_LEVEL,
   PREMIUM_FOOD_PACK,
   TANK_PURCHASES,
@@ -69,14 +68,12 @@ export interface Unlock {
 function buildUnlocks(): Unlock[] {
   const unlocks: Unlock[] = [
     ...SPECIES_LIST.map((s) => ({ level: s.unlockLevel, kind: 'species' as const, id: s.id, label: s.name })),
-    ...DECOR_LIST.map((d) => ({ level: d.unlockLevel, kind: 'decor' as const, id: d.id, label: d.name })),
     {
       level: UNLOCK_LEVEL.premiumFood,
       kind: 'feature',
       id: 'premiumFood',
       label: `Premium food (${PREMIUM_FOOD_PACK.price.amount} shells for ${PREMIUM_FOOD_PACK.count})`,
     },
-    { level: UNLOCK_LEVEL.decorShop, kind: 'feature', id: 'decorShop', label: 'Decor shop' },
     { level: UNLOCK_LEVEL.breeding, kind: 'feature', id: 'breeding', label: 'Breeding' },
     {
       level: UNLOCK_LEVEL.capacityUpgrade,

@@ -16,7 +16,16 @@ interface Bubble {
   vy: number;
   phase: number;
   wobble: number;
+  /** Heart-shaped (the Heart Bubbles bubbler). */
+  heart: boolean;
 }
+
+/** The tank's bubbler style (option ids from STYLE_OPTIONS). */
+export type BubblerMode = 'bubbler:classic' | 'bubbler:off' | 'bubbler:curtain' | 'bubbler:hearts' | string;
+
+/** The bubble curtain bubbler: a wider row, more (smaller) bubbles. */
+const CURTAIN_WIDTH = 90;
+const CURTAIN_RATE = 3;
 
 interface Sparkle {
   x: number;
@@ -146,7 +155,9 @@ export function heartPath(ctx: Ctx, k: number): void {
 }
 
 export class Particles {
-  private readonly bubblePool = new Pool<Bubble>(() => ({ x: 0, y: 0, r: 0, vy: 0, phase: 0, wobble: 0 }));
+  private readonly bubblePool = new Pool<Bubble>(() => ({ x: 0, y: 0, r: 0, vy: 0, phase: 0, wobble: 0, heart: false }));
+  /** Which bubbler the tank uses (set by the renderer each frame). */
+  bubbler: BubblerMode = 'bubbler:classic';
   private readonly sparklePool = new Pool<Sparkle>(() => ({ x: 0, y: 0, age: 0, life: 0, size: 0, color: SHINY_SPARKLE }));
   private bubbleAcc = 0;
   private readonly popPool = new Pool<PopText>(() => ({ x: 0, y: 0, text: '', color: '', age: 0, icon: null }));
@@ -176,11 +187,13 @@ export class Particles {
 
   /** `current` (−1..1 and beyond in gusts) pushes bubbles sideways. */
   update(dt: number, reducedMotion: boolean, current = 0): void {
-    const rate = reducedMotion ? BUBBLES_PER_SEC_REDUCED : BUBBLES_PER_SEC;
+    const curtain = this.bubbler === 'bubbler:curtain';
+    const rate = this.bubbler === 'bubbler:off' ? 0 : (reducedMotion ? BUBBLES_PER_SEC_REDUCED : BUBBLES_PER_SEC) * (curtain ? CURTAIN_RATE : 1);
     this.bubbleAcc += dt * rate;
     while (this.bubbleAcc >= 1) {
       this.bubbleAcc -= 1;
-      this.spawnBubble(BUBBLER_X + (Math.random() - 0.5) * 10, bubblerTop(), 1.5 + Math.random() * 3);
+      if (curtain) this.spawnBubble(BUBBLER_X - 10 + Math.random() * CURTAIN_WIDTH, bubblerTop() + 4, 1 + Math.random() * 2);
+      else this.spawnBubble(BUBBLER_X + (Math.random() - 0.5) * 10, bubblerTop(), 1.5 + Math.random() * 3, this.bubbler === 'bubbler:hearts');
     }
     for (const b of this.bubbles) {
       b.y -= b.vy * dt;
@@ -453,8 +466,9 @@ export class Particles {
     ctx.restore();
   }
 
-  spawnBubble(x: number, y: number, r: number): void {
+  spawnBubble(x: number, y: number, r: number, heart = false): void {
     const b = this.bubblePool.spawn();
+    b.heart = heart;
     b.x = x;
     b.y = y;
     b.r = r;
@@ -477,6 +491,10 @@ export class Particles {
     ctx.lineWidth = 1.2 * px;
     for (const b of this.bubbles) {
       const x = b.x + Math.sin(b.phase) * b.wobble;
+      if (b.heart) {
+        this.drawHeartBubble(ctx, x, b.y, b.r);
+        continue;
+      }
       ctx.beginPath();
       ctx.arc(x, b.y, b.r, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
@@ -488,6 +506,18 @@ export class Particles {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
       ctx.fill();
     }
+  }
+
+  private drawHeartBubble(ctx: Ctx, x: number, y: number, r: number): void {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.beginPath();
+    heartPath(ctx, (r * 1.5) / 8);
+    ctx.fillStyle = 'rgba(255, 170, 205, 0.3)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 225, 238, 0.9)';
+    ctx.stroke();
+    ctx.restore();
   }
 
   drawSparkles(ctx: Ctx, px: number): void {

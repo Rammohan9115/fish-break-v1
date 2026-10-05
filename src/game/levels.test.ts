@@ -38,16 +38,17 @@ describe('unlocks', () => {
     const ids = (level: number) => unlocksAtLevel(level).map((u) => u.id).sort();
     expect(ids(1)).toEqual(['danio', 'guppy']);
     expect(ids(2)).toEqual(['premiumFood']);
-    expect(ids(3)).toEqual(['decorShop', 'goldfish', 'plant_small', 'plant_tall', 'rock'].sort());
+    // Decor is never level-gated, so it never appears as an unlock.
+    expect(ids(3)).toEqual(['goldfish']);
     expect(ids(4)).toEqual(['capacityUpgrade']);
     expect(ids(5)).toEqual(['betta', 'breeding']);
-    expect(ids(6)).toEqual(['castle', 'tetra']);
+    expect(ids(6)).toEqual(['tetra']);
     expect(ids(7)).toEqual([]);
     expect(ids(8)).toEqual(['angelfish', 'tank2']);
-    expect(ids(9)).toEqual(['chest']);
+    expect(ids(9)).toEqual([]);
     expect(ids(10)).toEqual(['jellyfish', 'night']);
     expect(ids(12)).toEqual(['clownfish', 'coral']);
-    expect(ids(13)).toEqual(['shipwreck']);
+    expect(ids(13)).toEqual([]);
     expect(ids(14)).toEqual(['tank3']);
     expect(ids(15)).toEqual(['puffer']);
     expect(ids(18)).toEqual(['axolotl']);

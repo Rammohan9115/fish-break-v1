@@ -310,3 +310,20 @@ describe('v4 → v5 migration (petting & bond)', () => {
     expect(isValidGameState({ ...s, fish: s.fish.map(strip) })).toBe(false);
   });
 });
+
+describe('v5 → v6 migration (decor customization)', () => {
+  it('placed decor gets the default look, tanks get the default style and empty layouts; nothing is lost', () => {
+    const s = makeState({ fish: [makeFish()] });
+    const oldTank = (({ style: _s, layoutPresets: _l, ...t }) => ({ ...t, decor: [{ id: 'd1', decorId: 'castle', x: 300 }] }))(s.tanks[0]!);
+    const { decorInventory: _i, ownedStyles: _o, ...rest } = s;
+    const migrated = migrate({ ...rest, version: 5, tanks: [oldTank] } as unknown as Record<string, unknown>);
+    expect(isValidGameState(migrated)).toBe(true);
+    const state = migrated as unknown as ReturnType<typeof makeState>;
+    expect(state.tanks[0]!.decor).toEqual([{ id: 'd1', decorId: 'castle', x: 300, flipped: false, size: 'M', depth: 'back' }]);
+    expect(state.tanks[0]!.style.frame).toBe('frame:glass');
+    expect(state.tanks[0]!.layoutPresets).toEqual([null, null, null]);
+    expect(state.decorInventory).toEqual({});
+    expect(state.ownedStyles).toEqual([]);
+    expect(state.fish).toEqual(s.fish);
+  });
+});

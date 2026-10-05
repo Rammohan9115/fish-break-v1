@@ -4,7 +4,7 @@ import { FISH_ART_SCALE } from '../game/constants';
 import { getVariant, SPECIES } from '../game/species';
 import type { DecorId, SpeciesId } from '../game/types';
 import { decorSprite } from '../render/assets';
-import { DECOR_BOUNDS, drawDecor } from '../render/drawDecor';
+import { decorBounds, drawDecor } from '../render/drawDecor';
 import { drawFish, FISH_ART } from '../render/drawFish';
 
 const W = 110;
@@ -74,7 +74,7 @@ export function DecorPreview({ decorId }: { decorId: DecorId }) {
         ctx.drawImage(sprite.canvas, (W - sprite.w * k) / 2, H - 3 - sprite.h * k, sprite.w * k, sprite.h * k);
         return;
       }
-      const [w, h] = DECOR_BOUNDS[decorId];
+      const [w, h] = decorBounds(decorId);
       const k = Math.min(1, (W - 10) / w, (H - 10) / h);
       ctx.translate(W / 2, H - 6);
       ctx.scale(k, k);

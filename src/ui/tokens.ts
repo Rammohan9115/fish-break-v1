@@ -91,6 +91,7 @@ export const TAP_MIN = 44;
 export const layer = {
   tank: 0,
   giftBox: 5,
+  frame: 10, // tank style bezel (decorative, never takes taps)
   hud: 20,
   dock: 22,
   card: 24, // FishCard / DecorCard / quick actions (non-modal)

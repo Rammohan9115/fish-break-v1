@@ -1,6 +1,9 @@
 // Pure simulation. No DOM, no React. Deterministic given (state, dtMs, rng).
 import { bondDropValue, newBond } from './bond';
+import { decorHappiness } from './decor';
 import {
+  DEFAULT_TANK_STYLE,
+  LAYOUT_PRESET_SLOTS,
   ADULT_AT_FRACTION,
   ALGAE_MAX_SIZE,
   ALGAE_MIN_SIZE,
@@ -21,7 +24,6 @@ import {
   HAPPINESS_CLEAN_THRESHOLD,
   HAPPINESS_CROWDED_FRACTION,
   HAPPINESS_CROWDED_PENALTY,
-  HAPPINESS_DECOR_MAX,
   HAPPINESS_DIRTY_PENALTY,
   HAPPINESS_DIRTY_THRESHOLD,
   HAPPINESS_DRIFT_PER_MIN,
@@ -29,7 +31,6 @@ import {
   HAPPINESS_FED_THRESHOLD,
   HAPPINESS_MAX,
   HAPPINESS_MIN,
-  HAPPINESS_PER_DECOR,
   HAPPINESS_STARVING_PENALTY,
   HAPPINESS_STARVING_THRESHOLD,
   HUNGER_MAX,
@@ -126,7 +127,7 @@ export function happinessTarget(hunger: number, tank: Tank, occupancy: number): 
   if (hunger < HAPPINESS_STARVING_THRESHOLD) target -= HAPPINESS_STARVING_PENALTY;
   if (tank.cleanliness >= HAPPINESS_CLEAN_THRESHOLD) target += HAPPINESS_CLEAN_BONUS;
   if (tank.cleanliness < HAPPINESS_DIRTY_THRESHOLD) target -= HAPPINESS_DIRTY_PENALTY;
-  target += Math.min(tank.decor.length * HAPPINESS_PER_DECOR, HAPPINESS_DECOR_MAX);
+  target += decorHappiness(tank);
   if (occupancy > tank.capacity * HAPPINESS_CROWDED_FRACTION) target -= HAPPINESS_CROWDED_PENALTY;
   return clamp(target, HAPPINESS_MIN, HAPPINESS_MAX);
 }
@@ -507,6 +508,8 @@ export function createTank(id: string, name: string, capacity: number = STARTING
     decor: [],
     pellets: [],
     shells: [],
+    style: { ...DEFAULT_TANK_STYLE },
+    layoutPresets: Array.from({ length: LAYOUT_PRESET_SLOTS }, () => null),
   };
 }
 
@@ -542,6 +545,8 @@ export function createInitialState(now: number = Date.now(), rng: Rng = Math.ran
     feedXp: { windowStart: 0, earned: 0 },
     ownedThemes: ['classic'],
     lastBreakXpAt: null,
+    decorInventory: {},
+    ownedStyles: [],
   };
 }
 

@@ -4,6 +4,10 @@
 import { useEffect, useRef } from 'react';
 import {
   BOND,
+  DECOR,
+  DECOR_SIZE_SCALE,
+  DECOR_SNAP_DIST,
+  TANK_WIDTH,
   DECOR_LONG_PRESS_MS,
   DOUBLE_TAP_MS,
   DRAG_THRESHOLD_PX,
@@ -15,6 +19,10 @@ import {
   XP,
 } from '../game/constants';
 import { playableTricks } from '../game/bond';
+import { decorBox } from '../render/drawSprites';
+import { snapX } from '../render/snap';
+import type { PlacedDecor } from '../game/types';
+import { dailyGiftAvailable, localDateKey } from '../game/economy';
 import { algaeTouchedBySponge } from '../game/sim';
 import { sound } from '../audio/sound';
 import { breedingQuestStep, breedingUnlocked, compatiblePartners, isReadyToPair } from '../game/breeding';
@@ -28,7 +36,9 @@ type Point = { x: number; y: number };
 /** What a press in the tank started. */
 type Gesture =
   | { kind: 'sponge'; last: Point }
-  | { kind: 'decor'; id: string; grabOffset: number; startClientX: number; dragging: boolean }
+  | { kind: 'decor'; id: string; grabOffset: number; startClientX: number; dragging: boolean; snap?: boolean }
+  /** Dragging the shop's "Try it" ghost along its line. */
+  | { kind: 'try'; grabOffset: number }
   /** A press on decor that isn't picked up yet: it only moves if held for DECOR_LONG_PRESS_MS. */
   | { kind: 'hold'; id: string; grabOffset: number; startClientX: number; startClientY: number }
   | { kind: 'pan'; lastClientX: number }
@@ -41,6 +51,21 @@ type Gesture =
 let lastTap: { fishId: string; at: number } | null = null;
 /** Which trick a double-tap plays next, per fish (they take turns). */
 const nextTrick = new Map<string, number>();
+
+/** Two fingers landing (and lifting) within this long is a tap: undo in Decorate mode. */
+const TWO_FINGER_TAP_MS = 300;
+
+/** Decorate mode: line the dragged item up with the tank center or another item when close. */
+function snapDecor(placedId: string, x: number): { x: number; guide: number | null } {
+  const { game } = useGameStore.getState();
+  const tank = game.tanks.find((t) => t.id === game.activeTankId);
+  const me = tank?.decor.find((d) => d.id === placedId);
+  if (!tank || !me) return { x, guide: null };
+  const half = (d: PlacedDecor) => (decorBox(d.decorId)[0] * DECOR_SIZE_SCALE[d.size]) / 2;
+  const line = DECOR[me.decorId].placement;
+  const others = tank.decor.filter((d) => d.id !== placedId && DECOR[d.decorId].placement === line).map((d) => ({ x: d.x, half: half(d) }));
+  return snapX(x, half(me), others, TANK_WIDTH / 2, DECOR_SNAP_DIST);
+}
 
 /** "Tip: press and hold to pet 💕", once, the first time a returning player taps a fish. */
 function showPetTip(): void {
@@ -128,6 +153,21 @@ function handleTankPress(renderer: Renderer, clientX: number, clientY: number): 
     return null;
   }
 
+  // "Try it": the ghost follows the finger until Buy & Place or Cancel.
+  if (store.tryDecor) return { kind: 'try', grabOffset: x - store.tryDecor.x };
+
+  // Decorate mode: decor is grabbed straight away (no hold); fish are just scenery.
+  if (store.mode === 'decorate') {
+    const decorId = renderer.decorAt(x, y);
+    if (decorId) {
+      const placed = store.game.tanks.find((t) => t.id === store.game.activeTankId)?.decor.find((d) => d.id === decorId);
+      store.selectDecor(decorId);
+      return { kind: 'decor', id: decorId, grabOffset: x - (placed?.x ?? x), startClientX: clientX, dragging: false, snap: true };
+    }
+    store.selectDecor(null);
+    return renderer.canPan ? { kind: 'pan', lastClientX: clientX } : null;
+  }
+
   // Pairing mode: tap a glowing fish to choose it, anything else cancels.
   if (store.pairingFishId) {
     const fishId = renderer.fishAt(x, y);
@@ -184,6 +224,15 @@ function handleTankPress(renderer: Renderer, clientX: number, clientY: number): 
   const decorId = renderer.decorAt(x, y);
   if (decorId) {
     const placed = store.game.tanks.find((t) => t.id === store.game.activeTankId)?.decor.find((d) => d.id === decorId);
+    // The mailbox's flag is up when the daily gift is waiting: tapping it opens the gift.
+    if (placed?.decorId === 'mailbox' && decorId !== store.selectedDecorId && dailyGiftAvailable(store.game, localDateKey(new Date()))) {
+      const gift = store.claimDailyGift();
+      if (gift) {
+        sound.play('coin');
+        store.addToast(`📬 Daily gift: +${gift.shells} 🐚 · +${gift.premiumFood} 🌟${gift.pearls > 0 ? ` · +${gift.pearls} ⚪` : ''}`);
+        return null;
+      }
+    }
     const grabOffset = x - (placed?.x ?? x);
     // Already picked up (its card is open): drag it right away.
     if (decorId === store.selectedDecorId) return { kind: 'decor', id: decorId, grabOffset, startClientX: clientX, dragging: false };
@@ -239,6 +288,10 @@ export function TankView() {
       },
       onHudArrive: (icon) => window.dispatchEvent(new CustomEvent(HUD_BUMP_EVENT, { detail: icon })),
       getBreedingView,
+      getDecorView: () => {
+        const s = useGameStore.getState();
+        return { decorating: s.mode === 'decorate', tryDecor: s.tryDecor, stylePreview: s.stylePreview };
+      },
       onPetComplete: (fishId) => {
         const result = useGameStore.getState().petFish(fishId);
         if (result) {
@@ -298,10 +351,25 @@ export function TankView() {
     };
   }, []);
 
+  /** Touches down right now (Decorate mode: a quick two-finger tap undoes). */
+  const touchesRef = useRef(new Map<number, number>());
+  const twoFingerRef = useRef<number | null>(null);
+
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
     const renderer = rendererRef.current;
     if (!renderer) return;
+    if (e.pointerType === 'touch') {
+      const touches = touchesRef.current;
+      touches.set(e.pointerId, performance.now());
+      if (touches.size === 2 && useGameStore.getState().mode === 'decorate' && performance.now() - Math.min(...touches.values()) < TWO_FINGER_TAP_MS) {
+        // A second finger: this is a two-finger tap, not a drag.
+        twoFingerRef.current = performance.now();
+        gestureRef.current = null;
+        renderer.setSnapGuide(null);
+        return;
+      }
+    }
     clearHold();
     const gesture = handleTankPress(renderer, e.clientX, e.clientY);
     gestureRef.current = gesture;
@@ -378,12 +446,26 @@ export function TankView() {
       gesture.lastClientX = e.clientX;
       return;
     }
+    if (gesture?.kind === 'try') {
+      useGameStore.getState().moveTry(point.x - gesture.grabOffset);
+      return;
+    }
     if (gesture?.kind === 'decor') {
       if (!gesture.dragging && Math.abs(e.clientX - gesture.startClientX) < DRAG_THRESHOLD_PX) return;
-      if (!gesture.dragging) renderer.liftDecor(gesture.id);
+      if (!gesture.dragging) {
+        renderer.liftDecor(gesture.id);
+        // One undo step per drag.
+        if (gesture.snap) useGameStore.getState().recordDecor();
+      }
       gesture.dragging = true;
       e.currentTarget.style.cursor = 'grabbing';
-      useGameStore.getState().moveDecor(gesture.id, point.x - gesture.grabOffset);
+      let x = point.x - gesture.grabOffset;
+      if (gesture.snap) {
+        const snapped = snapDecor(gesture.id, x);
+        x = snapped.x;
+        renderer.setSnapGuide(snapped.guide);
+      }
+      useGameStore.getState().moveDecor(gesture.id, x);
       return;
     }
     // Hover: decor glows and the cursor hints it can be grabbed (look mode only; other modes use their CSS cursors).
@@ -428,6 +510,16 @@ export function TankView() {
   };
 
   const endGesture = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const touches = touchesRef.current;
+    touches.delete(e.pointerId);
+    const twoAt = twoFingerRef.current;
+    if (twoAt !== null) {
+      if (touches.size === 0) {
+        twoFingerRef.current = null;
+        if (e.type === 'pointerup' && performance.now() - twoAt < TWO_FINGER_TAP_MS * 2) useGameStore.getState().undoDecor();
+      }
+      return;
+    }
     const gesture = gestureRef.current;
     clearHold();
     if (gesture?.kind === 'press' && e.type === 'pointerup') tapFish(gesture.fishId);
@@ -437,6 +529,7 @@ export function TankView() {
       useGameStore.getState().addToast('Hold a decoration to move it ✋');
     }
     if (gesture?.kind === 'decor') {
+      rendererRef.current?.setSnapGuide(null);
       e.currentTarget.style.cursor = '';
       if (gesture.dragging) {
         rendererRef.current?.dropDecor(gesture.id);

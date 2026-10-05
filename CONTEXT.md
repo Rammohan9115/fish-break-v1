@@ -10,7 +10,7 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
 - **Not started, Phase 11 (polish + balance):** check 360px mobile layout, touch for feed/clean/decor drag,
   empty states, a **Settings menu with Reset game (confirm) and a reduced-motion toggle** (`settings.reducedMotion`
   exists, but nothing in the UI changes it), and `scripts/balance.ts` pacing sim. Targets: Lv5 by end of day 1, Lv8 by day 3.
-- **Toolbar "My Fish 🐟"** opens `ui/MyFish.tsx` (built with Petting & Bond, 2026-10-04).
+- **Toolbar "My Fish 🐟"** opens `ui/MyFish.tsx` (built with Petting & Bond, 2026-10-04). The toolbar also has 🎨 Decorate.
 - **Checks:** `npm test` passes 416 tests (as of 2026-10-04) (`cloudSave.test.ts` fails to load under Node 20 when `.env.local` has Supabase keys: no native WebSocket), and `npm run build` passes. Local Node is 20.4, so Vite is pinned to 5 and Vitest to 2.
 - **Repo:** https://github.com/Rammohan9115/fish-break-v1 (branch `main`).
 - **Live:** https://fishbowl-break.vercel.app. Deploy with `npx vercel --prod --yes`; the CLI is already logged in and linked (`.vercel/`, which is gitignored).
@@ -131,12 +131,14 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
 - Magic links use the implicit flow (`detectSessionInUrl`), so a link opened in another browser still works; `#error_description` → toast.
 
 ## Departures from the spec (data model)
-- **Save version is 5.** Migrations in `src/store/save.ts`, keyed by the version they upgrade from:
+- **Save version is 6.** Migrations in `src/store/save.ts`, keyed by the version they upgrade from:
   - **1→2:** adds `feedXp`, adds `ownedThemes` (built from the themes the tanks use), and defaults `boostUntil` to null.
   - **2→3:** adds `lastBreakXpAt`.
   - **3→4 (breeding overhaul):** each tank gets `upgrades` (old `round((capacity − 6) / 2)`, max 3) and `capacity = base[i] + 3 × upgrades`
     (base 10 / 12 / 15 by tank order). Adds `courtships: []`, `nursery: []`, and `breedingQuest` (`status: 'active'` for Lv5+, so they
     see the guide and quest once). Fish and eggs pass through untouched.
+  - **5→6 (decor customization):** placed decor gets `flipped: false, size: 'M', depth: 'back'`; each tank gets `style` (DEFAULT_TANK_STYLE)
+    and `layoutPresets: [null, null, null]`; `decorInventory: {}`, `ownedStyles: []`.
   - **4→5 (petting & bond):** every fish and Nursery baby gets `bondPoints: 0, bondLevel: 0, petLog: [], lastPettedAt: null, feedBondLog: []`.
 - **`Fish.boostUntil: number|null`:** the premium 2× growth boost ends at this ms timestamp.
 - **`GameState.feedXp {windowStart, earned}`:** the hourly 30-XP feeding cap. It's saved so reloads can't reset it.
@@ -236,6 +238,47 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
 - `SoundEngine` with a `sound` singleton: `play('plop'|'coin'|'chime'|'squeak'|'bubble')`, `setMuted`, `unlock`, `setAmbience`.
 - Muted by default, and no AudioContext is created until unmuted. Repeats are rate-limited.
 - Ambience plays only during Break Mode. The engine accepts a fake audio context for tests.
+
+## Decor collections (Stage A of decor-customization.md, 2026-10-04)
+- **Catalog:** `DECOR` in constants has `collection` and `placement` (sand/surface/mid) and no `unlockLevel`. Decor is never level-gated: `UNLOCK_LEVEL.decorShop` is gone, as are the decor entries in `UNLOCKS`.
+  `COLLECTIONS` lists the collections; Halloween has `event: 'october'`.
+- **Rules (`game/decor.ts`, tested):** `decorAvailable` (October event, `PurchaseError 'event'`), `activeSets` (3 different items, or all of a smaller collection),
+  `decorHappiness` (+3 unique, +1 duplicate, cap 20, +5 per set; used by `sim.happinessTarget`), `decorHappinessGain`, `collectionProgress`, `setProgress`.
+- **Sprite sheets:** `DECOR_ART[id].rect` cuts the item out of `public/assets/elements/<collection>.PNG`. `assets.ts` loads each file once and crops before `cleanSprite`.
+  The alpha-0 pixels in the nature/playful sheets carry colored "glow" data, which is invisible and harmless.
+- **New behaviors (`decorBehaviors.ts`):** roll, nightGlow (`anchors.glows`), sparkle, bob, spin, bubbleRing (`particles.spawnRing`), giftFlag, eruption, curtain, drift, propeller.
+  - `DecorBehaviors.restY` (placement), `motion` (bob/drift/roll/spin offsets, also used by hit tests) and `attractors`.
+  - `surfaceTop` and `giftReady` are set by the renderer each frame.
+- **Decor visits (`ambient/decorVisits.ts`):** idle fish get a `seek` through the arch or curtain, or hover at an anemone (clownfish favor it). Food, courtship and petting win.
+- **Set effects (`ambient/setEffects.ts`):** a pooled particle set per active collection, drawn after the decor lights.
+- **Mailbox:** tapping it while the daily gift is waiting claims the gift (TankView), shown as a toast.
+- **Verified:** all 22 items day and night in headless Chrome. With 8 decor, 20 fish and a set effect, update+draw takes ~3ms per frame.
+
+## Decorate mode & tank styles (Stage B, 2026-10-04, save v6)
+- **Rules (`economy.ts`, tested in `customize.test.ts`):**
+  - `buyDecor` sends overflow to the box (`boxed: true`). Also `buyAndPlaceDecor` (Try it), `placeFromBox`, `storeDecor`, `updateDecor`, `sellBoxedDecor`.
+  - `savePreset` and `applyPreset`, which returns `skipped`.
+  - Styles: `ownsStyle`, `checkBuyStyle`/`buyStyle`/`applyStyle`, `setTankStyleExtras`.
+  - `decor.ts`: `maxDecor` (15 + 3/upgrade), `newPlaced`, `boxCount`. `STYLE_OPTIONS`, `STYLE_CATEGORIES` and `DEFAULT_TANK_STYLE` are in constants.
+- **Store:**
+  - `mode: 'decorate'`.
+  - `decorHistory` (undo/redo snapshots of `{tank decor, decorInventory}`, 20 max). `recordDecor` runs before changes, and TankView calls it at drag start.
+    Selling clears the history; leaving Decorate mode clears it too.
+  - `tryDecor` with `startTry`/`moveTry`/`confirmTry`/`cancelTry`, `stylePreview`, `trayTab`. `ShopTab` gained `'styles'`.
+- **Renderer:**
+  - `getDecorView` (decorating, tryDecor, stylePreview).
+  - Decorate mode: fish alpha 0.5 and a 0.4 edit glow on all decor.
+  - Drawing: the `__try` ghost at alpha 0.65, front-depth sand decor drawn after the fish (`isFront`), `setSnapGuide`, and `decorScreenPoint` (toolbar placement).
+  - `DecorBehaviors.pointAt` maps anchors through size/flip/motion. Draw scales by `DECOR_SIZE_SCALE` and flips.
+- **Styles:**
+  - `render/drawSubstrate.ts`: a `SubstrateLayer` baked per substrate × k × extent, plus glow-gravel specks after the scene light. Also `drawWaterTint` (before the fish) and `drawLightingTint` (after the scene light), both soft-light.
+  - `Particles.bubbler` covers classic/off/curtain/hearts (heart bubbles).
+  - `ui/TankFrame.tsx`: an SVG bezel (outer rect minus inner rounded rect, per-skin gradient) plus the nameplate, at layer `--z-frame` (10).
+- **UI:**
+  - `DecorTray` (Box/Layouts/Tank Style; folds on phones), `DecorToolbar` (floating), `StylePicker` (shared with the shop's Styles tab).
+  - The Decorate/Try banners live in `TopChip`.
+  - Shop decor filters, a "New" badge (localStorage `fishbowl-decor-seen`), and 👀 Try it.
+  - Snapping: `render/snap.ts` (`snapX`, tested).
 
 ## Petting & Bond (2026-10-04, save v5)
 - **Rules, `game/bond.ts` (pure, tested in `bond.test.ts`):**

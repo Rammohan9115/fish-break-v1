@@ -3,6 +3,8 @@ import {
   BREEDING_QUEST_REWARD,
   CAPACITY_UPGRADE,
   CORRUPT_SAVE_PREFIX,
+  DEFAULT_TANK_STYLE,
+  LAYOUT_PRESET_SLOTS,
   MINUTE_MS,
   OFFLINE_SUMMARY_MIN_MS,
   ONBOARDING_KEY,
@@ -70,6 +72,18 @@ export const migrations: Record<number, Migration> = {
       Array.isArray(list) ? list.map((f) => (isObject(f) ? { bondPoints: 0, bondLevel: 0, petLog: [], lastPettedAt: null, feedBondLog: [], ...f } : f)) : list;
     return { ...data, fish: withBond(data.fish), nursery: withBond(data.nursery) };
   },
+  // v5 → v6: decor customization. Placed decor gets flip/size/depth defaults, every tank gets the default
+  // style and empty layout slots, and there's a decor box (inventory) and owned styles. Nothing is lost.
+  5: (data) => {
+    const tanks = Array.isArray(data.tanks)
+      ? data.tanks.map((t) => {
+          if (!isObject(t)) return t;
+          const decor = Array.isArray(t.decor) ? t.decor.map((d) => (isObject(d) ? { flipped: false, size: 'M', depth: 'back', ...d } : d)) : [];
+          return { ...t, decor, style: { ...DEFAULT_TANK_STYLE }, layoutPresets: Array.from({ length: LAYOUT_PRESET_SLOTS }, () => null) };
+        })
+      : data.tanks;
+    return { ...data, tanks, decorInventory: {}, ownedStyles: [] };
+  },
 };
 
 /** The v3 capacity rules, needed to read old saves: base 6, +2 per upgrade, at most 3 upgrades. */
@@ -96,7 +110,9 @@ function isTank(v: unknown): boolean {
     Array.isArray(v.algaeSpots) &&
     Array.isArray(v.decor) &&
     Array.isArray(v.pellets) &&
-    Array.isArray(v.shells)
+    Array.isArray(v.shells) &&
+    isObject(v.style) &&
+    Array.isArray(v.layoutPresets)
   );
 }
 
@@ -133,6 +149,7 @@ export function isValidGameState(v: unknown): v is GameState {
   if (!isObject(v.feedXp) || !isNum(v.feedXp.windowStart) || !isNum(v.feedXp.earned)) return false;
   if (!Array.isArray(v.ownedThemes) || !v.ownedThemes.every(isStr)) return false;
   if (v.lastBreakXpAt !== null && !isNum(v.lastBreakXpAt)) return false;
+  if (!isObject(v.decorInventory) || !Array.isArray(v.ownedStyles)) return false;
   return isStr(v.activeTankId) && v.tanks.some((t) => isObject(t) && t.id === v.activeTankId);
 }
 

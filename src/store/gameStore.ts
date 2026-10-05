@@ -8,6 +8,8 @@ import {
   FEED_COOLDOWN_MS,
   TOAST_QUEUE_MAX,
   FISH_NAME_MAX_LENGTH,
+  DECOR,
+  DECOR_UNDO_STEPS,
   FOLLOW_MS,
   GREET_AWAY_MS,
   GREET_START_DELAY_MS,
@@ -49,7 +51,7 @@ import {
   tick,
   type SimEvent,
 } from '../game/sim';
-import type { BondLevel, DecorId, GameState, Rng, SpeciesId, Stage, ThemeId } from '../game/types';
+import type { BondLevel, DecorId, GameState, PlacedDecor, TankStyle, Rng, SpeciesId, Stage, ThemeId } from '../game/types';
 import {
   browserEnv,
   formatOfflineSummary,
@@ -91,7 +93,7 @@ export function mergeToast(toasts: Toast[], text: string, id: number): Toast[] {
 }
 
 /** What a click in the tank does. 'look' = select fish / collect shells; 'clean' = sponge algae. */
-export type ToolMode = 'look' | 'feed' | 'premium' | 'clean';
+export type ToolMode = 'look' | 'feed' | 'premium' | 'clean' | 'decorate';
 
 /** Overlay panel currently open. */
 export type Panel = 'shop' | 'tanks' | 'break' | 'settings' | 'breeding' | 'myfish' | null;
@@ -105,7 +107,7 @@ export interface BreakSession {
   /** Set when the timer completes: XP granted (0 if already earned this hour). */
   result: { xp: number } | null;
 }
-export type ShopTab = 'fish' | 'food' | 'decor' | 'tanks';
+export type ShopTab = 'fish' | 'food' | 'decor' | 'styles' | 'tanks';
 
 /** Player-facing text for a failed purchase. */
 export const PURCHASE_ERROR_TEXT: Record<economy.PurchaseError, string> = {
@@ -119,6 +121,7 @@ export const PURCHASE_ERROR_TEXT: Record<economy.PurchaseError, string> = {
   notSellable: "Babies can't be sold yet 🐣",
   claimed: 'Already opened today',
   courting: 'In love — try again after the egg 💞',
+  event: 'Back next October 🎃',
 };
 
 /** Onboarding steps: 0 Feed → 1 Watch them grow → 2 Collect shells → 3 Pet your fish. null = finished/not shown. */
@@ -158,6 +161,14 @@ export interface GameStore {
   trickCooldowns: Record<string, number>;
   /** Transient: a Best Friend+ fish following the pointer, until this time (ms). */
   follow: { fishId: string; until: number } | null;
+  /** Decorate mode undo/redo (this session only): snapshots of the tank's decor and the decor box. */
+  decorHistory: { past: DecorSnapshot[]; future: DecorSnapshot[] };
+  /** Shop "Try it": a ghost of the item in the tank, positioned before buying. */
+  tryDecor: ({ decorId: DecorId; x: number } & Pick<PlacedDecor, 'flipped' | 'size' | 'depth'>) | null;
+  /** Tank Style live preview (not applied until used or bought). */
+  stylePreview: Partial<TankStyle> | null;
+  /** Decorate mode tray tab. */
+  trayTab: TrayTab;
 
   loadState: (game: GameState) => void;
   /** Runs fixed 1s sim ticks up to `now`; long gaps use offline catch-up. */
@@ -188,6 +199,28 @@ export interface GameStore {
   playTrick: (fishId: string, trick: TrickId) => boolean;
   /** Best Friend+: follow the pointer for FOLLOW_MS (or stop). */
   toggleFollow: (fishId: string) => void;
+  /** Decorate mode: decor box, editing, layouts, undo/redo. */
+  placeFromBox: (decorId: DecorId, x: number) => boolean;
+  storeDecor: (placedId: string) => boolean;
+  updateDecor: (placedId: string, change: Partial<Pick<PlacedDecor, 'flipped' | 'size' | 'depth'>>) => void;
+  sellBoxedDecor: (decorId: DecorId) => boolean;
+  savePreset: (slot: number, name: string) => void;
+  applyPreset: (slot: number) => void;
+  /** Call before a drag (or any decor change) so it can be undone. */
+  recordDecor: () => void;
+  undoDecor: () => void;
+  redoDecor: () => void;
+  setTrayTab: (tab: TrayTab) => void;
+  /** Tank styles: preview (null clears), apply an owned/free option, buy one, and the free extras. */
+  previewStyle: (change: Partial<TankStyle> | null) => void;
+  applyStyle: (optionId: string) => boolean;
+  buyStyle: (optionId: string) => boolean;
+  setStyleExtras: (change: { lightingColor?: string; nameplate?: boolean }) => void;
+  /** Shop "Try it": show a ghost, move it, then buy & place it (or cancel). */
+  startTry: (decorId: DecorId) => void;
+  moveTry: (x: number) => void;
+  confirmTry: () => boolean;
+  cancelTry: () => void;
   /** Shows the first-time tips again. */
   replayTips: () => void;
   /** Completes `step` if it is the current one (no-op otherwise). */
@@ -324,6 +357,15 @@ function emitBond(event: BondEvent): void {
   for (const listener of bondListeners) listener(event);
 }
 
+/** What Decorate-mode undo restores: one tank's decor and the decor box. */
+export interface DecorSnapshot {
+  tankId: string;
+  decor: PlacedDecor[];
+  inventory: GameState['decorInventory'];
+}
+
+export type TrayTab = 'box' | 'layouts' | 'style';
+
 /** Pellets dropped near fish: pelletId → the fish that were close (hand-feeding bond). Transient. */
 const nearPellets = new Map<string, readonly string[]>();
 
@@ -341,6 +383,11 @@ let devFishSeq = 0;
 /** Whether a fish's bond level unlocks this trick. */
 function unlockedTrick(level: BondLevel, trick: TrickId): boolean {
   return TRICKS.some((t) => t.id === trick && level >= t.level);
+}
+
+/** Puts a snapshot's decor and decor box back (undo/redo). */
+function restoreDecor(game: GameState, snap: DecorSnapshot): GameState {
+  return { ...game, decorInventory: snap.inventory, tanks: game.tanks.map((t) => (t.id === snap.tankId ? { ...t, decor: snap.decor } : t)) };
 }
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
@@ -405,6 +452,10 @@ export const useGameStore = create<GameStore>()((set, get) => {
     petProgress: null,
     trickCooldowns: {},
     follow: null,
+    decorHistory: { past: [], future: [] },
+    tryDecor: null,
+    stylePreview: null,
+    trayTab: 'box',
 
     loadState: (game) =>
       set({
@@ -578,7 +629,14 @@ export const useGameStore = create<GameStore>()((set, get) => {
           return;
         }
       }
-      set({ mode, modeTouchedAt: Date.now(), quickFishId: null });
+      const leaving = get().mode === 'decorate' && mode !== 'decorate';
+      set({
+        mode,
+        modeTouchedAt: Date.now(),
+        quickFishId: null,
+        ...(mode === 'decorate' ? { panel: null, selectedFishId: null, tryDecor: null } : {}),
+        ...(leaving ? { decorHistory: { past: [], future: [] }, stylePreview: null, selectedDecorId: null } : {}),
+      });
     },
 
     selectFish: (fishId) => {
@@ -666,7 +724,10 @@ export const useGameStore = create<GameStore>()((set, get) => {
     },
 
     buyPremiumFood: () => commitResult(economy.buyPremiumFood(get().game), '🌟 +3 premium food'),
-    buyDecor: (decorId) => commitResult(economy.buyDecor(get().game, decorId, Date.now(), Math.random), '🪴 Placed! Hold it, then drag to move it.'),
+    buyDecor: (decorId) => {
+      const result = economy.buyDecor(get().game, decorId, Date.now(), Math.random);
+      return commitResult(result, result.ok && result.boxed ? '📦 Tank is full, so it went into your decor box' : '🪴 Placed! Drag it in 🎨 Decorate mode to move it.');
+    },
     sellDecor: (tankId, placedId) => {
       const placed = get().game.tanks.find((t) => t.id === tankId)?.decor.find((d) => d.id === placedId);
       const refund = placed ? economy.decorRefund(placed.decorId) : null;
@@ -675,6 +736,8 @@ export const useGameStore = create<GameStore>()((set, get) => {
         refund ? `Sold for ${refund.amount} ${refund.currency === 'shells' ? '🐚' : 'pearls'}` : undefined,
       );
       if (sold && get().selectedDecorId === placedId) set({ selectedDecorId: null });
+      // Money changes can't be undone (it would bring the piece back for free), so the undo history starts over.
+      if (sold) set({ decorHistory: { past: [], future: [] } });
       return sold;
     },
     buyCapacityUpgrade: () => commitResult(economy.buyCapacityUpgrade(get().game), '🏠 More room in the tank!'),
@@ -782,6 +845,130 @@ export const useGameStore = create<GameStore>()((set, get) => {
         const start = q.status === 'off' && s.game.level >= UNLOCK_LEVEL.breeding;
         return { guideOpen: false, game: { ...s.game, breedingQuest: { guideSeen: true, status: start ? 'active' : q.status } } };
       }),
+
+    recordDecor: () => {
+      const { game, decorHistory } = get();
+      const tank = game.tanks.find((t) => t.id === game.activeTankId);
+      if (!tank) return;
+      const snap: DecorSnapshot = { tankId: tank.id, decor: tank.decor, inventory: game.decorInventory };
+      set({ decorHistory: { past: [...decorHistory.past, snap].slice(-DECOR_UNDO_STEPS), future: [] } });
+    },
+
+    undoDecor: () => {
+      const { game, decorHistory } = get();
+      const snap = decorHistory.past[decorHistory.past.length - 1];
+      const tank = game.tanks.find((t) => t.id === snap?.tankId);
+      if (!snap || !tank) return;
+      const current: DecorSnapshot = { tankId: tank.id, decor: tank.decor, inventory: game.decorInventory };
+      set({
+        game: restoreDecor(game, snap),
+        selectedDecorId: null,
+        decorHistory: { past: decorHistory.past.slice(0, -1), future: [...decorHistory.future, current].slice(-DECOR_UNDO_STEPS) },
+      });
+    },
+
+    redoDecor: () => {
+      const { game, decorHistory } = get();
+      const snap = decorHistory.future[decorHistory.future.length - 1];
+      const tank = game.tanks.find((t) => t.id === snap?.tankId);
+      if (!snap || !tank) return;
+      const current: DecorSnapshot = { tankId: tank.id, decor: tank.decor, inventory: game.decorInventory };
+      set({
+        game: restoreDecor(game, snap),
+        selectedDecorId: null,
+        decorHistory: { past: [...decorHistory.past, current].slice(-DECOR_UNDO_STEPS), future: decorHistory.future.slice(0, -1) },
+      });
+    },
+
+    placeFromBox: (decorId, x) => {
+      const before = get().game;
+      const result = economy.placeFromBox(before, before.activeTankId, decorId, x, Date.now(), Math.random);
+      if (!result.ok) {
+        get().addToast(result.reason === 'full' ? '🪸 This tank is full of decor. Put something in the box first.' : PURCHASE_ERROR_TEXT[result.reason]);
+        return false;
+      }
+      get().recordDecor();
+      const tank = result.state.tanks.find((t) => t.id === before.activeTankId)!;
+      set({ game: result.state, selectedDecorId: tank.decor[tank.decor.length - 1]?.id ?? null });
+      return true;
+    },
+
+    storeDecor: (placedId) => {
+      const result = economy.storeDecor(get().game, get().game.activeTankId, placedId);
+      if (!result.ok) return false;
+      get().recordDecor();
+      set({ game: result.state, selectedDecorId: get().selectedDecorId === placedId ? null : get().selectedDecorId });
+      return true;
+    },
+
+    updateDecor: (placedId, change) => {
+      const result = economy.updateDecor(get().game, get().game.activeTankId, placedId, change);
+      if (!result.ok) return;
+      get().recordDecor();
+      set({ game: result.state });
+    },
+
+    sellBoxedDecor: (decorId) => {
+      const refund = economy.decorRefund(decorId);
+      // Money changes can't be undone, so the undo history starts over.
+      const sold = commitResult(economy.sellBoxedDecor(get().game, decorId), `Sold for ${refund.amount} ${refund.currency === 'shells' ? '🐚' : 'pearls'}`);
+      if (sold) set({ decorHistory: { past: [], future: [] } });
+      return sold;
+    },
+
+    savePreset: (slot, name) => {
+      if (commitResult(economy.savePreset(get().game, get().game.activeTankId, slot, name))) get().addToast(`💾 Layout saved to slot ${slot + 1}`);
+    },
+
+    applyPreset: (slot) => {
+      const result = economy.applyPreset(get().game, get().game.activeTankId, slot, Date.now(), Math.random);
+      if (!result.ok) return;
+      get().recordDecor();
+      set({ game: result.state, selectedDecorId: null });
+      const skipped = result.skipped ?? 0;
+      get().addToast(skipped > 0 ? `🎨 Layout applied · ${skipped} item${skipped === 1 ? '' : 's'} skipped (not in your decor box)` : '🎨 Layout applied');
+    },
+
+    setTrayTab: (trayTab) => set({ trayTab }),
+
+    previewStyle: (change) => set({ stylePreview: change }),
+
+    applyStyle: (optionId) => {
+      const ok = commitResult(economy.applyStyle(get().game, get().game.activeTankId, optionId));
+      if (ok) set({ stylePreview: null });
+      return ok;
+    },
+
+    buyStyle: (optionId) => {
+      const opt = economy.styleOption(optionId);
+      const ok = commitResult(economy.buyStyle(get().game, get().game.activeTankId, optionId), opt ? `✨ ${opt.name} is yours — use it on any tank` : undefined);
+      if (ok) set({ stylePreview: null });
+      return ok;
+    },
+
+    setStyleExtras: (change) => {
+      commitResult(economy.setTankStyleExtras(get().game, get().game.activeTankId, change));
+    },
+
+    startTry: (decorId) =>
+      set({ tryDecor: { decorId, x: TANK_WIDTH / 2, flipped: false, size: 'M', depth: 'back' }, panel: null, mode: 'look', selectedDecorId: null, quickFishId: null }),
+
+    moveTry: (x) => {
+      const t = get().tryDecor;
+      if (t) set({ tryDecor: { ...t, x: economy.clampDecorX(x) } });
+    },
+
+    confirmTry: () => {
+      const t = get().tryDecor;
+      if (!t) return false;
+      const { decorId, x, ...look } = t;
+      const name = DECOR[decorId].name;
+      const ok = commitResult(economy.buyAndPlaceDecor(get().game, decorId, x, look, Date.now(), Math.random), `🪴 ${name} placed!`);
+      if (ok) set({ tryDecor: null });
+      return ok;
+    },
+
+    cancelTry: () => set({ tryDecor: null }),
 
     moveDecor: (placedId, x) => {
       const result = economy.moveDecor(get().game, get().game.activeTankId, placedId, x);

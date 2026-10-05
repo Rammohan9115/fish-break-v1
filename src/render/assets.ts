@@ -25,14 +25,16 @@ export interface AssetSprite {
   h: number;
 }
 
+type Rect = [number, number, number, number];
+
 type Manifest =
   | { kind: 'background'; id: ThemeId; file: string }
-  | { kind: 'decor'; id: DecorId; file: string }
+  | { kind: 'decor'; id: DecorId; file: string; rect?: Rect }
   | { kind: 'icon'; id: IconId; file: string };
 
 export const ASSET_MANIFEST: Manifest[] = [
   ...(Object.entries(THEME_ART) as [ThemeId, { file: string }][]).map(([id, a]) => ({ kind: 'background' as const, id, file: a.file })),
-  ...(Object.entries(DECOR_ART) as [DecorId, { file: string }][]).map(([id, a]) => ({ kind: 'decor' as const, id, file: a.file })),
+  ...(Object.entries(DECOR_ART) as [DecorId, { file: string; rect?: Rect }][]).map(([id, a]) => ({ kind: 'decor' as const, id, file: a.file, rect: a.rect })),
   ...(Object.entries(ICON_ART) as [IconId, { file: string }][]).map(([id, a]) => ({ kind: 'icon' as const, id, file: a.file })),
 ];
 
@@ -256,12 +258,21 @@ export function downscale(
   return out;
 }
 
-/** Cleans a loaded sprite: leftovers removed, defringed, trimmed. Null if nothing is left. */
-function cleanSprite(img: HTMLImageElement): AssetSprite | null {
-  const full = makeCanvas(img.naturalWidth, img.naturalHeight);
+/**
+ * Cleans a loaded sprite: leftovers removed, defringed, trimmed. Null if nothing is left. `rect` cuts one
+ * item out of a sprite sheet first (clamped to the image).
+ */
+function cleanSprite(img: HTMLImageElement, rect?: Rect): AssetSprite | null {
+  const [rx, ry, rw, rh] = rect ?? [0, 0, img.naturalWidth, img.naturalHeight];
+  const sx = Math.max(0, rx);
+  const sy = Math.max(0, ry);
+  const sw = Math.min(img.naturalWidth - sx, rw);
+  const sh = Math.min(img.naturalHeight - sy, rh);
+  if (sw <= 0 || sh <= 0) return null;
+  const full = makeCanvas(sw, sh);
   const ctx = full.getContext('2d', { willReadFrequently: true });
   if (!ctx) return null;
-  ctx.drawImage(img, 0, 0);
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
   const pixels = ctx.getImageData(0, 0, full.width, full.height);
   const { data, width: w, height: h } = pixels;
   removeIslands(data, w, h, ASSET_MIN_ISLAND);
@@ -312,13 +323,25 @@ export function scaledSprite(
 // Preload
 // ---------------------------------------------------------------------------
 
+/** Each file is fetched once, even when several items are cut from the same sheet. */
+const images = new Map<string, Promise<HTMLImageElement>>();
+
+function loadOnce(file: string): Promise<HTMLImageElement> {
+  let p = images.get(file);
+  if (!p) {
+    p = loadImage(`${BASE}${file}`);
+    images.set(file, p);
+  }
+  return p;
+}
+
 async function loadAsset(entry: Manifest): Promise<void> {
-  const img = await loadImage(`${BASE}${entry.file}`);
+  const img = await loadOnce(entry.file);
   if (entry.kind === 'background') {
     backgrounds.set(entry.id, img);
     return;
   }
-  const sprite = cleanSprite(img);
+  const sprite = cleanSprite(img, entry.kind === 'decor' ? entry.rect : undefined);
   if (!sprite) return;
   if (entry.kind === 'decor') {
     decor.set(entry.id, sprite);

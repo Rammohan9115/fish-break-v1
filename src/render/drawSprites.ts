@@ -20,7 +20,7 @@ import {
 import type { DecorId, ThemeId } from '../game/types';
 import { DECOR_ART, ICON_ART, THEME_ART, type DecorLayer, type IconId } from './artConfig';
 import { bucketPx, decorSprite, iconSprite, makeCanvas, scaledSprite, type AssetSprite } from './assets';
-import { DECOR_BOUNDS } from './drawDecor';
+import { decorBounds } from './drawDecor';
 import { COOL_SHADOW, dropShadow, rgba } from './paint';
 
 type Ctx = CanvasRenderingContext2D;
@@ -47,7 +47,7 @@ export function decorSpriteSize(decorId: DecorId): { w: number; h: number } | nu
 /** [width, height above the sand] for hit tests and selection, from the sprite when present. */
 export function decorBox(decorId: DecorId): [number, number] {
   const size = decorSpriteSize(decorId);
-  if (!size) return DECOR_BOUNDS[decorId];
+  if (!size) return decorBounds(decorId);
   return [size.w, size.h * (1 - DECOR_ART[decorId].sink)];
 }
 
@@ -132,9 +132,9 @@ export function decorImage(decorId: DecorId, theme: ThemeId, k: number): DecorIm
 }
 
 /** The decor contact shadow on the sand: fainter and wider while lifted, slid by the light (`shift`). */
-export function decorShadow(ctx: Ctx, decorId: DecorId, x: number, lift: number, shift: number): void {
-  const sw = DECOR_ART[decorId].width * DECOR_SHADOW_W * (1 + lift * 0.15);
-  dropShadow(ctx, x + shift, SAND_Y + 1, sw, sw * 0.2, DECOR_SHADOW_ALPHA * (1 - lift * 0.45));
+export function decorShadow(ctx: Ctx, decorId: DecorId, x: number, lift: number, shift: number, strength = 1, scale = 1): void {
+  const sw = DECOR_ART[decorId].width * DECOR_SHADOW_W * (1 + lift * 0.15) * (strength < 1 ? 1.4 : 1) * scale;
+  dropShadow(ctx, x + shift, SAND_Y + 1, sw, sw * 0.2, DECOR_SHADOW_ALPHA * (1 - lift * 0.45) * strength);
 }
 
 /** Snaps a tank-space coordinate to the device pixel grid (crisp static sprites). */
