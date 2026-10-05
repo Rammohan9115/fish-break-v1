@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dialogWidth, pickDensity, pickVariant, placePopover, panelWidth, settleSheet, SHEET_SNAPS, tankShareBesidePanel, type ScreenEnv } from './rules';
+import { dialogWidth, needsReplace, pickDensity, pickVariant, placePopover, panelWidth, settleSheet, SHEET_SNAPS, tankShareBesidePanel, type ScreenEnv } from './rules';
 
 const env = (width: number, height: number, mode: 'touch' | 'mouse'): ScreenEnv => ({ width, height, coarse: mode === 'touch', hover: mode === 'mouse' });
 
@@ -17,9 +17,10 @@ describe('pickVariant', () => {
     expect(pickVariant('panel', env(911, 512, 'mouse'))).toBe('sidepanel'); // 1366×768 at 150% zoom
   });
 
-  it('cards are popovers only for a mouse on a wide screen', () => {
+  it('cards: a popover for a mouse on a wide screen, a docked panel for a finger on a wide screen, a sheet when narrow', () => {
     expect(pickVariant('card', env(1366, 768, 'mouse'))).toBe('popover');
-    expect(pickVariant('card', env(1180, 820, 'touch'))).toBe('sheet'); // a tablet finger gets a sheet
+    expect(pickVariant('card', env(1180, 820, 'touch'))).toBe('sidepanel'); // a tablet finger: docked, the fish stay visible
+    expect(pickVariant('card', env(844, 390, 'touch'))).toBe('sidepanel'); // landscape phone
     expect(pickVariant('card', env(390, 844, 'touch'))).toBe('sheet');
     expect(pickVariant('card', env(500, 700, 'mouse'))).toBe('sheet'); // a very narrow window
   });
@@ -121,10 +122,46 @@ describe('placePopover', () => {
     }
   });
 
+  it('keep-out insets (HUD above, dock below, a docked panel on the right) are respected', () => {
+    const inset = { top: 80, right: 400, bottom: 90 };
+    for (let ax = 0; ax <= 1366; ax += 137) {
+      for (let ay = 0; ay <= 768; ay += 96) {
+        const p = placePopover({ x: ax, y: ay, w: 36, h: 36 }, size, viewport, { inset });
+        expect(p.y).toBeGreaterThanOrEqual(80 + 8);
+        expect(p.y + size.h).toBeLessThanOrEqual(768 - 90 - 8);
+        expect(p.x + size.w).toBeLessThanOrEqual(1366 - 400 - 8);
+      }
+    }
+  });
+
   it('a side-placed popover points its arrow at the anchor centre', () => {
     const p = placePopover({ x: 300, y: 400, w: 40, h: 40 }, size, viewport, { prefer: 'right' });
     expect(p.side).toBe('right');
     expect(p.x).toBe(300 + 40 + 12);
     expect(p.y + p.arrow).toBe(420);
+  });
+});
+
+describe('needsReplace (sticky popovers)', () => {
+  const anchor = { x: 400, y: 300, w: 40, h: 30 };
+  const size = { w: 300, h: 260 };
+  const prev = { cx: 420, cy: 315, w: 300, h: 260 };
+
+  it('a tight follower always re-places; the first placement is always needed', () => {
+    expect(needsReplace(prev, anchor, size, 0)).toBe(true);
+    expect(needsReplace(null, anchor, size, 140)).toBe(true);
+  });
+
+  it('a sticky popover holds still while its target stays close', () => {
+    expect(needsReplace(prev, { ...anchor, x: anchor.x + 60 }, size, 140)).toBe(false);
+    expect(needsReplace(prev, { ...anchor, y: anchor.y - 100 }, size, 140)).toBe(false);
+  });
+
+  it('…and follows once the target has moved far enough', () => {
+    expect(needsReplace(prev, { ...anchor, x: anchor.x + 200 }, size, 140)).toBe(true);
+  });
+
+  it('re-places when its own size changes (switching tabs)', () => {
+    expect(needsReplace(prev, anchor, { w: 300, h: 300 }, 140)).toBe(true);
   });
 });

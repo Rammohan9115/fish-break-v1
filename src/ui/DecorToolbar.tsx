@@ -1,16 +1,15 @@
 // Decorate mode: a small toolbar floating above the selected decor piece — flip, back/front (sand pieces),
 // S/M/L size, back to the box, or sell. Follows the piece as it bobs or drifts.
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { DECOR, DECOR_Z } from '../game/constants';
 import { decorRefund } from '../game/economy';
 import type { DecorSize } from '../game/types';
 import { currentRenderer } from '../render/renderer';
 import { useGameStore } from '../store/gameStore';
 import { Button, ConfirmDialog } from './kit';
+import { Popover } from './overlay/Popover';
 import { PriceTag } from './Shop';
 
-const GAP_PX = 12;
-const EDGE_PX = 8;
 const SIZES: DecorSize[] = ['S', 'M', 'L'];
 /** Quick depth presets (a piece dragged in between highlights the nearest one). */
 const DEPTHS = [
@@ -32,7 +31,6 @@ export function DecorToolbar() {
   const sellDecor = useGameStore((s) => s.sellDecor);
   const tankId = useGameStore((s) => s.game.activeTankId);
   const [selling, setSelling] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
   const moveDecor = useGameStore((s) => s.moveDecor);
   const placedX = placed?.x;
   const placedZ = placed?.z;
@@ -62,39 +60,20 @@ export function DecorToolbar() {
     return () => window.removeEventListener('keydown', onKey);
   }, [mode, selectedId, placedX, placedZ, isSand, moveDecor]);
 
-  // Follow the piece (it may bob or drift); flip below it when there's no room above.
-  useEffect(() => {
-    if (mode !== 'decorate' || !selectedId) return undefined;
-    let raf = 0;
-    const tick = () => {
-      const p = currentRenderer()?.decorScreenPoint(selectedId);
-      const node = ref.current;
-      if (p && node) {
-        // A tray docked at the right (tablet, desktop, landscape) is off limits; the toolbar wraps to fit.
-        const tray = document.querySelector('.ov-sidepanel, .sheet-inline');
-        const trayLeft = tray ? tray.getBoundingClientRect().left : Infinity;
-        const right = Math.min(window.innerWidth, trayLeft > window.innerWidth * 0.4 ? trayLeft - EDGE_PX : window.innerWidth) - EDGE_PX;
-        node.style.maxWidth = `${Math.max(160, right - EDGE_PX)}px`;
-        const w = node.offsetWidth;
-        const h = node.offsetHeight;
-        const above = p.top - GAP_PX - h;
-        const hudStack = parseFloat(getComputedStyle(node.closest('.app') ?? document.body).getPropertyValue('--hud-stack')) || 90;
-        const top = above > hudStack ? above : Math.min(window.innerHeight - h - EDGE_PX, p.bottom + GAP_PX);
-        const left = Math.min(right - w, Math.max(EDGE_PX, p.x - w / 2));
-        node.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [mode, selectedId]);
+  // Where the piece is (it may bob or drift): the Popover follows it every frame, flips below it when there is no room above,
+  // and keeps clear of the HUD, the dock and the docked Decorate tray.
+  const anchor = useCallback(() => {
+    if (!selectedId) return null;
+    const p = currentRenderer()?.decorScreenPoint(selectedId);
+    return p ? { x: p.x - 36, y: p.top, w: 72, h: Math.max(1, p.bottom - p.top) } : null;
+  }, [selectedId]);
 
   if (mode !== 'decorate' || !placed) return null;
   const def = DECOR[placed.decorId];
   const sand = def.placement === 'sand';
   return (
     <>
-      <div ref={ref} className="quick decor-tools" role="toolbar" aria-label={`${def.name}: edit`}>
+      <Popover anchor={anchor} prefer="top" arrow={false} role="toolbar" className="quick decor-tools" ariaLabel={`${def.name}: edit`}>
         <span className="quick-name">{def.name}</span>
         <div className="quick-row">
           <Button size="sm" aria-pressed={placed.flipped} onClick={() => updateDecor(placed.id, { flipped: !placed.flipped })}>
@@ -126,7 +105,7 @@ export function DecorToolbar() {
             Sell
           </Button>
         </div>
-      </div>
+      </Popover>
       {selling && (
         <ConfirmDialog
           title={`Sell ${def.name}?`}

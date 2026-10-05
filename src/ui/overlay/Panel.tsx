@@ -33,9 +33,11 @@ export interface PanelProps {
   snap?: PanelSnap;
   /** Header only (the Decorate tray folds like this). */
   collapsed?: boolean;
+  /** A docked side panel makes the scene (tank, HUD, dock) shift to make room. Cards leave the tank alone (default true). */
+  shiftScene?: boolean;
 }
 
-export function Panel({ title, onClose, children, footer, headerExtra, tabs, ariaLabel, className = '', plainHeader = false, scrollKey, modal = true, snap = 'full', collapsed = false }: PanelProps) {
+export function Panel({ title, onClose, children, footer, headerExtra, tabs, ariaLabel, className = '', plainHeader = false, scrollKey, modal = true, snap = 'full', collapsed = false, shiftScene = true }: PanelProps) {
   const variant = useOverlayVariant('panel');
   const { width } = useScreenEnv();
   const sheet = variant === 'sheet';
@@ -63,13 +65,13 @@ export function Panel({ title, onClose, children, footer, headerExtra, tabs, ari
 
   // The tank, HUD and dock make room for a docked side panel.
   useLayoutEffect(() => {
-    if (sheet) return undefined;
+    if (sheet || !shiftScene) return undefined;
     const app = document.querySelector<HTMLElement>('.app');
     app?.style.setProperty('--panel-w', `${panelWidth(width)}px`);
     return () => {
       app?.style.setProperty('--panel-w', '0px');
     };
-  }, [sheet, width]);
+  }, [sheet, shiftScene, width]);
 
   // Bottom sheet: drag the handle / header. Down past the lowest snap (or a hard flick) closes; otherwise it snaps.
   const onDragStart = (e: React.PointerEvent) => {

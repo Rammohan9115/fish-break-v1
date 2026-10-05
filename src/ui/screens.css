@@ -480,12 +480,6 @@
   opacity: 0.9;
 }
 
-.fishcard .sheet-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
 .fishcard-sub {
   display: flex;
   flex-wrap: wrap;
@@ -536,13 +530,6 @@
 }
 
 /* ---- Decor card ---- */
-.decorcard .sheet-body {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-3);
-}
-
 .decorcard-head {
   display: flex;
   align-items: center;
@@ -1498,40 +1485,27 @@
   }
 }
 
-/* Cards docked at the right (tablet, desktop, landscape phones) must not run into a top banner:
-   the banner moves into the free space left of the card, clear of the HUD's left column. */
-@media (min-width: 641px) {
-  .app:has(.sheet-inline) .banner-top,
-  .app:has(.sheet-inline) .banner-compact {
+/* A card docked at the right (touch on a wide screen) must not run into a top banner: the banner moves into the free
+   space to its left, clear of the HUD's left column. */
+@media (min-width: 600px) {
+  .app:has(.ov-sidepanel.ov-card) .banner-top,
+  .app:has(.ov-sidepanel.ov-card) .banner-compact {
     left: calc(var(--hud-left-w, 170px) + env(safe-area-inset-left));
     transform: none;
-    max-width: max(180px, calc(100vw - var(--inline-sheet-w, 340px) - var(--hud-left-w, 170px) - 32px));
-  }
-  .app:has(.sheet-inline) .banner-compact .banner-main {
-    max-width: 100%;
+    max-width: max(180px, calc(100vw - clamp(320px, 30vw, 440px) - var(--hud-left-w, 170px) - 32px));
   }
 }
 @media (orientation: landscape) and (max-height: 520px) {
   .app {
-    --inline-sheet-w: 300px;
     /* Phones hide the sound and fullscreen buttons, so the HUD's left column is narrower. */
     --hud-left-w: 118px;
-  }
-  .sheet-inline {
-    --sheet-w: 300px;
-  }
-}
-
-/* The inline card sits below whatever the HUD reaches (measured), never under the top-right tank chip. */
-@media (min-width: 641px) {
-  .sheet-layer-inline {
-    padding-top: calc(var(--hud-stack, 66px) + 2px + env(safe-area-inset-top));
   }
 }
 
 /* The frame's nameplate lives on the bottom edge: out of the way while the dock or a card is up. */
 .app:has(.dock-open) .nameplate,
-.app:has(.sheet-inline) .nameplate {
+.app:has(.ov-sidepanel) .nameplate,
+.app:has(.ov-popover-card) .nameplate {
   opacity: 0;
   transition: opacity var(--motion-base, 160ms) ease;
 }

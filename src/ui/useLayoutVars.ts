@@ -1,11 +1,14 @@
 // Publishes the real size of the HUD and the dock as CSS variables on .app, so banners, toasts, tips and cards
 // always sit in the free space between them, whatever the screen:
 //   --hud-stack  how far down the HUD reaches (banners start below it)
+//   --hud-top    how far down the HUD's top row (XP bar, tank chip) reaches (floating cards stay below it)
 //   --dock-h     how much of the screen the dock takes from the bottom (toasts, tips, cards stay above it)
 // The static values in styles.css are only the first-paint fallback.
 import { useEffect } from 'react';
 
 const HUD_PARTS = '.hud-bar, .hud-xpwrap, .hud-tank, .hud button';
+/** The parts of the HUD that run along the top (XP bar, tank chip): floating cards only have to clear these, not the left column. */
+const HUD_TOP_PARTS = '.hud-xpwrap, .hud-tank';
 
 /** Pure: the two variables for the given element boxes (px). Exported for tests. */
 export function layoutVars(viewportH: number, hudBottoms: number[], dockTop: number | null): { hudStack: number; dockH: number | null } {
@@ -27,7 +30,9 @@ export function useLayoutVars(active: boolean): void {
       const dock = app.querySelector('.dock');
       const bottoms = hud ? [...hud.querySelectorAll(HUD_PARTS)].map((el) => el.getBoundingClientRect().bottom) : [];
       const { hudStack, dockH } = layoutVars(window.innerHeight, bottoms, dock ? dock.getBoundingClientRect().top : null);
+      const topRow = hud ? [...hud.querySelectorAll(HUD_TOP_PARTS)].map((el) => el.getBoundingClientRect().bottom) : [];
       if (bottoms.length > 0) app.style.setProperty('--hud-stack', `${hudStack}px`);
+      if (topRow.length > 0) app.style.setProperty('--hud-top', `${Math.ceil(Math.max(...topRow)) + 4}px`);
       if (dockH !== null) app.style.setProperty('--dock-h', `${dockH}px`);
     };
     const schedule = () => {

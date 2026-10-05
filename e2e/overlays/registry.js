@@ -60,7 +60,7 @@ const OVERLAYS = [
   { id: 'pair-confirm', kind: 'dialog', fit: true, selector: '.sheet', open: openWith('const gf = g.game.fish.filter((f) => f.speciesId === "goldfish"); g.startPairing(gf[0].id, gf[1].id);') },
   { id: 'breeding-guide', kind: 'dialog', fit: true, selector: '.guide', open: openWith('s.setState({ guideOpen: true });') },
   { id: 'break-setup', kind: 'dialog', fit: true, selector: '.sheet', open: openWith("g.openPanel('break');") },
-  { id: 'confirm-sell-fish', kind: 'dialog', fit: true, selector: '.confirm', open: async (page) => { await page.evaluate(st('s.setState({ selectedFishId: g.game.fish[2].id });')); await clickText(page, /^Sell for/); } },
+  { id: 'confirm-sell-fish', kind: 'dialog', fit: true, selector: '.confirm', open: async (page) => { await page.evaluate(st('s.setState({ selectedFishId: g.game.fish[2].id });')); await clickText(page, /More actions/); await clickText(page, /^Sell for/); } },
   { id: 'confirm-reset', kind: 'dialog', fit: true, selector: '.confirm', open: async (page) => {
       await page.evaluate(st("g.openPanel('settings');"));
       // Settings remembers its login view between openings (a known quirk): go back to the main view first.

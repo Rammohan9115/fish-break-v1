@@ -329,3 +329,195 @@
     display: none;
   }
 }
+
+/* ---- Popover: floating, anchored to a moving target (placed by JS each frame) ---- */
+.ov-popover {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: var(--z-popover);
+  width: max-content;
+  max-width: calc(100vw - 16px);
+  will-change: transform;
+}
+.ov-popover.quick {
+  z-index: var(--z-popover);
+}
+.ov-popover-card {
+  width: clamp(300px, 24vw, 360px);
+}
+.sheet.ov-card {
+  --sheet-w: 360px;
+}
+.ov-popover .sheet.ov-card {
+  width: 100%;
+  max-height: calc(var(--vvh, 100dvh) - var(--hud-top, 50px) - 16px);
+  border: 3px solid var(--color-brand-edge);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+  animation: sheet-pop var(--motion-slow) var(--ease-bounce);
+}
+.ov-arrow {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: var(--color-brand-edge);
+  transform: rotate(45deg);
+  border-radius: 3px;
+}
+.ov-popover[data-side='top'] .ov-arrow {
+  bottom: -6px;
+  left: calc(var(--arrow, 50%) - 7px);
+}
+.ov-popover[data-side='bottom'] .ov-arrow {
+  top: -6px;
+  left: calc(var(--arrow, 50%) - 7px);
+}
+.ov-popover[data-side='left'] .ov-arrow {
+  right: -6px;
+  top: calc(var(--arrow, 50%) - 7px);
+}
+.ov-popover[data-side='right'] .ov-arrow {
+  left: -6px;
+  top: calc(var(--arrow, 50%) - 7px);
+}
+
+/* A docked card (touch on a wide screen) only takes the height it needs, under the HUD and above the dock. */
+.sheet.ov-sidepanel.ov-card {
+  top: calc(var(--vv-top, 0px) + var(--hud-top, 50px));
+  height: auto;
+  max-height: calc(var(--vvh, 100dvh) - var(--hud-top, 50px) - 8px);
+  border-bottom: 3px solid var(--color-brand-edge);
+  border-radius: var(--radius-xl) 0 0 var(--radius-xl);
+}
+
+/* ---- FishCard / DecorCard content ---- */
+.fc-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.fc-thumb {
+  flex: none;
+  width: 52px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  background: var(--color-surface);
+  border: 2px solid rgba(255, 255, 255, 0.7);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.fc-thumb .preview {
+  /* The preview canvas has a fixed inline size: scale it to the thumbnail. */
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  object-fit: contain;
+}
+.fc-title-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.fc-name {
+  font-size: var(--text-lg);
+  line-height: 1.15;
+}
+.fc-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-body);
+  font-size: var(--text-label);
+  font-weight: 600;
+  line-height: 1.2;
+  text-shadow: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fc-meters {
+  display: grid;
+  gap: var(--space-3);
+}
+.pbar-slim {
+  display: grid;
+  grid-template-columns: 5.5em 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+.pbar-slim .pbar-head {
+  display: contents;
+}
+.pbar-slim .pbar-label {
+  order: 1;
+  font-size: var(--text-small);
+  white-space: nowrap;
+}
+.pbar-slim .pbar-track {
+  order: 2;
+}
+.pbar-slim .pbar-value {
+  order: 3;
+  font-size: var(--text-label);
+  text-align: right;
+  white-space: nowrap;
+}
+.fc-menu-wrap {
+  position: relative;
+}
+.fc-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--space-1));
+  z-index: 5;
+  display: grid;
+  gap: var(--space-1);
+  min-width: 190px;
+  padding: var(--space-2);
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 2px solid var(--color-brand-edge);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-float);
+}
+.fc-actions {
+  display: flex;
+  gap: var(--space-2);
+  width: 100%;
+}
+.fc-actions .btn {
+  flex: 1;
+}
+.fishcard .breed,
+.fishcard .bond {
+  margin: 0;
+}
+
+/* Short screens (landscape phones, zoomed-in desktops): a tighter card so it still fits without scrolling. */
+@media (max-height: 560px) {
+  .ov-card .fc-thumb {
+    display: none;
+  }
+  .ov-card .sheet-head {
+    min-height: 44px;
+    padding-block: 2px;
+  }
+  .ov-card .sheet-tabs {
+    padding-top: var(--space-1);
+  }
+  .ov-card .sheet-body {
+    padding: var(--space-2) var(--space-3);
+  }
+  .ov-card .sheet-foot {
+    padding: var(--space-2) var(--space-3);
+  }
+  .fc-meters {
+    gap: var(--space-2);
+  }
+  .fishcard .bond-tricks {
+    gap: var(--space-1);
+  }
+}

@@ -1,10 +1,14 @@
-// Card for the selected decor item: what it is, how to move it, and sell back for 50% (with a confirm).
-import { useState } from 'react';
+// Card for the selected decor item, built to fit without scrolling: a compact header (preview, name, collection), two short
+// lines (set bonus / happiness) and one hint, with Decorate and Sell back pinned in the footer. A Popover next to the piece
+// for a mouse, a docked card for a finger on a wide screen, a bottom sheet on a phone (see overlay/Card.tsx).
+import { useCallback, useState } from 'react';
 import { COLLECTIONS, DECOR } from '../game/constants';
 import { activeSets, decorHappiness } from '../game/decor';
 import { decorRefund } from '../game/economy';
+import { currentRenderer } from '../render/renderer';
 import { useGameStore } from '../store/gameStore';
-import { Button, ConfirmDialog, Sheet } from './kit';
+import { Button, ConfirmDialog } from './kit';
+import { Card } from './overlay/Card';
 import { DecorPreview } from './Preview';
 import { PriceTag } from './Shop';
 
@@ -16,31 +20,57 @@ export function DecorCard() {
   const setMode = useGameStore((s) => s.setMode);
   const mode = useGameStore((s) => s.mode);
   const [confirming, setConfirming] = useState(false);
+  const placedId = placed?.id ?? null;
+
+  const anchor = useCallback(() => {
+    if (!placedId) return null;
+    const p = currentRenderer()?.decorScreenPoint(placedId);
+    return p ? { x: p.x - 36, y: p.top, w: 72, h: Math.max(1, p.bottom - p.top) } : null;
+  }, [placedId]);
+
   // In Decorate mode the floating toolbar edits the piece instead.
   if (!tank || !placed || mode === 'decorate') return null;
   const def = DECOR[placed.decorId];
 
   return (
-    <Sheet inline title={def.name} onClose={() => selectDecor(null)} className="decorcard" size="sm">
-      <div className="decorcard-head">
-        <DecorPreview decorId={placed.decorId} />
-        <div>
-          {def.collection && (
-            <p className="meta">
-              {COLLECTIONS[def.collection].icon} {COLLECTIONS[def.collection].name} collection
-              {activeSets(tank).includes(def.collection) ? ' · ✨ set bonus active' : ''}
-            </p>
-          )}
-          <p className="meta">Decor here gives fish +{decorHappiness(tank)} happiness</p>
-          <p className="decorcard-hint">↔ Drag to move it, up and down to push it back or pull it forward. 🎨 Decorate to flip, resize or rearrange.</p>
-        </div>
-      </div>
-      <Button variant="primary" size="sm" onClick={() => setMode('decorate')}>
-        🎨 Decorate
-      </Button>
-      <Button variant="danger" size="sm" onClick={() => setConfirming(true)}>
-        Sell back <PriceTag price={decorRefund(placed.decorId)} />
-      </Button>
+    <>
+      <Card
+        ariaLabel={`About ${def.name}`}
+        className="decorcard"
+        anchor={anchor}
+        onClose={() => selectDecor(null)}
+        onLost={() => selectDecor(null)}
+        title={
+          <span className="fc-title">
+            <span className="fc-thumb" aria-hidden="true">
+              <DecorPreview decorId={placed.decorId} />
+            </span>
+            <span className="fc-title-text">
+              <span className="fc-name">{def.name}</span>
+              {def.collection && (
+                <span className="fc-meta">
+                  {COLLECTIONS[def.collection].icon} {COLLECTIONS[def.collection].name}
+                </span>
+              )}
+            </span>
+          </span>
+        }
+        footer={
+          <div className="fc-actions">
+            <Button variant="primary" size="sm" onClick={() => setMode('decorate')}>
+              🎨 Decorate
+            </Button>
+            <Button variant="danger" size="sm" onClick={() => setConfirming(true)}>
+              Sell back <PriceTag price={decorRefund(placed.decorId)} />
+            </Button>
+          </div>
+        }
+      >
+        <p className="meta">
+          {def.collection && activeSets(tank).includes(def.collection) ? '✨ Set bonus active · ' : ''}Decor here gives fish +{decorHappiness(tank)} happiness
+        </p>
+        <p className="decorcard-hint">↔ Drag to move it, up and down to push it back or pull it forward.</p>
+      </Card>
       {confirming && (
         <ConfirmDialog
           title={`Sell ${def.name}?`}
@@ -59,6 +89,6 @@ export function DecorCard() {
           }}
         />
       )}
-    </Sheet>
+    </>
   );
 }

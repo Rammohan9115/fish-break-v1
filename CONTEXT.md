@@ -420,9 +420,16 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
 - Test hooks: dev `window.__fishbowl.renderer()` and `Renderer.tankToClient(x, y)` (used by `e2e/shells.spec.ts`).
 
 ## Overlay system, Phases 1–2 (ui-overlays-fix)
-- **Baseline → now:** the 31-overlay × 19-screen matrix went from 365/589 passing to 567/589. Remaining: FishCard (17 screens) and DecorCard (5) need the Phase 3 redesign (compact header + Status/Bond/Breeding tabs, Popover on desktop).
+- **Baseline → now:** the 31-overlay × 19-screen matrix went from 365/589 passing to 567/589 after Phases 1–2, and every overlay passes after Phase 3.
 - New code in `src/ui/overlay/`: `rules.ts` (pure, tested: `pickVariant`, `panelWidth`, `dialogWidth`, `pickDensity`, `settleSheet`, `placePopover`), `useScreenEnv.ts`, `useVisualViewport.ts`, `useFocusTrap.ts`, `overlayStore.ts` (registry + Esc), `OverlayRoot.tsx`, `OverlayFrame.tsx`, `Dialog.tsx`, `Panel.tsx` (Sheet or SidePanel), `overlay.css`. `kit/Sheet.tsx` is now a facade: dialogs → `Dialog`, panels → `Panel`, `inline` (cards) → the legacy sheet until Phase 3. `kit/sheetStack.ts` wraps the registry.
 - Layout: `.app { --panel-w }` shifts `.tank`, `.tank-frame`, `.hud`, the dock, toasts and banners; `TankFrame` measures its own element; `Renderer.resize` keeps the player's pan when the canvas resizes (camSet).
 - Fixes found on the way: Settings reopened on the login view; sheets and dialogs had no `vh` fallback and ignored the keyboard; z-index literals replaced by tokens (dock 22, hint 28, popover 45).
 - Tabs of Shop / Breeding / My Fish / Decorate tray are pinned in the header (`tabs` prop). The Decorate tray is a non-modal Panel (`modal={false}`, `collapsed`).
 - Not done yet (later phases): Popover + FishCard/DecorCard redesign, density modes (`pickDensity`/`DENSITY_TOKENS` exist but are not applied), Shop grid + item-details dialog, toast placement on desktop, hover/focus polish, DailyGift as a Dialog (kept as the auto-fading card).
+
+## Overlay system, Phase 3 (cards and popovers)
+- `overlay/Popover.tsx`: one shared follower (rAF) used by FishCard / DecorCard (via `overlay/Card.tsx`), QuickActions and DecorToolbar. It asks `anchor()` for the target box in viewport px, places itself with `placePopover` (pure, tested: prefer a side, flip, shift, arrow, keep-out insets) and calls `onLost` when the target is gone. Keep-out: `--hud-top` (published by `useLayoutVars`: bottom of the XP bar / tank chip) above and `--panel-w` on the right; it may float over the dock.
+- `pickVariant('card')`: mouse + width ≥ 600 → popover; finger + width ≥ 600 → docked card (`Panel` with `shiftScene={false}`: the tank is not resized); narrower → non-modal bottom sheet.
+- FishCard redesign: header (thumbnail, editable name, species · stage, ⋯ menu with Move + Sell), tabs Status (slim bars) / Bond / Breed, `Pair up` in the footer (tapped early it jumps to Breed and highlights the first missing line). DecorCard: preview + name + collection, two short lines, Decorate / Sell back in the footer.
+- Removed: the legacy inline sheet (`Sheet inline`, `.sheet-layer-inline`, `--inline-sheet-w`, the old phone bottom-sheet block in kit.css, per-card body CSS). `kit/Sheet.tsx` is now only a facade over Dialog / Panel.
+- Not done: Coachmark / Tooltip still position themselves (static anchors, not followers); density modes; Shop grid + item-details dialog; toast placement on desktop; hover/focus polish; DailyGift as a Dialog.

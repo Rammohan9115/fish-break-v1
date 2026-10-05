@@ -26,13 +26,16 @@ export const OVERLAY_BREAKPOINTS = {
 
 /**
  * panel  → bottom Sheet on narrow screens, otherwise a SidePanel (landscape phones, tablets, desktop, zoomed-in desktop).
- * card   → anchored Popover for a mouse on a wide screen, otherwise a Sheet.
+ * card   → anchored Popover for a mouse on a wide screen; a docked SidePanel for a finger on a wide screen (tablet,
+ *          landscape phone: the fish stay visible beside it); a bottom Sheet on narrow screens.
  * dialog → always a centred Dialog.
  */
 export function pickVariant(kind: OverlayKind, env: ScreenEnv): OverlayVariant {
   if (kind === 'dialog') return 'dialog';
-  if (kind === 'panel') return env.width < OVERLAY_BREAKPOINTS.sheetBelow ? 'sheet' : 'sidepanel';
-  return env.hover && !env.coarse && env.width >= OVERLAY_BREAKPOINTS.popoverMinWidth ? 'popover' : 'sheet';
+  const narrow = env.width < OVERLAY_BREAKPOINTS.sheetBelow;
+  if (kind === 'panel') return narrow ? 'sheet' : 'sidepanel';
+  if (narrow) return 'sheet';
+  return env.hover && !env.coarse && env.width >= OVERLAY_BREAKPOINTS.popoverMinWidth ? 'popover' : 'sidepanel';
 }
 
 export const PANEL_WIDTH = { min: 320, vw: 0.3, max: 440 } as const;
@@ -108,15 +111,25 @@ export interface PopoverPlacement {
  * side has more room), then shifted along the edge so it stays inside the viewport (`pad` from each edge). The arrow keeps
  * pointing at the anchor's centre even after shifting.
  */
-export function placePopover(anchor: Box, size: { w: number; h: number }, viewport: { w: number; h: number }, opts: { gap?: number; pad?: number; prefer?: PopoverSide } = {}): PopoverPlacement {
+export function placePopover(
+  anchor: Box,
+  size: { w: number; h: number },
+  viewport: { w: number; h: number },
+  opts: { gap?: number; pad?: number; prefer?: PopoverSide; inset?: Partial<Record<'top' | 'right' | 'bottom' | 'left', number>> } = {},
+): PopoverPlacement {
   const gap = opts.gap ?? 12;
   const pad = opts.pad ?? 8;
   const prefer = opts.prefer ?? 'bottom';
+  // Keep-out areas (the HUD at the top, the dock at the bottom, a docked panel on the right) shrink the usable region.
+  const minX = (opts.inset?.left ?? 0) + pad;
+  const minY = (opts.inset?.top ?? 0) + pad;
+  const maxX = viewport.w - (opts.inset?.right ?? 0) - pad;
+  const maxY = viewport.h - (opts.inset?.bottom ?? 0) - pad;
   const room: Record<PopoverSide, number> = {
-    top: anchor.y - pad,
-    bottom: viewport.h - (anchor.y + anchor.h) - pad,
-    left: anchor.x - pad,
-    right: viewport.w - (anchor.x + anchor.w) - pad,
+    top: anchor.y - minY,
+    bottom: maxY - (anchor.y + anchor.h),
+    left: anchor.x - minX,
+    right: maxX - (anchor.x + anchor.w),
   };
   const need = (s: PopoverSide) => (s === 'top' || s === 'bottom' ? size.h : size.w) + gap;
   const opposite: Record<PopoverSide, PopoverSide> = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' };
@@ -132,16 +145,37 @@ export function placePopover(anchor: Box, size: { w: number; h: number }, viewpo
   let y: number;
   let arrow: number;
   if (side === 'top' || side === 'bottom') {
-    x = clamp(ax - size.w / 2, pad, viewport.w - size.w - pad);
+    x = clamp(ax - size.w / 2, minX, maxX - size.w);
     y = side === 'bottom' ? anchor.y + anchor.h + gap : anchor.y - gap - size.h;
     arrow = clamp(ax - x, 14, size.w - 14);
   } else {
-    y = clamp(ay - size.h / 2, pad, viewport.h - size.h - pad);
+    y = clamp(ay - size.h / 2, minY, maxY - size.h);
     x = side === 'right' ? anchor.x + anchor.w + gap : anchor.x - gap - size.w;
     arrow = clamp(ay - y, 14, size.h - 14);
   }
-  // As a last resort keep the whole thing on screen even if it overlaps the anchor.
-  x = clamp(x, pad, viewport.w - size.w - pad);
-  y = clamp(y, pad, viewport.h - size.h - pad);
+  // As a last resort keep the whole thing inside the usable region even if it overlaps the anchor.
+  x = clamp(x, minX, maxX - size.w);
+  y = clamp(y, minY, maxY - size.h);
   return { x, y, side, arrow };
+}
+
+/** What a popover remembers about where it was last placed. */
+export interface PlacedFor {
+  /** The anchor's centre when it was placed. */
+  cx: number;
+  cy: number;
+  /** The popover's size when it was placed. */
+  w: number;
+  h: number;
+}
+
+/**
+ * Whether a popover must be placed again. A tight follower (stickiness 0) re-places every frame; a sticky one (a card with
+ * buttons you are about to tap) holds still until its target has moved `stickiness` px or the popover changed size
+ * (a tab switch), so a swimming fish never moves the buttons under your finger.
+ */
+export function needsReplace(prev: PlacedFor | null, anchor: Box, size: { w: number; h: number }, stickiness: number): boolean {
+  if (!prev || stickiness <= 0) return true;
+  if (prev.w !== size.w || prev.h !== size.h) return true;
+  return Math.hypot(anchor.x + anchor.w / 2 - prev.cx, anchor.y + anchor.h / 2 - prev.cy) >= stickiness;
 }

@@ -267,16 +267,6 @@
   z-index: var(--z-celebrate);
 }
 
-/* Inline sheets (FishCard, DecorCard) don't block the tank: dock right, under the HUD. */
-.sheet-layer-inline {
-  z-index: var(--z-card);
-  pointer-events: none;
-  align-items: flex-start;
-  justify-content: flex-end;
-  padding-top: calc(72px + env(safe-area-inset-top));
-  padding-bottom: calc(var(--dock-h, 80px) + var(--space-5) + env(safe-area-inset-bottom));
-}
-
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -311,10 +301,6 @@
 
 .sheet-lg {
   --sheet-w: 780px;
-}
-
-.sheet-inline {
-  --sheet-w: 340px;
 }
 
 @keyframes sheet-pop {
@@ -375,65 +361,7 @@
   border-top: 2px solid var(--color-line);
 }
 
-/* Phones: bottom sheets, a grab bar, swipe down to close. */
-@media (max-width: 640px) {
-  .sheet-layer,
-  .sheet-layer-inline {
-    align-items: flex-end;
-    justify-content: center;
-    padding: calc(var(--space-6) + env(safe-area-inset-top)) 0 0;
-  }
-
-  .sheet,
-  .sheet-inline {
-    width: 100%;
-    max-height: 88dvh;
-    border-bottom: none;
-    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-    padding-bottom: env(safe-area-inset-bottom);
-    box-shadow: 0 -8px 28px rgba(10, 20, 60, 0.3);
-    animation: sheet-up var(--motion-slow) var(--ease);
-  }
-
-  .sheet-inline {
-    max-height: 62dvh;
-  }
-
-  .sheet-grab {
-    display: block;
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 18px;
-    z-index: 1;
-    touch-action: none;
-  }
-
-  .sheet-grab::before {
-    content: '';
-    position: absolute;
-    top: 6px;
-    left: calc(50% - 22px);
-    width: 44px;
-    height: 5px;
-    border-radius: var(--radius-pill);
-    background: rgba(255, 255, 255, 0.75);
-  }
-
-  .sheet-head {
-    padding-top: var(--space-4);
-    touch-action: none;
-  }
-
-  .sheet-body {
-    padding: var(--space-3) var(--space-4) var(--space-4);
-  }
-
-  .sheet-foot {
-    padding: var(--space-3) var(--space-4);
-  }
-}
+/* (Phone bottom sheets are styled by .ov-sheet in ui/overlay/overlay.css.) */
 
 @keyframes sheet-up {
   from {
