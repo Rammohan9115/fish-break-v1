@@ -732,3 +732,21 @@ describe('decorate mode undo/redo', () => {
     expect(store().decorHistory.past).toHaveLength(0);
   });
 });
+
+describe('decor dev tools', () => {
+  it('give all puts one of every piece in the box and owns every style', () => {
+    load(makeState());
+    store().dev.giveAllDecor();
+    expect(Object.keys(game().decorInventory)).toHaveLength(28);
+    expect(game().ownedStyles.length).toBeGreaterThan(10);
+  });
+
+  it('forcing the October event lets Halloween decor be bought in December', () => {
+    vi.setSystemTime(new Date(2026, 11, 5));
+    load(makeState({ overrides: { shells: 1000 } }));
+    expect(store().buyDecor('pumpkin')).toBe(false);
+    store().dev.forceEvent(true);
+    expect(store().buyDecor('pumpkin')).toBe(true);
+    store().dev.forceEvent(false);
+  });
+});

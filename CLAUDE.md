@@ -315,6 +315,8 @@ No "Unlocks at Lv X" labels for decor. Theme level gates (Night/Coral/Pond) stay
 
 The nameplate (an engraved plaque on the bezel's bottom edge showing the tank name) can be switched off per tank.
 
+**Dev panel → Decor:** "Give all decor + styles" and "Halloween event: forced on" (pretends it's October, not saved).
+
 **Collections & set bonuses**
 - 3 *different* items from one collection in a tank (both pieces for Halloween, which has only 2) activate its set bonus: +5 happiness for that tank's fish, plus an ambient effect:
   - Nature: drifting pollen

@@ -280,6 +280,17 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
   - Shop decor filters, a "New" badge (localStorage `fishbowl-decor-seen`), and 👀 Try it.
   - Snapping: `render/snap.ts` (`snapX`, tested).
 
+## Decor customization: Stage C (2026-10-04)
+- **Performance:** measured on a 390×844 viewport at DPR 3 with a 4× CPU throttle.
+  - 20 fish with 0 decor: ~8.0 ms/frame. With 15 behavior decor, a substrate and a frame: ~7.3 ms/frame (no measurable decor cost).
+  - Static work is already cached: scaled decor copies (`scaledSprite`), the substrate (`SubstrateLayer`, re-baked only on substrate/size change), and the frame (a DOM SVG, re-rendered only on resize/style).
+  - A separate "static decor layer" was skipped: no measurable gain, and most decor animates.
+- **Dev panel → Decor:**
+  - "🎁 Give all decor + styles": one of every piece into the box, plus every paid style.
+  - "🎃 Halloween event: by date / forced on": store `eventForced`, read through `eventClock()` by the shop and decor purchases.
+- **E2E:** Playwright isn't set up, so puppeteer-core scripts (kept outside the repo) covered the flow: Decorate mode → place from tray → flip/front/size → undo/redo →
+  drag + snap → save/apply preset → frame/substrate/lighting/water → Try it → Buy & Place, phone layout, and perf.
+
 ## Petting & Bond (2026-10-04, save v5)
 - **Rules, `game/bond.ts` (pure, tested in `bond.test.ts`):**
   - `completePetSession` (+3 bond, +5 happiness, +1 XP; capped to 3 per rolling hour via `petLog`, then +2 happiness only).

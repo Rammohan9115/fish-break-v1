@@ -10,6 +10,8 @@ import {
   FISH_NAME_MAX_LENGTH,
   DECOR,
   DECOR_UNDO_STEPS,
+  OCTOBER_MONTH,
+  STYLE_OPTIONS,
   FOLLOW_MS,
   GREET_AWAY_MS,
   GREET_START_DELAY_MS,
@@ -169,6 +171,8 @@ export interface GameStore {
   stylePreview: Partial<TankStyle> | null;
   /** Decorate mode tray tab. */
   trayTab: TrayTab;
+  /** Dev: the October event is forced on (shop and purchases behave as if it's October). */
+  eventForced: boolean;
 
   loadState: (game: GameState) => void;
   /** Runs fixed 1s sim ticks up to `now`; long gaps use offline catch-up. */
@@ -287,6 +291,10 @@ export interface DevActions {
   setBondLevel: (fishId: string, level: BondLevel) => void;
   resetPetCaps: () => void;
   greet: () => void;
+  /** Give one of every decor piece (into the decor box) and every tank style. */
+  giveAllDecor: () => void;
+  /** Pretend it's October (the Halloween event) until turned off. Not saved. */
+  forceEvent: (on: boolean) => void;
 }
 
 /** Growth seconds that put a fish at the start of `stage`. */
@@ -385,6 +393,15 @@ function unlockedTrick(level: BondLevel, trick: TrickId): boolean {
   return TRICKS.some((t) => t.id === trick && level >= t.level);
 }
 
+/**
+ * The clock seasonal decor checks against: now, or a day in October while the dev "force Halloween" switch is on.
+ */
+export function eventClock(): number {
+  if (!useGameStore.getState().eventForced) return Date.now();
+  const d = new Date();
+  return new Date(d.getFullYear(), OCTOBER_MONTH, 15, 12).getTime();
+}
+
 /** Puts a snapshot's decor and decor box back (undo/redo). */
 function restoreDecor(game: GameState, snap: DecorSnapshot): GameState {
   return { ...game, decorInventory: snap.inventory, tanks: game.tanks.map((t) => (t.id === snap.tankId ? { ...t, decor: snap.decor } : t)) };
@@ -456,6 +473,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
     tryDecor: null,
     stylePreview: null,
     trayTab: 'box',
+    eventForced: false,
 
     loadState: (game) =>
       set({
@@ -725,7 +743,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
 
     buyPremiumFood: () => commitResult(economy.buyPremiumFood(get().game), '🌟 +3 premium food'),
     buyDecor: (decorId) => {
-      const result = economy.buyDecor(get().game, decorId, Date.now(), Math.random);
+      const result = economy.buyDecor(get().game, decorId, eventClock(), Math.random);
       return commitResult(result, result.ok && result.boxed ? '📦 Tank is full, so it went into your decor box' : '🪴 Placed! Drag it in 🎨 Decorate mode to move it.');
     },
     sellDecor: (tankId, placedId) => {
@@ -963,7 +981,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
       if (!t) return false;
       const { decorId, x, ...look } = t;
       const name = DECOR[decorId].name;
-      const ok = commitResult(economy.buyAndPlaceDecor(get().game, decorId, x, look, Date.now(), Math.random), `🪴 ${name} placed!`);
+      const ok = commitResult(economy.buyAndPlaceDecor(get().game, decorId, x, look, eventClock(), Math.random), `🪴 ${name} placed!`);
       if (ok) set({ tryDecor: null });
       return ok;
     },
@@ -1055,6 +1073,14 @@ export const useGameStore = create<GameStore>()((set, get) => {
         set((s) => ({ game: { ...s.game, fish: s.game.fish.map((f) => ({ ...f, petLog: [], feedBondLog: [] })) }, trickCooldowns: {} }));
       },
       greet: () => emitBond({ type: 'greet', fishIds: greeters(get().game) }),
+      giveAllDecor: () =>
+        set((s) => {
+          const decorInventory = { ...s.game.decorInventory };
+          for (const id of Object.keys(DECOR) as DecorId[]) decorInventory[id] = (decorInventory[id] ?? 0) + 1;
+          const ownedStyles = STYLE_OPTIONS.filter((o) => o.price !== null).map((o) => o.id);
+          return { game: { ...s.game, decorInventory, ownedStyles } };
+        }),
+      forceEvent: (on) => set({ eventForced: on }),
       fillTank: () => {
         const { game } = get();
         const tank = game.tanks.find((t) => t.id === game.activeTankId);

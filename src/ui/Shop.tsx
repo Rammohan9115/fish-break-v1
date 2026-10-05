@@ -9,7 +9,7 @@ import { SPECIES_LIST } from '../game/species';
 import type { CollectionDef, CollectionId, DecorDef, DecorPlacement, GameState, Price, Tank, ThemeId } from '../game/types';
 import { StylePicker } from './StylePicker';
 import { sound } from '../audio/sound';
-import { useGameStore, type ShopTab } from '../store/gameStore';
+import { eventClock, useGameStore, type ShopTab } from '../store/gameStore';
 import { formatCount, formatMinutes } from './format';
 import { DecorPreview, FishPreview } from './Preview';
 import { RichText } from './Icon';
@@ -196,7 +196,7 @@ function PlacedDecor({ game }: { game: GameState }) {
 function DecorItem({ d, game, tank, isNew }: { d: DecorDef; game: GameState; tank: Tank; isNew: boolean }) {
   const buyDecor = useGameStore((s) => s.buyDecor);
   const startTry = useGameStore((s) => s.startTry);
-  const error = economy.checkBuyDecor(game, d.id, Date.now());
+  const error = economy.checkBuyDecor(game, d.id, eventClock());
   const gain = decorHappinessGain(tank, d.id);
   const full = tank.decor.length >= maxDecor(tank);
   const boxed = game.decorInventory[d.id] ?? 0;
@@ -284,7 +284,8 @@ function FilterChips<T extends string>({ label, value, options, onChange }: { la
 
 function DecorTab({ game }: { game: GameState }) {
   const tank = game.tanks.find((t) => t.id === game.activeTankId)!;
-  const now = new Date();
+  useGameStore((s) => s.eventForced);
+  const now = new Date(eventClock());
   const [collection, setCollection] = useState<CollectionFilter>('all');
   const [placement, setPlacement] = useState<PlacementFilter>('all');
   const [price, setPrice] = useState<PriceFilter>('all');

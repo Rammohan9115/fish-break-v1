@@ -21,6 +21,7 @@ function BondTools() {
   const game = useGameStore((s) => s.game);
   const fish = game.fish.filter((f) => f.tankId === game.activeTankId);
   const selected = useGameStore((s) => s.quickFishId ?? s.selectedFishId);
+  const eventForced = useGameStore((s) => s.eventForced);
   const [picked, setPicked] = useState('');
   const target = fish.find((f) => f.id === (picked || selected)) ?? fish[0];
   return (
@@ -49,6 +50,15 @@ function BondTools() {
         </button>
         <button type="button" onClick={dev.greet}>
           👋 Play greeting
+        </button>
+      </div>
+      <div className="dev-label">Decor</div>
+      <div className="dev-buttons">
+        <button type="button" onClick={dev.giveAllDecor}>
+          🎁 Give all decor + styles
+        </button>
+        <button type="button" onClick={() => dev.forceEvent(!eventForced)}>
+          🎃 Halloween event: {eventForced ? 'forced on' : 'by date'}
         </button>
       </div>
     </>
