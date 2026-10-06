@@ -914,6 +914,36 @@ body {
   }
 }
 
+/* Mobile: smaller, translucent Tools pill (desktop has its own block above). */
+@media (max-width: 640px), (max-height: 520px) {
+  .dock-pill:not(.dock-pill-mode) {
+    min-height: 36px;
+    padding: 0 12px;
+    gap: 5px;
+    font-size: 12px;
+    border-width: 2px;
+    opacity: 0.6;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 2px 0 rgba(34, 25, 90, 0.6), 0 4px 10px rgba(10, 20, 60, 0.2);
+    transition: opacity 160ms ease;
+  }
+
+  /* Invisible hit area keeps the 44px tap target (UX rule 4). */
+  .dock-pill:not(.dock-pill-mode)::after {
+    content: '';
+    position: absolute;
+    inset: -4px -2px;
+  }
+
+  .dock-pill:not(.dock-pill-mode):active,
+  .dock-open .dock-pill:not(.dock-pill-mode) {
+    opacity: 0.95;
+  }
+
+  .dock-pill:not(.dock-pill-mode) .dock-arrow {
+    font-size: 10px;
+  }
+}
+
 .dock-pill-mode {
   border-color: #6a4200;
   background: linear-gradient(180deg, #fff6b0 0%, #ffd23a 55%, #f0a800 100%);
