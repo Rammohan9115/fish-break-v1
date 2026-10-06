@@ -36,7 +36,8 @@
 }
 
 .shop-art {
-  height: var(--art-h);
+  /* min-height: a locked card stacks the Unlocks tag under the art and must not overflow onto the title. */
+  min-height: var(--art-h);
   display: flex;
   align-items: center;
   justify-content: center;
