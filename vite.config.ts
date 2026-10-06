@@ -11,8 +11,8 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: ['icon.svg', 'icons/apple-touch-icon-180.png'],
       manifest: {
-        name: 'Fishbowl Break',
-        short_name: 'Fishbowl',
+        name: 'Offishal Break',
+        short_name: 'Offishal',
         description: 'A cozy aquarium for your 5-minute breaks.',
         start_url: '/',
         scope: '/',

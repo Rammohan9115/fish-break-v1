@@ -10,7 +10,7 @@ export function UpdatePrompt() {
   return (
     <ConfirmDialog
       title="New version ready ✨"
-      body={<p>A fresh version of Fishbowl Break is ready. Your fish and progress are saved; the page will reload.</p>}
+      body={<p>A fresh version of Offishal Break is ready. Your fish and progress are saved; the page will reload.</p>}
       confirmLabel="Update now"
       cancelLabel="Later"
       onConfirm={update}

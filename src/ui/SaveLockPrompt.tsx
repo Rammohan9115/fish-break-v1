@@ -21,7 +21,7 @@ export function SaveLockPrompt() {
     return (
       <ConfirmDialog
         title="Please refresh 🔄"
-        body={<p>Your saved game was made by a newer version of Fishbowl Break. It's untouched and safe. Reload to open it; nothing is saved until you do.</p>}
+        body={<p>Your saved game was made by a newer version of Offishal Break. It's untouched and safe. Reload to open it; nothing is saved until you do.</p>}
         confirmLabel="Reload"
         cancelLabel="Not now"
         onConfirm={() => window.location.reload()}
@@ -32,7 +32,7 @@ export function SaveLockPrompt() {
   return (
     <ConfirmDialog
       title="Open in another tab 🐟"
-      body={<p>Fishbowl Break is already open in another tab, and only one tab can save. Play here instead? The other tab will save first, so nothing is lost.</p>}
+      body={<p>Offishal Break is already open in another tab, and only one tab can save. Play here instead? The other tab will save first, so nothing is lost.</p>}
       confirmLabel="Play here"
       cancelLabel="Keep waiting"
       onConfirm={() => void playHere()}

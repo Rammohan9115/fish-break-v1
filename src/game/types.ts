@@ -1,4 +1,4 @@
-// Core data model for Fishbowl Break. Pure types only — no runtime code.
+// Core data model for Offishal Break. Pure types only — no runtime code.
 
 /** Injectable random source returning a float in [0, 1). */
 export type Rng = () => number;
