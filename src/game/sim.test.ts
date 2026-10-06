@@ -401,7 +401,7 @@ describe('shell drops', () => {
 
   it('new drops pick spots apart from the existing ones', () => {
     // Fill the sand with drops clustered on the left; a new one should not land on top of them.
-    const existing = Array.from({ length: 8 }, (_, i) => ({ id: `s${i}`, x: 100 + i * 12, value: 1, pearl: false }));
+    const existing = Array.from({ length: 8 }, (_, i) => ({ id: `s${i}`, x: 100 + i * 12, plane: 'mid' as const, value: 1, pearl: false }));
     const state = makeState({ fish: [adult()], tank: { shells: existing } });
     const next = tick(state, SECOND_MS, seededRng(7)).state;
     const added = tankOf(next).shells.find((d) => !existing.some((e) => e.id === d.id))!;
@@ -428,7 +428,7 @@ describe('shell drops', () => {
   });
 
   it('online, the oldest drop over the cap is auto-collected at half value', () => {
-    const existing = Array.from({ length: MAX_DROPS_PER_TANK }, (_, i) => ({ id: `s${i}`, x: 100, value: i === 0 ? 8 : 1, pearl: false }));
+    const existing = Array.from({ length: MAX_DROPS_PER_TANK }, (_, i) => ({ id: `s${i}`, x: 100, plane: 'mid' as const, value: i === 0 ? 8 : 1, pearl: false }));
     const state = makeState({ fish: [adult()], tank: { shells: existing } });
     const { state: next, events } = tick(state, SECOND_MS, constRng(0.5));
     const paid = Math.floor(8 * AUTO_COLLECT_FRACTION_ONLINE);
@@ -439,7 +439,7 @@ describe('shell drops', () => {
   });
 
   it('offline, overflow drops are lost instead of auto-collected', () => {
-    const existing = Array.from({ length: MAX_DROPS_PER_TANK }, (_, i) => ({ id: `s${i}`, x: 100, value: i === 0 ? 8 : 1, pearl: false }));
+    const existing = Array.from({ length: MAX_DROPS_PER_TANK }, (_, i) => ({ id: `s${i}`, x: 100, plane: 'mid' as const, value: i === 0 ? 8 : 1, pearl: false }));
     const state = makeState({ fish: [adult()], tank: { shells: existing } });
     const { state: next } = tick(state, SECOND_MS, constRng(0.5), { offline: true });
     expect(tankOf(next).shells).toHaveLength(MAX_DROPS_PER_TANK);
@@ -448,7 +448,7 @@ describe('shell drops', () => {
   });
 
   it('auto-collected pearls go to the pearl balance', () => {
-    const existing = Array.from({ length: MAX_DROPS_PER_TANK }, (_, i) => ({ id: `s${i}`, x: 100, value: i === 0 ? 4 : 1, pearl: i === 0 }));
+    const existing = Array.from({ length: MAX_DROPS_PER_TANK }, (_, i) => ({ id: `s${i}`, x: 100, plane: 'mid' as const, value: i === 0 ? 4 : 1, pearl: i === 0 }));
     const state = makeState({ fish: [adult()], tank: { shells: existing } });
     const next = tick(state, SECOND_MS, constRng(0.5)).state;
     expect(next.pearls).toBe(state.pearls + Math.floor(4 * AUTO_COLLECT_FRACTION_ONLINE));

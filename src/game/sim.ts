@@ -1,6 +1,6 @@
 // Pure simulation. No DOM, no React. Deterministic given (state, dtMs, rng).
 import { bondDropValue, newBond } from './bond';
-import { decorHappiness } from './decor';
+import { decorHappiness, pickPlane } from './decor';
 import {
   ALGAE_FLOOR_CLEANLINESS,
   ALGAE_WIPE_CLEANLINESS,
@@ -260,7 +260,7 @@ function addDrop(ctx: TickCtx, tank: Tank, fish: Fish): void {
       gap = g;
     }
   }
-  tank.shells.push({ id: dropId, x, value, pearl });
+  tank.shells.push({ id: dropId, x, plane: pickPlane(ctx.rng), value, pearl });
   ctx.events.push({ type: 'drop', tankId: tank.id, fishId: fish.id, dropId, value, pearl });
 
   // Over the cap: the oldest drop leaves the sand, auto-collected at a fraction of its value (none offline).

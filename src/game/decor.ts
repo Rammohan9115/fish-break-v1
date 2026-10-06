@@ -4,6 +4,9 @@ import {
   DECOR_LIMIT,
   DECOR,
   DECOR_Z,
+  DEPTH_PLANES,
+  DROP_PLANE_WEIGHTS,
+  THEME_PLANE_TINT,
   SAND_Y,
   HAPPINESS_DECOR_MAX,
   HAPPINESS_PER_DUPLICATE_DECOR,
@@ -12,7 +15,7 @@ import {
   OCTOBER_MONTH,
   SET_BONUS_ITEMS,
 } from './constants';
-import type { CollectionDef, CollectionId, DecorDef, DecorId, GameState, PlacedDecor, Tank } from './types';
+import type { CollectionDef, CollectionId, DecorDef, DecorId, DepthPlane, GameState, PlacedDecor, Tank, ThemeId } from './types';
 
 /** The items of a collection, in catalog order. */
 export function collectionItems(id: CollectionId): DecorDef[] {
@@ -143,4 +146,57 @@ export function hazeBucket(z: number): number {
 /** Sand pieces drawn behind the fish / over the fish, each sorted far → near (painter's order). */
 export function decorDrawOrder<T extends Pick<PlacedDecor, 'z'>>(items: T[], inFront: boolean): T[] {
   return items.filter((d) => depthGeometry(d.z).frontOfFish === inFront).sort((a, b) => clampZ(a.z) - clampZ(b.z));
+}
+
+// ---------------------------------------------------------------------------
+// Depth planes (shared by decor and shell/pearl drops)
+// ---------------------------------------------------------------------------
+
+export const DEPTH_PLANE_LIST: readonly DepthPlane[] = ['back', 'mid', 'front'];
+
+export interface PlaneConfig extends DepthGeometry {
+  plane: DepthPlane;
+  /** The depth `z` decor on this plane has. */
+  z: number;
+  /** Contact-shadow size multiplier. */
+  shadow: number;
+  /** Fall-speed multiplier for drops (back drops sink a bit slower). */
+  fallSpeed: number;
+  /** 0…1: how much of the plane's tint / desaturation a drop takes (decor always takes all of it). */
+  dropHaze: number;
+}
+
+/** One plane's look for a theme: y offset from the sand line, scale, water tint / desaturation, shadow size. */
+export function planeConfig(theme: ThemeId, plane: DepthPlane): PlaneConfig {
+  const def = DEPTH_PLANES[plane];
+  const geo = depthGeometry(def.z);
+  const tint = Math.min(0.6, geo.tint * (THEME_PLANE_TINT[theme] ?? 1));
+  return { ...geo, tint, plane, z: def.z, shadow: def.shadow, fallSpeed: def.fallSpeed, dropHaze: def.dropHaze };
+}
+
+/** The plane a decor depth `z` is closest to. */
+export function planeOfZ(z: number): DepthPlane {
+  const c = clampZ(z);
+  return DEPTH_PLANE_LIST.reduce((best, p) => (Math.abs(DEPTH_PLANES[p].z - c) < Math.abs(DEPTH_PLANES[best].z - c) ? p : best), 'mid' as DepthPlane);
+}
+
+/** Picks a landing plane by weight (back 30 %, mid 40 %, front 30 %) from one `rng()` draw in [0, 1). */
+export function pickPlane(rng: () => number): DepthPlane {
+  const r = rng();
+  let acc = 0;
+  for (const p of DEPTH_PLANE_LIST) {
+    acc += DROP_PLANE_WEIGHTS[p];
+    if (r < acc) return p;
+  }
+  return 'mid';
+}
+
+/** Draw order of a drop among decor: by its plane's depth, in front of decor at the same depth. */
+export function dropDrawZ(plane: DepthPlane): number {
+  return DEPTH_PLANES[plane].z + 1e-3;
+}
+
+/** A save from before depth planes: drops without a valid plane land on "mid" (the old sand line). */
+export function validPlane(v: unknown): DepthPlane {
+  return v === 'back' || v === 'mid' || v === 'front' ? v : 'mid';
 }

@@ -18,7 +18,7 @@
 
 .shop-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--tile-min), 1fr));
   gap: var(--space-3);
 }
 
@@ -36,20 +36,20 @@
 }
 
 .shop-art {
-  height: 84px;
+  height: var(--art-h);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .shop-emoji {
-  font-size: 44px;
+  font-size: calc(var(--art-h) * 0.52);
   line-height: 1;
 }
 
 .shop-swatch {
-  width: 70px;
-  height: 52px;
+  width: calc(var(--art-h) * 0.83);
+  height: calc(var(--art-h) * 0.62);
   border-radius: var(--radius-md);
   border: 2px solid var(--color-line);
 }
@@ -153,7 +153,7 @@
 
 .login-icon,
 .conflict-icon {
-  font-size: 44px;
+  font-size: calc(var(--text-hero) * 1.3);
   line-height: 1;
   animation: gentle-bob 2.4s ease-in-out infinite;
 }
@@ -166,7 +166,7 @@
 
 .login-input {
   width: 100%;
-  min-height: var(--tap-min);
+  min-height: var(--ctl-h);
   padding: var(--space-2) var(--space-4);
   font: inherit;
   font-size: var(--text-md);
@@ -182,8 +182,8 @@
 }
 
 .login-google-logo {
-  width: 22px;
-  height: 22px;
+  width: var(--icon-btn);
+  height: var(--icon-btn);
   flex: none;
 }
 
@@ -213,7 +213,7 @@
 .login-privacy {
   display: inline-flex;
   align-items: center;
-  min-height: var(--tap-min);
+  min-height: var(--ctl-h);
   font-size: var(--text-small);
   color: var(--color-brand);
 }
@@ -345,8 +345,8 @@
 
 .tankcard .shop-swatch {
   flex: none;
-  width: 56px;
-  height: 42px;
+  width: calc(var(--art-h) * 0.67);
+  height: calc(var(--art-h) * 0.5);
 }
 
 .tankcard-info {
@@ -411,7 +411,7 @@
 }
 
 .levelup-burst {
-  font-size: 44px;
+  font-size: calc(var(--text-hero) * 1.3);
   line-height: 1.1;
 }
 
@@ -489,8 +489,8 @@
 
 .fishcard-swatch {
   flex: none;
-  width: 22px;
-  height: 22px;
+  width: var(--icon-btn);
+  height: var(--icon-btn);
   border-radius: 50%;
   border: 3px solid;
 }
@@ -674,7 +674,7 @@
   position: absolute;
   top: 26px;
   left: 50%;
-  font-size: 22px;
+  font-size: var(--icon-btn);
   translate: -50% 0;
   animation: heart-beat 1.6s ease-in-out infinite;
 }
@@ -772,8 +772,8 @@
   justify-content: center;
   gap: var(--space-2);
   width: 100%;
-  min-height: 110px;
-  font-size: 44px;
+  min-height: calc(var(--text-hero) * 3.2);
+  font-size: calc(var(--text-hero) * 1.3);
   background: linear-gradient(180deg, var(--color-surface-alt) 0%, var(--color-meter-growth) 100%);
   border: 3px solid var(--color-brand-edge);
   border-radius: var(--radius-lg);
@@ -785,7 +785,7 @@
 
 .guide-plus,
 .guide-arrow {
-  font-size: 28px;
+  font-size: var(--icon-tool);
   font-weight: 800;
   color: var(--color-text-on-brand);
   text-shadow: 0 2px 0 var(--color-brand-edge);
@@ -794,7 +794,7 @@
 .guide-float {
   position: absolute;
   top: 6px;
-  font-size: 26px;
+  font-size: var(--icon-tool);
   animation: gentle-bob 1.8s ease-in-out infinite;
 }
 
@@ -830,7 +830,7 @@
   position: absolute;
   right: 26%;
   bottom: var(--space-2);
-  font-size: 34px;
+  font-size: var(--text-hero);
   animation: guide-tap 1.4s ease-in-out infinite;
 }
 
@@ -856,7 +856,7 @@
 .guide-dot {
   position: relative;
   width: 28px;
-  height: var(--tap-min);
+  height: var(--ctl-h);
   padding: 0;
   background: none;
   border: none;
@@ -1068,7 +1068,7 @@
   align-items: center;
   gap: var(--space-3);
   width: 100%;
-  min-height: var(--tap-min);
+  min-height: var(--ctl-h);
   padding: var(--space-2) var(--space-3);
   font: inherit;
   color: inherit;
@@ -1178,8 +1178,8 @@
 }
 
 .mini-btn {
-  min-width: 36px;
-  min-height: 32px;
+  min-width: var(--ctl-h-sm);
+  min-height: var(--ctl-h-sm);
   font: inherit;
   font-weight: 800;
   color: var(--color-brand-edge);
@@ -1215,7 +1215,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: var(--tap-min);
+  min-height: var(--ctl-h);
   font: inherit;
   color: inherit;
   text-align: left;
@@ -1278,8 +1278,8 @@
 }
 
 .size-btn {
-  min-width: 36px;
-  min-height: 36px;
+  min-width: var(--ctl-h-sm);
+  min-height: var(--ctl-h-sm);
   font: inherit;
   font-weight: 800;
   color: var(--color-text);
@@ -1315,7 +1315,7 @@
   flex-direction: column;
   align-items: center;
   gap: var(--space-1);
-  min-height: var(--tap-min);
+  min-height: var(--ctl-h);
   padding: var(--space-2);
   font: inherit;
   color: inherit;
@@ -1390,7 +1390,7 @@
 
 .chip {
   flex: none;
-  min-height: 36px;
+  min-height: var(--ctl-h-sm);
   padding: 0 var(--space-3);
   font: inherit;
   font-size: var(--text-small);
@@ -1494,7 +1494,7 @@
   flex: none;
   flex-direction: column;
   gap: 0;
-  min-width: var(--tap-min);
+  min-width: var(--ctl-h);
   padding: 2px var(--space-2);
   position: relative;
   border-radius: var(--radius-md, 12px);
@@ -1530,20 +1530,20 @@
 
 /* ==== Responsive fixes (assessment batch 4) ==== */
 
-/* Tap targets: every control is at least --tap-min (44px). */
+/* Visual control sizes come from the density tokens; on touch screens kit.css grows each hit area to --tap-min (44px). */
 .mini-btn {
-  min-width: var(--tap-min);
-  min-height: var(--tap-min);
+  min-width: var(--ctl-h-sm);
+  min-height: var(--ctl-h-sm);
 }
 .size-btn {
-  min-width: var(--tap-min);
-  min-height: var(--tap-min);
+  min-width: var(--ctl-h-sm);
+  min-height: var(--ctl-h-sm);
 }
 .chip {
-  min-height: var(--tap-min);
+  min-height: var(--ctl-h-sm);
 }
 .guide-dot {
-  width: var(--tap-min);
+  width: var(--ctl-h);
   margin-inline: -8px;
 }
 
@@ -1589,7 +1589,7 @@
   }
   .app .hud-bar {
     min-width: 76px;
-    font-size: 14px;
+    font-size: var(--text-body);
   }
   .app .hud-pearls {
     min-width: 60px;
@@ -1611,13 +1611,13 @@
   .app .hud-tank {
     padding-left: 6px;
     gap: 4px;
-    font-size: 13px;
+    font-size: var(--text-small);
   }
 }
 
 /* A tap target the HUD tank chip can always meet. */
 .hud-tank {
-  min-height: var(--tap-min);
+  min-height: var(--ctl-h);
 }
 
 /* Settings: login code, privacy link, credits */
@@ -1633,11 +1633,86 @@
 .settings-link {
   display: inline-flex;
   align-items: center;
-  min-height: var(--tap-min);
+  min-height: var(--ctl-h);
   color: var(--color-brand);
   font-weight: 700;
 }
 
 .filters-more {
   align-self: flex-start;
+}
+
+/* ==== Display setting ==== */
+.display-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.display-label {
+  margin-right: var(--space-1);
+  font-weight: 700;
+}
+
+/* ==== Compact display: icons beside text, shared rows, denser lists (Settings → Display) ==== */
+.ctag-icon {
+  width: var(--icon-currency);
+  height: var(--icon-currency);
+}
+/* Shop card: Details and the price share a row; the Buy button sits under them. */
+:root[data-display='compact'] .shop-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  row-gap: var(--space-1);
+  column-gap: var(--space-2);
+  padding: var(--space-2);
+}
+:root[data-display='compact'] .shop-item > * {
+  grid-column: 1 / -1;
+}
+:root[data-display='compact'] .shop-item > .shop-more {
+  grid-column: 1;
+  justify-self: start;
+  padding: 0;
+  min-height: 0;
+}
+:root[data-display='compact'] .shop-item > .shop-more + .ctag {
+  grid-column: 2;
+  justify-self: end;
+}
+:root[data-display='compact'] .shop-art {
+  margin-bottom: 0;
+}
+/* My Fish: name and species/stage on one line. */
+:root[data-display='compact'] .myfish-row {
+  padding: var(--space-1) var(--space-3);
+}
+:root[data-display='compact'] .myfish-main {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-2);
+}
+:root[data-display='compact'] .myfish-group {
+  gap: var(--space-1);
+}
+
+/* Settings and other forms: tighter rows. */
+:root[data-display='compact'] .switch {
+  padding: var(--space-1) 0;
+}
+:root[data-display='compact'] .settings-section {
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+}
+:root[data-display='compact'] .settings-section + .settings-section {
+  padding-top: var(--space-3);
+}
+:root[data-display='compact'] .settings-link,
+:root[data-display='compact'] .login-privacy {
+  min-height: var(--ctl-h-sm);
+}
+:root[data-display='compact'] .section-title {
+  margin-top: var(--space-4);
 }

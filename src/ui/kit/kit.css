@@ -22,8 +22,8 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  min-height: var(--tap-min);
-  padding: 0 var(--space-4);
+  min-height: var(--ctl-h);
+  padding: 0 var(--ctl-px);
   font-family: var(--font-display);
   font-size: var(--text-md);
   font-weight: 600;
@@ -32,7 +32,7 @@
   color: var(--btn-text);
   background: var(--btn-bg);
   border: 2px solid var(--btn-edge);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-btn);
   box-shadow: var(--shadow-press) var(--btn-edge);
   cursor: pointer;
   user-select: none;
@@ -98,9 +98,9 @@
   --btn-bg: var(--color-surface-alt);
   --btn-hover: var(--color-surface-sunken);
   --btn-edge: var(--color-secondary-edge);
-  width: var(--tap-min);
+  width: var(--ctl-h);
   padding: 0;
-  font-size: var(--text-lg);
+  font-size: var(--icon-btn);
   box-shadow: none;
   flex: none;
 }
@@ -110,12 +110,13 @@
 }
 
 .btn-sm {
-  padding: 0 var(--space-3);
+  min-height: var(--ctl-h-sm);
+  padding: 0 var(--ctl-px-sm);
   font-size: var(--text-body);
 }
 
 .btn-lg {
-  min-height: 52px;
+  min-height: calc(var(--ctl-h) + 8px);
   padding: 0 var(--space-6);
   font-size: var(--text-lg);
 }
@@ -319,7 +320,7 @@
   flex: none;
   align-items: center;
   gap: var(--space-3);
-  min-height: 60px;
+  min-height: calc(var(--ctl-h) + var(--space-4));
   padding: var(--space-2) var(--space-2) var(--space-2) var(--space-5);
   color: var(--color-text-on-brand);
   background: linear-gradient(180deg, var(--color-brand-light) 0%, var(--color-brand) 100%);
@@ -530,7 +531,7 @@
 }
 
 .empty-icon {
-  font-size: 34px;
+  font-size: var(--text-hero);
   line-height: 1;
 }
 
@@ -594,7 +595,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  min-height: var(--tap-min);
+  min-height: var(--ctl-h);
   padding: var(--space-2) var(--space-4);
   font-size: var(--text-body);
   font-weight: 700;
@@ -719,7 +720,7 @@
 .tab {
   flex: 1 1 0;
   min-width: 0;
-  min-height: var(--tap-min);
+  min-height: var(--ctl-h);
   padding: 0 var(--space-2);
   font-family: var(--font-display);
   font-size: var(--text-body);
@@ -778,7 +779,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  min-height: var(--tap-min);
+  min-height: var(--ctl-h);
   padding: var(--space-2) 0;
   cursor: pointer;
 }
@@ -809,8 +810,12 @@
 .switch-track {
   position: relative;
   flex: none;
-  width: 52px;
-  height: 30px;
+  --sw-w: calc(var(--ctl-h) * 1.2);
+  --sw-h: calc(var(--ctl-h) * 0.68);
+  --sw-t: calc(var(--ctl-h) * 0.55);
+  --sw-pad: calc((var(--sw-h) - var(--sw-t)) / 2);
+  width: var(--sw-w);
+  height: var(--sw-h);
   background: var(--color-disabled-edge);
   border-radius: var(--radius-pill);
   transition: background-color var(--motion-base) var(--ease);
@@ -818,10 +823,10 @@
 
 .switch-thumb {
   position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 24px;
-  height: 24px;
+  top: var(--sw-pad);
+  left: var(--sw-pad);
+  width: var(--sw-t);
+  height: var(--sw-t);
   background: var(--color-surface);
   border-radius: 50%;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
@@ -833,7 +838,7 @@
 }
 
 .switch input:checked + .switch-track .switch-thumb {
-  transform: translateX(22px);
+  transform: translateX(calc(var(--sw-w) - var(--sw-t) - 2 * var(--sw-pad)));
 }
 
 .switch input:focus-visible + .switch-track {
@@ -847,7 +852,7 @@
   align-items: center;
   gap: var(--space-1);
   min-width: 0;
-  min-height: var(--tap-min);
+  min-height: var(--ctl-h);
   padding: 0 var(--space-2);
   margin-left: calc(-1 * var(--space-2));
   border: 2px solid transparent;
@@ -865,7 +870,7 @@
 .namefield input {
   flex: 1;
   min-width: 0;
-  min-height: var(--tap-min);
+  min-height: var(--ctl-h);
   padding: 0;
   font-family: var(--font-display);
   font-size: var(--text-lg);
@@ -902,7 +907,7 @@
   gap: var(--space-2);
   width: max-content;
   max-width: min(460px, calc(100vw - 24px));
-  min-height: var(--tap-min);
+  min-height: var(--ctl-h);
   padding: var(--space-1) var(--space-4);
   color: var(--color-text);
   background: var(--color-float);
@@ -1010,4 +1015,36 @@
 
 :root[data-reduced-motion] .banner {
   animation: none;
+}
+
+/* ---- Touch hit areas ----
+   Compact controls stay small to look at but keep a --tap-min (44px) target on touch screens: an invisible
+   pseudo-element grows the hit area around the control, so the visuals never get bigger. */
+@media (pointer: coarse) {
+  :where(.btn, .tab, .chip, .mini-btn, .size-btn, .switch, .namefield, .btn-close, .hud-round, .hud-tank, .myfish-row, .settings-link, .shop-more, .tray-grab, .style-tile) {
+    position: relative;
+  }
+  .btn::after,
+  .tab::after,
+  .chip::after,
+  .mini-btn::after,
+  .size-btn::after,
+  .switch::after,
+  .namefield::after,
+  .btn-close::after,
+  .hud-round::after,
+  .hud-tank::after,
+  .myfish-row::after,
+  .settings-link::after,
+  .shop-more::after,
+  .tray-grab::after,
+  .style-tile::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, var(--tap-min));
+    height: max(100%, var(--tap-min));
+    transform: translate(-50%, -50%);
+  }
 }

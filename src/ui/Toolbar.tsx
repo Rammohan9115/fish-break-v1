@@ -1,13 +1,14 @@
 // Bottom-right tool dock (spec order). Only a small "Tools" pill shows so the water is free; tap it (or press T)
 // to slide the tools out. Picking a tool, tapping the tank or pressing Esc tucks them away again. While Feed/Clean
 // is active the pill turns into a mode indicator whose ✕ leaves the mode. The open state is saved in settings.
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { breedingUnlocked } from '../game/breeding';
 import { UNLOCK_LEVEL } from '../game/constants';
 import { useGameStore, type ToolMode } from '../store/gameStore';
 import { localDateKey } from '../game/economy';
 import { useNow, useQuestStep } from './useBreeding';
 import { Badge, LockedOverlay } from './kit';
+import { miniSupport, toggleMini, useMiniTank, VIEW_ONLY_TIP } from '../mini/miniTank';
 
 /** Modes that take over the pill while they are active. */
 const MODE_PILL: Partial<Record<ToolMode, { icon: string; label: string }>> = {
@@ -28,16 +29,18 @@ interface ToolButtonProps {
   lockLevel?: number;
   /** The first-baby quest points here. */
   pulse?: boolean;
+  title?: string;
   onClick: () => void;
   onboarding?: string;
 }
 
-function ToolButton({ icon, label, active = false, badge, hidden = false, locked = false, lockLevel, pulse = false, onClick, onboarding }: ToolButtonProps) {
+function ToolButton({ icon, label, active = false, badge, hidden = false, locked = false, lockLevel, pulse = false, title, onClick, onboarding }: ToolButtonProps) {
   return (
     <button
       type="button"
       className={`tool${active ? ' tool-active' : ''}${locked ? ' tool-locked' : ''}${pulse ? ' quest-pulse' : ''}`}
       aria-pressed={active}
+      title={title}
       tabIndex={hidden ? -1 : undefined}
       onClick={onClick}
       data-onboarding={onboarding}
@@ -121,6 +124,9 @@ export function Toolbar() {
     };
   }, [open, setToolsOpen]);
 
+  const miniAvailable = useMemo(() => miniSupport() !== null, []);
+  const miniOpen = useMiniTank((s) => s.kind !== null);
+
   const pick = (action: () => void) => {
     action();
     setToolsOpen(false);
@@ -151,6 +157,7 @@ export function Toolbar() {
         <ToolButton icon="🐟" label="My Fish" active={panel === 'myfish'} hidden={!open} onClick={() => pick(() => openPanel(panel === 'myfish' ? null : 'myfish'))} />
         <ToolButton icon="🏠" label="Tanks" active={panel === 'tanks'} hidden={!open} onClick={() => togglePanel('tanks')} />
         <ToolButton icon="☕" label="Break" active={panel === 'break'} hidden={!open} onClick={() => togglePanel('break')} />
+        {miniAvailable && <ToolButton icon="🪟" label="Mini Tank" title={miniSupport() === 'video' ? VIEW_ONLY_TIP : undefined} active={miniOpen} hidden={!open} onClick={() => pick(toggleMini)} />}
       </div>
       {modePill ? (
         <button type="button" className="dock-pill dock-pill-mode" aria-label={`Stop ${modePill.label.toLowerCase()}`} onClick={() => setMode('look')}>

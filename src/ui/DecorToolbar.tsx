@@ -1,7 +1,7 @@
 // Decorate mode: a small toolbar floating above the selected decor piece — flip, back/front (sand pieces),
 // S/M/L size, back to the box, or sell. Follows the piece as it bobs or drifts.
 import { useCallback, useEffect, useState } from 'react';
-import { DECOR, DECOR_Z } from '../game/constants';
+import { DECOR, DECOR_Z, DEPTH_PLANES } from '../game/constants';
 import { decorRefund } from '../game/economy';
 import type { DecorSize } from '../game/types';
 import { currentRenderer } from '../render/renderer';
@@ -11,11 +11,11 @@ import { Popover } from './overlay/Popover';
 import { PriceTag } from './Shop';
 
 const SIZES: DecorSize[] = ['S', 'M', 'L'];
-/** Quick depth presets (a piece dragged in between highlights the nearest one). */
+/** Quick depth presets: the three shared depth planes (a piece dragged in between highlights the nearest one). */
 const DEPTHS = [
-  { label: 'Far', z: DECOR_Z.far },
-  { label: 'Mid', z: DECOR_Z.mid },
-  { label: 'Near', z: DECOR_Z.near },
+  { label: 'Back', z: DEPTH_PLANES.back.z },
+  { label: 'Mid', z: DEPTH_PLANES.mid.z },
+  { label: 'Front', z: DEPTH_PLANES.front.z },
 ] as const;
 const nearestDepth = (z: number): number => DEPTHS.reduce((best, d) => (Math.abs(d.z - z) < Math.abs(best.z - z) ? d : best)).z;
 /** Keyboard nudge in tank units (Shift = a bigger step). */

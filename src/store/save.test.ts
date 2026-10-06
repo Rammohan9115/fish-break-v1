@@ -490,3 +490,32 @@ describe('v6 → v7 migration (decor depth)', () => {
     expect((migrate(data) as unknown as ReturnType<typeof makeState>).tanks[0]!.decor[0]!.z).toBe(0.2);
   });
 });
+
+describe('v7 → v8 migration (depth planes)', () => {
+  it('puts every existing drop on the "mid" plane and keeps the rest of each drop', () => {
+    const v8 = makeState({ tank: { shells: [{ id: 'a', x: 100, plane: 'mid', value: 3, pearl: false }, { id: 'b', x: 400, plane: 'mid', value: 1, pearl: true }] } });
+    const v7 = {
+      ...v8,
+      version: 7,
+      tanks: [{ ...v8.tanks[0]!, shells: v8.tanks[0]!.shells.map(({ plane: _p, ...drop }) => drop) }],
+    };
+    const storage = new MemoryStorage();
+    storage.setItem(SAVE_KEY, JSON.stringify(v7));
+    const { state, corrupt } = loadGame(storage, T0, { rng: rng() });
+    expect(corrupt).toBe(false);
+    expect(state.version).toBe(SAVE_VERSION);
+    expect(state.tanks[0]!.shells).toEqual([
+      { id: 'a', x: 100, plane: 'mid', value: 3, pearl: false },
+      { id: 'b', x: 400, plane: 'mid', value: 1, pearl: true },
+    ]);
+  });
+
+  it('keeps a plane that is already valid and repairs a bad one', () => {
+    const out = migrate({ version: 7, tanks: [{ shells: [{ id: 'a', plane: 'back' }, { id: 'b', plane: 'sideways' }, { id: 'c' }] }] } as never);
+    expect((out.tanks as { shells: { plane: string }[] }[])[0]!.shells.map((d) => d.plane)).toEqual(['back', 'mid', 'mid']);
+  });
+
+  it('copes with tanks that have no drops', () => {
+    expect(() => migrate({ version: 7, tanks: [{ id: 't' }, 5] } as never)).not.toThrow();
+  });
+});

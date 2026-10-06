@@ -19,7 +19,7 @@ test('Decorate mode: banner, tray, selecting a piece and flipping it, then Done'
   await expect(page.getByText('Decorating')).toHaveCount(0);
 });
 
-test('depth: Far / Mid / Near buttons and ↑/↓ move a piece into the sand', async ({ page }) => {
+test('depth: Back / Mid / Front buttons and ↑/↓ move a piece into the sand', async ({ page }) => {
   await freshGame(page, { seed: true });
   await openTools(page);
   await page.getByRole('button', { name: /Decorate/ }).first().click();
@@ -29,11 +29,11 @@ test('depth: Far / Mid / Near buttons and ↑/↓ move a piece into the sand', a
   });
   const z = async () => (await gameState(page)).tanks[0].decor[0].z;
   expect(await z()).toBe(0.5);
-  await page.getByRole('radio', { name: 'Far' }).click();
+  await page.getByRole('radio', { name: 'Back' }).click();
   await expect.poll(z).toBe(0.15);
-  await page.getByRole('radio', { name: 'Near' }).click();
+  await page.getByRole('radio', { name: 'Front' }).click();
   await expect.poll(z).toBe(0.85);
-  await expect(page.getByRole('radio', { name: 'Near' })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('radio', { name: 'Front' })).toHaveAttribute('aria-checked', 'true');
   await page.keyboard.press('ArrowUp'); // farther
   await expect.poll(z).toBe(0.75);
   await page.keyboard.press('ArrowDown');

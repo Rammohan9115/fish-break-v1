@@ -4,6 +4,7 @@ import { Currents, gustEnvelope } from './currents';
 import { dayLight } from './dayCycle';
 import { fbm1D, noise1D } from './noise';
 import { QualityManager } from './quality';
+import { dropPose, easeX, planFall } from './sandItems';
 
 describe('noise', () => {
   it('stays in −1..1 and is continuous', () => {
@@ -101,5 +102,48 @@ describe('day cycle', () => {
       expect(Math.abs(a.lights - b.lights)).toBeLessThan(0.02);
     }
     expect(dayLight(23.999).tintAlpha).toBeCloseTo(dayLight(0).tintAlpha);
+  });
+});
+
+describe('drop fall (depth planes)', () => {
+  const land = { x: 400, y: 560 };
+  const origin = { x: 460, y: 200 };
+
+  it('back drops sink slower than mid and front ones', () => {
+    const back = planFall(land, origin, 0.8, false);
+    const mid = planFall(land, origin, 1, false);
+    expect(back.ms).toBeGreaterThan(mid.ms);
+    expect(back.ms / mid.ms).toBeCloseTo(1.25, 1);
+  });
+
+  it('starts at the fish, sinks with a side-to-side drift, and lands exactly on the plane', () => {
+    const fall = planFall(land, origin, 1, false);
+    const start = dropPose(0, fall, 0);
+    expect(start.falling).toBe(true);
+    expect(start.dx).toBeCloseTo(60, 5);
+    expect(start.lift).toBeCloseTo(360, 5);
+    const xs = Array.from({ length: 20 }, (_, i) => dropPose((i / 20) * fall.ms, planFall(land, { x: 400, y: 200 }, 1, false), 0.3).dx);
+    expect(Math.max(...xs)).toBeGreaterThan(1);
+    expect(Math.min(...xs)).toBeLessThan(-1); // wobbles to both sides
+    const landed = dropPose(fall.ms, fall);
+    expect(landed.falling).toBe(false);
+    expect(landed.dx).toBe(0);
+    expect(landed.lift).toBe(0); // touches down, then the existing bounce
+    expect(dropPose(fall.ms + 0.3 * 900, fall).lift).toBeGreaterThan(0);
+    expect(dropPose(fall.ms + 900, fall)).toEqual({ dx: 0, lift: 0, falling: false });
+  });
+
+  it('with no known fish it drops in from just above, and reduced motion is short with no drift', () => {
+    expect(planFall(land, null, 1, false).dx).toBe(0);
+    const reduced = planFall(land, origin, 1, true);
+    expect(reduced.drift).toBe(0);
+    expect(reduced.ms).toBeLessThan(500);
+    expect(dropPose(reduced.ms / 2, reduced, 0.4).dx).toBe(0);
+  });
+
+  it('easeX moves toward a target and snaps when close', () => {
+    expect(easeX(100, 200, 0.1)).toBeGreaterThan(100);
+    expect(easeX(100, 200, 0.1)).toBeLessThan(200);
+    expect(easeX(100, 100.01, 0.1)).toBe(100.01);
   });
 });

@@ -31,6 +31,7 @@ import { Renderer, type BreedingView } from '../render/renderer';
 import { subscribeBondEvents, subscribeSimEvents, useGameStore } from '../store/gameStore';
 import { DailyGift } from './DailyGift';
 import { HUD_BUMP_EVENT } from './Hud';
+import { closeMini, isFloating, registerTank, showOpenInGameHint, useMiniTank } from '../mini/miniTank';
 
 type Point = { x: number; y: number };
 
@@ -96,6 +97,11 @@ function showPetTip(): void {
 /** A tap on a fish (released before the pet hold): quick actions, the full card on a second tap, or a trick on a double-tap. */
 function tapFish(fishId: string): void {
   const store = useGameStore.getState();
+  // The floating tank has no cards: carry the tap over to the game.
+  if (isFloating()) {
+    showOpenInGameHint(() => useGameStore.getState().selectFish(fishId));
+    return;
+  }
   const now = Date.now();
   const fish = store.game.fish.find((f) => f.id === fishId);
   const tricks = fish ? playableTricks(fish) : [];
@@ -164,6 +170,12 @@ function handleTankPress(renderer: Renderer, clientX: number, clientY: number): 
       renderer.poke(fishId);
       sound.play('bubble');
     }
+    return null;
+  }
+
+  // The floating Mini Tank only feeds, collects, cleans and pets: decorating, pairing and "try it" belong in the game.
+  if (isFloating() && (store.tryDecor || store.mode === 'decorate' || store.pairingFishId)) {
+    showOpenInGameHint();
     return null;
   }
 
@@ -245,6 +257,19 @@ function handleTankPress(renderer: Renderer, clientX: number, clientY: number): 
   }
 
   const decorId = renderer.decorAt(x, y);
+  if (decorId && isFloating()) {
+    // Decor cards live in the game (the mailbox's gift still opens).
+    const placed = store.game.tanks.find((t) => t.id === store.game.activeTankId)?.decor.find((d) => d.id === decorId);
+    if (placed?.decorId === 'mailbox' && dailyGiftAvailable(store.game, localDateKey(new Date()))) {
+      const gift = store.claimDailyGift();
+      if (gift) {
+        sound.play('coin');
+        return null;
+      }
+    }
+    showOpenInGameHint(() => useGameStore.getState().selectDecor(decorId));
+    return null;
+  }
   if (decorId) {
     const placed = store.game.tanks.find((t) => t.id === store.game.activeTankId)?.decor.find((d) => d.id === decorId);
     // The mailbox's flag is up when the daily gift is waiting: tapping it opens the gift.
@@ -283,13 +308,15 @@ export function TankView() {
   const mode = useGameStore((s) => s.mode);
   /** The gesture in progress (sponge stroke or decor drag), if any. */
   const gestureRef = useRef<Gesture>(null);
-  /** Pending long-press timer for a 'hold' gesture. */
+  /** Pending long-press timer for a 'hold' gesture, and the window it was set in (the canvas may be in the Mini Tank window,
+   *  whose timers aren't slowed down while the main tab is hidden). */
   const holdTimerRef = useRef<number | null>(null);
+  const holdWinRef = useRef<Window>(window);
   /** The "hold to move" tip shows once per visit, on the first short tap on decor. */
   const holdTipShownRef = useRef(false);
 
   const clearHold = () => {
-    if (holdTimerRef.current !== null) window.clearTimeout(holdTimerRef.current);
+    if (holdTimerRef.current !== null) holdWinRef.current.clearTimeout(holdTimerRef.current);
     holdTimerRef.current = null;
   };
 
@@ -306,6 +333,13 @@ export function TankView() {
       },
       getSelectedDecorId: () => useGameStore.getState().selectedDecorId,
       getHudTarget: (icon) => {
+        // Floating: shells fly to the mini window's counter.
+        const mini = useMiniTank.getState().win;
+        if (mini) {
+          const target = icon === 'pearl' ? null : mini.document.querySelector('.mini-shell-icon');
+          const mr = target?.getBoundingClientRect();
+          return mr ? { x: mr.left + mr.width / 2, y: mr.top + mr.height / 2 } : null;
+        }
         const el = document.querySelector(icon === 'pearl' ? '.hud-pearls .icon, .hud-pearls .hud-pearl' : '.hud-coins .icon, .hud-coins .hud-bar-icon');
         const r = el?.getBoundingClientRect();
         return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null;
@@ -331,8 +365,10 @@ export function TankView() {
     // Dev-only handle for debugging/tests (stripped from production builds).
     if (import.meta.env.DEV) (window as unknown as { __renderer?: Renderer }).__renderer = renderer;
     const observer = new ResizeObserver(([entry]) => {
-      if (entry) renderer.resize(entry.contentRect.width, entry.contentRect.height);
+      // While the tank floats, the Mini Tank window's own observer sizes the renderer.
+      if (entry && !isFloating()) renderer.resize(entry.contentRect.width, entry.contentRect.height);
     });
+    const unregisterTank = registerTank({ canvas, renderer, container });
     observer.observe(container);
     const rect = container.getBoundingClientRect();
     renderer.resize(rect.width, rect.height);
@@ -377,9 +413,10 @@ export function TankView() {
       }
     });
     return () => {
-      if (holdTimerRef.current !== null) window.clearTimeout(holdTimerRef.current);
+      if (holdTimerRef.current !== null) holdWinRef.current.clearTimeout(holdTimerRef.current);
       unsubscribe();
       unsubscribeBond();
+      unregisterTank();
       observer.disconnect();
       renderer.stop();
       rendererRef.current = null;
@@ -411,7 +448,9 @@ export function TankView() {
     if (gesture) e.currentTarget.setPointerCapture(e.pointerId);
     if (gesture?.kind === 'press') {
       const point = renderer.toTank(e.clientX, e.clientY);
-      holdTimerRef.current = window.setTimeout(() => {
+      const w = (e.currentTarget.ownerDocument.defaultView ?? window) as Window;
+      holdWinRef.current = w;
+      holdTimerRef.current = w.setTimeout(() => {
         holdTimerRef.current = null;
         if (gestureRef.current !== gesture) return;
         // Held: start petting (the quick actions step aside so the fish stays visible).
@@ -423,7 +462,9 @@ export function TankView() {
     }
     if (gesture?.kind === 'hold') {
       const canvas = e.currentTarget;
-      holdTimerRef.current = window.setTimeout(() => {
+      const w = (canvas.ownerDocument.defaultView ?? window) as Window;
+      holdWinRef.current = w;
+      holdTimerRef.current = w.setTimeout(() => {
         holdTimerRef.current = null;
         if (gestureRef.current !== gesture) return;
         // Picked up: the card opens, the piece lifts, and dragging now moves it.
@@ -523,7 +564,7 @@ export function TankView() {
     const renderer = rendererRef.current;
     const store = useGameStore.getState();
     if (!renderer || store.mode !== 'look' || store.breakSession || store.pairingFishId) return;
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !isFloating()) {
       // Cycle through the fish in this tank.
       const ids = store.game.fish.filter((f) => f.tankId === store.game.activeTankId).map((f) => f.id);
       if (ids.length === 0) return;
@@ -579,29 +620,56 @@ export function TankView() {
     gestureRef.current = null;
   };
 
+  const onBlur = () => {
+    if (keyPetRef.current) rendererRef.current?.petEnd();
+    keyPetRef.current = false;
+  };
+  const onPointerLeave = () => {
+    rendererRef.current?.setPointer(null);
+    rendererRef.current?.setHoverDecor(null);
+  };
+
+  // Native listeners, not React props: React only hears events that reach its root in the main document, and the canvas
+  // moves into the Mini Tank window. A listener on the canvas itself goes wherever the canvas goes.
+  const handlers = useRef({ onPointerDown, onPointerMove, endGesture, onKeyDown, onKeyUp, onBlur, onPointerLeave });
+  handlers.current = { onPointerDown, onPointerMove, endGesture, onKeyDown, onKeyUp, onBlur, onPointerLeave };
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
+    const bind = (type: string, key: keyof typeof handlers.current) => {
+      const fn = (e: Event) => (handlers.current[key] as (e: never) => void)(e as never);
+      canvas.addEventListener(type, fn);
+      return () => canvas.removeEventListener(type, fn);
+    };
+    const off = [
+      bind('pointerdown', 'onPointerDown'),
+      bind('pointermove', 'onPointerMove'),
+      bind('pointerup', 'endGesture'),
+      bind('pointercancel', 'endGesture'),
+      bind('pointerleave', 'onPointerLeave'),
+      bind('keydown', 'onKeyDown'),
+      bind('keyup', 'onKeyUp'),
+      bind('blur', 'onBlur'),
+    ];
+    return () => off.forEach((f) => f());
+  }, []);
+
+  const floating = useMiniTank((s) => s.kind === 'document');
+
   return (
     <div className="tank" ref={containerRef} data-onboarding="tank">
-      <canvas
-        ref={canvasRef}
-        className="tank-canvas"
-        data-mode={mode}
-        tabIndex={0}
-        aria-label="Fish tank. Arrow keys pick a fish, hold Space to pet it."
-        onKeyDown={onKeyDown}
-        onKeyUp={onKeyUp}
-        onBlur={() => {
-          if (keyPetRef.current) rendererRef.current?.petEnd();
-          keyPetRef.current = false;
-        }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={endGesture}
-        onPointerCancel={endGesture}
-        onPointerLeave={() => {
-          rendererRef.current?.setPointer(null);
-          rendererRef.current?.setHoverDecor(null);
-        }}
-      />
+      <canvas ref={canvasRef} className="tank-canvas" data-mode={mode} tabIndex={0} aria-label="Fish tank. Arrow keys pick a fish, hold Space to pet it." />
+      {floating && (
+        <div className="mini-placeholder" role="status">
+          <span className="mini-placeholder-icon" aria-hidden="true">
+            🐠
+          </span>
+          <p>Your tank is floating 🐠</p>
+          <button type="button" className="btn btn-primary" onClick={closeMini}>
+            Bring it back
+          </button>
+        </div>
+      )}
       <DailyGift />
     </div>
   );

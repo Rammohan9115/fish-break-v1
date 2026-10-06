@@ -218,7 +218,8 @@ export function silhouette(img: DecorImage, color: string): HTMLCanvasElement {
 export { DECOR_GLOW_ALPHA, DECOR_LIFT, DECOR_LIFT_SCALE };
 
 /** A sprite copy for a small icon at `width` tank units (shared by sand items and coin pops). */
-function iconCanvas(id: IconId, sprite: AssetSprite, width: number, k: number): HTMLCanvasElement {
+function iconCanvas(id: IconId, sprite: AssetSprite, width: number, k: number, haze?: { color: string; tint: number; desat: number; key: string }): HTMLCanvasElement {
+  if (haze && (haze.tint > 0 || haze.desat > 0)) return scaledSprite(`icon:${id}:${haze.key}`, sprite, bucketPx(width * k), shade(haze.color, haze.tint, haze.desat));
   return scaledSprite(`icon:${id}`, sprite, bucketPx(width * k), shade('#000000', 0));
 }
 
@@ -231,6 +232,12 @@ export interface SandItemOpts {
   width?: number;
   /** A soft glow behind the item so it stands out from the sand (colour + pulse 0…1). */
   halo?: { color: string; pulse: number };
+  /** Where its base rests (defaults to the sand line); a depth plane puts it higher up or lower on the sand. */
+  baseY?: number;
+  /** Contact-shadow size multiplier (depth planes: smaller far away, larger up close). */
+  shadow?: number;
+  /** Water tint / desaturation fading it into the background (far planes); `key` names the cached copy. */
+  haze?: { color: string; tint: number; desat: number; key: string };
 }
 
 /** A shell, pearl or egg resting on the sand at x, with its contact shadow. */
@@ -242,9 +249,11 @@ export function drawSandItem(ctx: Ctx, id: IconId, x: number, grid: PixelGrid, o
   const h = (width * sprite.h) / sprite.w;
   const scale = opts.scale ?? 1;
   const lift = opts.lift ?? 0;
-  dropShadow(ctx, x, SAND_Y + 1, width * 0.45 * scale, width * 0.1 * scale, 0.28 * Math.max(0.3, 1 + lift / 20));
+  const baseY = opts.baseY ?? SAND_Y;
+  const shadow = opts.shadow ?? 1;
+  dropShadow(ctx, x, baseY + 1, width * 0.45 * scale * shadow, width * 0.1 * scale * shadow, 0.28 * Math.max(0.3, 1 + lift / 20));
   ctx.save();
-  ctx.translate(x, SAND_Y + h * art.sink + lift);
+  ctx.translate(x, baseY + h * art.sink + lift);
   if (opts.halo) {
     const r = width * 0.95;
     const g = ctx.createRadialGradient(0, -h / 2, 0, 0, -h / 2, r);
@@ -255,7 +264,7 @@ export function drawSandItem(ctx: Ctx, id: IconId, x: number, grid: PixelGrid, o
   }
   if (opts.angle) ctx.rotate(opts.angle);
   if (scale !== 1) ctx.scale(scale, scale);
-  ctx.drawImage(iconCanvas(id, sprite, width * scale, grid.k), -width / 2, -h, width, h);
+  ctx.drawImage(iconCanvas(id, sprite, width * scale, grid.k, opts.haze), -width / 2, -h, width, h);
   ctx.restore();
   return true;
 }

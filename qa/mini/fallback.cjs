@@ -1,0 +1,31 @@
+const { chromium } = require('@playwright/test');
+(async () => {
+  const browser = await chromium.launch({ channel: 'chrome', headless: false });
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 800 } });
+  await ctx.addInitScript(() => { delete window.documentPictureInPicture; });
+  const page = await ctx.newPage();
+  const logs = []; page.on('pageerror', (e) => logs.push('PAGEERROR ' + e.message)); page.on('console', (m) => { if (m.type() === 'error') logs.push(m.text()); });
+  await page.route('http://localhost:54321/**', (r) => r.abort());
+  await page.goto('http://localhost:5198/');
+  await page.waitForFunction(() => '__fishbowl' in window, null, { timeout: 20000 });
+  await page.evaluate(`(() => { const { store, utils } = window.__fishbowl; const now = Date.now();
+    const fish = ['danio','guppy'].map((s,i)=>utils.makeFish({speciesId:s,stage:'adult',growth:99999,hunger:30,happiness:90,name:'F'+i,bornAt:now-1e7,lastDropAt:now,lastBredAt:null}));
+    store.getState().loadState(utils.makeState({fish, overrides:{level:14,shells:2000,lastTickAt:now,lastDailyGift:new Date().toISOString().slice(0,10)}})); store.setState({onboardingStep:null}); })()`);
+  await page.waitForTimeout(800);
+  console.log('docPiP present:', await page.evaluate(() => 'documentPictureInPicture' in window));
+  await page.keyboard.press('t'); await page.waitForTimeout(400);
+  const btn = page.getByRole('button', { name: /Mini Tank/ }).first();
+  console.log('button title:', await btn.getAttribute('title'));
+  await btn.click();
+  await page.waitForTimeout(2000);
+  console.log('pictureInPictureElement:', await page.evaluate(() => document.pictureInPictureElement?.tagName ?? null));
+  console.log('placeholder (should be 0, canvas stays):', await page.locator('.mini-placeholder').count(), 'canvas', await page.locator('canvas').count());
+  // is the stream live? sample the video's frames
+  const frames = await page.evaluate(async () => { const v = document.pictureInPictureElement; if (!v) return null; const q = v.getVideoPlaybackQuality(); const a = q.totalVideoFrames; await new Promise((r) => setTimeout(r, 1500)); return [a, v.getVideoPlaybackQuality().totalVideoFrames]; });
+  console.log('video frames', frames);
+  await page.evaluate(() => document.exitPictureInPicture());
+  await page.waitForTimeout(800);
+  console.log('after leave: pip element', await page.evaluate(() => document.pictureInPictureElement?.tagName ?? null), 'video elems', await page.locator('video').count());
+  console.log(logs.join('\n') || 'no errors');
+  await browser.close();
+})();

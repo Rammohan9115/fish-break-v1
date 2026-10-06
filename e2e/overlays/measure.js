@@ -49,7 +49,16 @@ function measureOverlay({ selector, touch }) {
       return { el: label || el, b: (label || el).getBoundingClientRect() };
     })
     .filter(Boolean);
-  const small = targets.filter(({ b }) => Math.min(b.width, b.height) < min - 0.5).map(({ el, b }) => `${el.tagName.toLowerCase()}.${(el.className || '').toString().split(' ')[0]} ${Math.round(b.width)}x${Math.round(b.height)}`);
+  // Compact controls keep a 44px touch target through an invisible ::after hit area (kit.css), so judge the larger of the two.
+  const hitSize = (el, b) => {
+    const a = getComputedStyle(el, '::after');
+    const grow = a.content !== 'none' && a.position === 'absolute';
+    return { w: Math.max(b.width, grow ? parseFloat(a.width) || 0 : 0), h: Math.max(b.height, grow ? parseFloat(a.height) || 0 : 0) };
+  };
+  const small = targets
+    .map((t) => ({ ...t, hit: hitSize(t.el, t.b) }))
+    .filter(({ hit }) => Math.min(hit.w, hit.h) < min - 0.5)
+    .map(({ el, hit }) => `${el.tagName.toLowerCase()}.${(el.className || '').toString().split(' ')[0]} ${Math.round(hit.w)}x${Math.round(hit.h)}`);
   const overlapping = [];
   for (let i = 0; i < targets.length; i++) {
     for (let j = i + 1; j < targets.length; j++) {

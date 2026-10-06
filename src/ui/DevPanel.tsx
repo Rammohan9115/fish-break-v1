@@ -285,6 +285,9 @@ function LivingTankControls() {
         </button>
       </div>
       <div className="dev-buttons">
+        <button type="button" onClick={() => useGameStore.getState().dev.spawnPlaneDemo()}>
+          🐚 Plane demo
+        </button>
         <button type="button" onClick={() => renderer?.forceGust()}>
           🌊 Gust
         </button>

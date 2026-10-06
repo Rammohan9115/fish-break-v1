@@ -87,6 +87,63 @@ export const fontSize = { label: '12px', small: '13px', body: '14px', md: '16px'
 /** Minimum touch target (px). */
 export const TAP_MIN = 44;
 
+/** Display density (Settings → Display). "Comfortable" is the original larger sizing. */
+export type Density = 'compact' | 'comfortable';
+export const DEFAULT_DENSITY: Density = 'compact';
+/** The compact scale's larger (desktop) step. */
+export const DESKTOP_WIDTH = 900;
+export const DESKTOP_QUERY = `(min-width: ${DESKTOP_WIDTH}px)`;
+
+interface SizeSet {
+  space: Record<keyof typeof space, string>;
+  radius: Record<'sm' | 'md' | 'lg' | 'xl' | 'btn', string>;
+  /** Type scale: label/small = secondary text, body = UI text, md = button text, lg = headings, xl = big titles, hero = level-up. */
+  text: Record<'label' | 'small' | 'body' | 'md' | 'lg' | 'xl' | 'hero', string>;
+  /** inline = beside text, btn = inside buttons, tool = dock/toolbar, currency = coin counters. */
+  icon: Record<'inline' | 'btn' | 'tool' | 'currency', string>;
+  /** Visual control height (a coarse pointer still gets a TAP_MIN hit area, see kit.css), its small variant and side padding. */
+  ctl: { h: string; hSm: string; px: string; pxSm: string };
+  /** Shop grid column minimums (phone / window) and art heights. */
+  tile: { min: string; minLg: string; art: string; artLg: string };
+  cardPad: string;
+  gap: string;
+  sectionGap: string;
+  lineHeight: string;
+}
+
+const COMFORTABLE: SizeSet = {
+  space,
+  radius: { sm: '10px', md: '14px', lg: '20px', xl: '26px', btn: '999px' },
+  text: { label: '12px', small: '13px', body: '14px', md: '16px', lg: '19px', xl: '24px', hero: '34px' },
+  icon: { inline: '18px', btn: '24px', tool: '28px', currency: '18px' },
+  ctl: { h: '44px', hSm: '44px', px: '16px', pxSm: '12px' },
+  tile: { min: '140px', minLg: '168px', art: '84px', artLg: '100px' },
+  cardPad: '16px',
+  gap: '8px',
+  sectionGap: '16px',
+  lineHeight: '1.4',
+};
+
+/** Compact: 4px base unit, body 14, labels 12, headings 16 (18 on desktop), titles 20 (24). `wide` = desktop. */
+function compactSet(wide: boolean): SizeSet {
+  return {
+    space: { 0: '0px', 1: '4px', 2: '6px', 3: '8px', 4: '12px', 5: '12px', 6: '16px', 8: '24px' },
+    radius: { sm: '8px', md: '10px', lg: '12px', xl: '16px', btn: '10px' },
+    text: { label: '12px', small: '12px', body: '14px', md: '14px', lg: wide ? '18px' : '16px', xl: wide ? '24px' : '20px', hero: wide ? '28px' : '24px' },
+    icon: wide ? { inline: '18px', btn: '22px', tool: '26px', currency: '16px' } : { inline: '16px', btn: '20px', tool: '24px', currency: '16px' },
+    ctl: { h: '36px', hSm: '32px', px: '12px', pxSm: '8px' },
+    tile: { min: '104px', minLg: '128px', art: '64px', artLg: '76px' },
+    cardPad: '10px',
+    gap: '6px',
+    sectionGap: '12px',
+    lineHeight: '1.3',
+  };
+}
+
+export function sizeSet(density: Density, wide: boolean): SizeSet {
+  return density === 'comfortable' ? COMFORTABLE : compactSet(wide);
+}
+
 /** Stacking layers, low to high. Every z-index in the CSS is one of these. */
 export const layer = {
   tank: 0,
@@ -151,14 +208,29 @@ export const TEXT_PAIRS: [keyof typeof color, keyof typeof color][] = [
 const kebab = (s: string) => s.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
 
 /** Every token as a CSS custom property. */
-export function tokenCssVars(reduced = false): Record<string, string> {
+export function tokenCssVars(reduced = false, density: Density = DEFAULT_DENSITY, wide = false): Record<string, string> {
   const vars: Record<string, string> = {};
+  const sz = sizeSet(density, wide);
   for (const [k, v] of Object.entries(color)) vars[`--color-${kebab(k)}`] = v;
-  for (const [k, v] of Object.entries(space)) vars[`--space-${k}`] = v;
-  for (const [k, v] of Object.entries(radius)) vars[`--radius-${k}`] = v;
+  for (const [k, v] of Object.entries(sz.space)) vars[`--space-${k}`] = v;
+  for (const [k, v] of Object.entries(sz.radius)) vars[`--radius-${k}`] = v;
+  vars['--radius-pill'] = radius.pill;
   for (const [k, v] of Object.entries(shadow)) vars[`--shadow-${k}`] = v;
   for (const [k, v] of Object.entries(font)) vars[`--font-${k}`] = v;
-  for (const [k, v] of Object.entries(fontSize)) vars[`--text-${k}`] = v;
+  for (const [k, v] of Object.entries(sz.text)) vars[`--text-${k}`] = v;
+  for (const [k, v] of Object.entries(sz.icon)) vars[`--icon-${k}`] = v;
+  vars['--ctl-h'] = sz.ctl.h;
+  vars['--ctl-h-sm'] = sz.ctl.hSm;
+  vars['--ctl-px'] = sz.ctl.px;
+  vars['--ctl-px-sm'] = sz.ctl.pxSm;
+  vars['--tile-min'] = sz.tile.min;
+  vars['--tile-min-lg'] = sz.tile.minLg;
+  vars['--art-h'] = sz.tile.art;
+  vars['--art-h-lg'] = sz.tile.artLg;
+  vars['--card-pad'] = sz.cardPad;
+  vars['--gap'] = sz.gap;
+  vars['--section-gap'] = sz.sectionGap;
+  vars['--lh-ui'] = sz.lineHeight;
   for (const [k, v] of Object.entries(layer)) vars[`--z-${kebab(k)}`] = String(v);
   const d = reduced ? reducedMotion : motion;
   vars['--motion-fast'] = `${d.fast}ms`;
@@ -170,10 +242,12 @@ export function tokenCssVars(reduced = false): Record<string, string> {
   return vars;
 }
 
-/** Writes the tokens onto :root. `reduced` swaps in the reduced-motion durations and sets `data-reduced-motion`. */
-export function applyTokens(root: HTMLElement, reduced: boolean): void {
-  for (const [k, v] of Object.entries(tokenCssVars(reduced))) root.style.setProperty(k, v);
+/** Writes the tokens onto :root. `reduced` swaps in the reduced-motion durations and sets `data-reduced-motion`;
+ *  `density` picks the size scale (`data-display`; `data-density` is the screen-size density from useDensity); `wide` is the desktop variant of the compact scale. */
+export function applyTokens(root: HTMLElement, reduced: boolean, density: Density = DEFAULT_DENSITY, wide = false): void {
+  for (const [k, v] of Object.entries(tokenCssVars(reduced, density, wide))) root.style.setProperty(k, v);
   root.toggleAttribute('data-reduced-motion', reduced);
+  root.dataset.display = density;
 }
 
 /** WCAG relative luminance of a #rrggbb color. */

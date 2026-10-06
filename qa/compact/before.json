@@ -1,0 +1,149 @@
+{
+  "fishcard@375x667": {
+    "cls": "sheet ov-sheet ov-card fishcard",
+    "content": 335,
+    "scroll": 391,
+    "panelH": 394,
+    "small": [],
+    "overlaps": 0
+  },
+  "shop@375x667": {
+    "cls": "sheet ov-sheet shop",
+    "content": 1844,
+    "scroll": 1844,
+    "panelH": 604,
+    "small": [],
+    "overlaps": 0
+  },
+  "myfish@375x667": {
+    "cls": "sheet ov-sheet myfish",
+    "content": 702,
+    "scroll": 660,
+    "panelH": 604,
+    "small": [],
+    "overlaps": 0
+  },
+  "breeding@375x667": {
+    "cls": "sheet ov-sheet ",
+    "content": 585,
+    "scroll": 601,
+    "panelH": 604,
+    "small": [],
+    "overlaps": 0
+  },
+  "settings@375x667": {
+    "cls": "sheet ov-sheet settings",
+    "content": 827,
+    "scroll": 827,
+    "panelH": 604,
+    "small": [],
+    "overlaps": 0
+  },
+  "decorate@375x667": {
+    "cls": "decor-shelf",
+    "content": 50,
+    "scroll": 50,
+    "panelH": 52,
+    "small": [],
+    "overlaps": 1
+  },
+  "decorbox@375x667": null,
+  "fishcard@390x844": {
+    "cls": "sheet ov-sheet ov-card fishcard",
+    "content": 335,
+    "scroll": 497,
+    "panelH": 500,
+    "small": [],
+    "overlaps": 0
+  },
+  "shop@390x844": {
+    "cls": "sheet ov-sheet shop",
+    "content": 1844,
+    "scroll": 1844,
+    "panelH": 767,
+    "small": [],
+    "overlaps": 0
+  },
+  "myfish@390x844": {
+    "cls": "sheet ov-sheet myfish",
+    "content": 702,
+    "scroll": 764,
+    "panelH": 767,
+    "small": [],
+    "overlaps": 0
+  },
+  "breeding@390x844": {
+    "cls": "sheet ov-sheet ",
+    "content": 585,
+    "scroll": 764,
+    "panelH": 767,
+    "small": [],
+    "overlaps": 0
+  },
+  "settings@390x844": {
+    "cls": "sheet ov-sheet settings",
+    "content": 827,
+    "scroll": 827,
+    "panelH": 767,
+    "small": [],
+    "overlaps": 0
+  },
+  "decorate@390x844": {
+    "cls": "decor-shelf",
+    "content": 50,
+    "scroll": 50,
+    "panelH": 52,
+    "small": [],
+    "overlaps": 1
+  },
+  "decorbox@390x844": null,
+  "fishcard@1440x900": {
+    "cls": "sheet ov-card fishcard",
+    "content": 359,
+    "scroll": 359,
+    "panelH": 365,
+    "small": [],
+    "overlaps": 0
+  },
+  "shop@1440x900": {
+    "cls": "sheet ov-window ov-window-lg shop",
+    "content": 954,
+    "scroll": 954,
+    "panelH": 792,
+    "small": [],
+    "overlaps": 0
+  },
+  "myfish@1440x900": {
+    "cls": "sheet ov-window ov-window-md myfish",
+    "content": 752,
+    "scroll": 754,
+    "panelH": 760,
+    "small": [],
+    "overlaps": 0
+  },
+  "breeding@1440x900": {
+    "cls": "sheet ov-window ov-window-md ",
+    "content": 561,
+    "scroll": 754,
+    "panelH": 760,
+    "small": [],
+    "overlaps": 0
+  },
+  "settings@1440x900": {
+    "cls": "sheet ov-window ov-window-sm settings",
+    "content": 872,
+    "scroll": 872,
+    "panelH": 792,
+    "small": [],
+    "overlaps": 0
+  },
+  "decorate@1440x900": {
+    "cls": "decor-shelf",
+    "content": 52,
+    "scroll": 52,
+    "panelH": 54,
+    "small": [],
+    "overlaps": 0
+  },
+  "decorbox@1440x900": null
+}

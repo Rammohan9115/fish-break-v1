@@ -15,8 +15,8 @@ for (const [name, width, height] of SIZES) {
       const s = window.__fishbowl.store;
       const g = s.getState().game;
       const shells = [
-        { id: 'sh1', x: 500, value: 7, pearl: false },
-        { id: 'pe1', x: 620, value: 1, pearl: true },
+        { id: 'sh1', x: 500, plane: 'mid', value: 7, pearl: false },
+        { id: 'pe1', x: 620, plane: 'mid', value: 1, pearl: true },
       ];
       s.getState().loadState({ ...g, tanks: [{ ...g.tanks[0], shells }], shells: 100, pearls: 0 });
     });

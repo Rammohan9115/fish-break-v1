@@ -453,8 +453,8 @@ describe('moving decor in depth', () => {
 
 describe('collectDrop', () => {
   const drops = [
-    { id: 's1', x: 100, value: 4, pearl: false },
-    { id: 'p1', x: 200, value: 1, pearl: true },
+    { id: 's1', x: 100, plane: 'mid' as const, value: 4, pearl: false },
+    { id: 'p1', x: 200, plane: 'mid' as const, value: 1, pearl: true },
   ];
 
   it('a shell drop adds its value to shells and leaves the sand', () => {

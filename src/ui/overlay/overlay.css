@@ -43,7 +43,7 @@
 }
 
 .ov-dialog .sheet-head {
-  min-height: 52px;
+  min-height: calc(var(--ctl-h) + var(--space-2));
   padding-top: var(--space-2);
   touch-action: auto;
 }
@@ -59,7 +59,7 @@
 /* Short screens (landscape phones, zoomed-in desktops): tighter chrome so dialogs still fit without scrolling. */
 @media (max-height: 560px) {
   .ov-dialog .sheet-head {
-    min-height: 40px;
+    min-height: calc(var(--ctl-h) - 4px);
     padding-block: 0;
   }
   .ov-dialog .sheet-title {
@@ -91,7 +91,7 @@
   justify-content: center;
 }
 .guide-dot {
-  width: var(--tap-min);
+  width: var(--ctl-h);
   margin-inline: 0;
 }
 
@@ -122,8 +122,8 @@
 @media (max-height: 560px) {
   /* Guide: shorter art, tighter card. */
   .guide-art {
-    min-height: 64px;
-    font-size: 30px;
+    min-height: calc(var(--icon-tool) * 2);
+    font-size: var(--icon-tool);
   }
   .guide-card {
     padding: var(--space-2) var(--space-4) var(--space-1);
@@ -144,7 +144,7 @@
     display: none;
   }
   .ov-dialog .sheet-foot .btn-lg {
-    min-height: var(--tap-min);
+    min-height: var(--ctl-h);
   }
   .pair-odds {
     display: grid;
@@ -400,8 +400,8 @@
 }
 .fc-thumb {
   flex: none;
-  width: 52px;
-  height: 38px;
+  width: calc(var(--ctl-h) * 1.18);
+  height: calc(var(--ctl-h) * 0.86);
   display: grid;
   place-items: center;
   background: var(--color-surface);
@@ -526,7 +526,7 @@
 
 /* Shop: auto-fill grid (2 columns on a phone, 3–5 on desktop), compact cards, notes clamp to 2 lines. */
 .shop-grid {
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--tile-min), 1fr));
 }
 .shop-note {
   display: -webkit-box;
@@ -536,7 +536,7 @@
   overflow: hidden;
 }
 .shop-more {
-  min-height: var(--tap-min);
+  min-height: var(--ctl-h);
   padding: 0 var(--space-3);
   font: inherit;
   font-size: var(--text-small);
@@ -550,7 +550,7 @@
 .shop-details-art {
   display: grid;
   place-items: center;
-  min-height: 84px;
+  min-height: var(--art-h);
   margin-bottom: var(--space-2);
 }
 .shop-facts {
@@ -662,7 +662,7 @@ label.switch,
 
 /* Tighter (compact) spacing must never shrink a control below a finger: chips keep a 44px minimum width too. */
 .chip {
-  min-width: var(--tap-min);
+  min-width: var(--ctl-h-sm);
 }
 
 /* ==== Window: the big centred browse/manage window (Shop, My Fish, Breeding, Tanks, Settings) ====
@@ -704,7 +704,7 @@ label.switch,
   max-height: calc(var(--vvh, 100dvh) * 0.88);
 }
 .ov-window .sheet-head {
-  min-height: 64px;
+  min-height: calc(var(--ctl-h) + var(--space-5));
   padding-inline: var(--space-6) var(--space-3);
 }
 .ov-window .sheet-title {
@@ -724,11 +724,11 @@ label.switch,
 
 /* A roomier shop grid inside the window: 4–6 cards per row on a desktop, far less scrolling. */
 .ov-window .shop-grid {
-  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--tile-min-lg), 1fr));
   gap: var(--space-4);
 }
 .ov-window .shop-art {
-  height: 100px;
+  height: var(--art-h-lg);
 }
 .ov-window .shop-item {
   background: rgba(255, 255, 255, 0.92);

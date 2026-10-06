@@ -9,6 +9,8 @@ import {
   DECOR,
   DECOR_Z,
   DECOR_UNDO_STEPS,
+  DEPTH_PLANES,
+  MAX_DROPS_PER_TANK,
   OCTOBER_MONTH,
   STYLE_OPTIONS,
   FOLLOW_MS,
@@ -54,7 +56,7 @@ import {
   wipeAlgae as wipeAlgaeRule,
   type SimEvent,
 } from '../game/sim';
-import type { BondLevel, DecorId, GameState, PlacedDecor, TankStyle, Rng, SpeciesId, Stage, ThemeId } from '../game/types';
+import type { BondLevel, DecorId, DepthPlane, GameState, PlacedDecor, TankStyle, Rng, SpeciesId, Stage, ThemeId } from '../game/types';
 import {
   browserEnv,
   formatOfflineSummary,
@@ -203,6 +205,7 @@ export interface GameStore {
   /** Marks activity in the current tool mode (resets the idle exit). */
   touchMode: () => void;
   setReducedMotion: (on: boolean) => void;
+  setDisplay: (display: 'compact' | 'comfortable') => void;
   setToolsOpen: (open: boolean) => void;
   /** A pet session completed (the meter filled). Null if the fish is gone. */
   petFish: (fishId: string) => { rewarded: boolean; levelUp: BondLevelUp | null } | null;
@@ -303,6 +306,8 @@ export interface DevActions {
   giveAllDecor: () => void;
   /** Pretend it's October (the Halloween event) until turned off. Not saved. */
   forceEvent: (on: boolean) => void;
+  /** Depth-plane preview: decor on the back / mid / front planes and a few shell and pearl drops on each (some behind decor). */
+  spawnPlaneDemo: () => void;
 }
 
 /** Growth seconds that put a fish at the start of `stage`. */
@@ -659,6 +664,8 @@ export const useGameStore = create<GameStore>()((set, get) => {
     touchMode: () => set({ modeTouchedAt: Date.now() }),
 
     setReducedMotion: (on) => set((s) => ({ game: { ...s.game, settings: { ...s.game.settings, reducedMotion: on } } })),
+
+    setDisplay: (display) => set((s) => ({ game: { ...s.game, settings: { ...s.game.settings, display } } })),
 
     setToolsOpen: (open) => {
       if ((get().game.settings.toolsOpen ?? false) === open) return;
@@ -1096,6 +1103,36 @@ export const useGameStore = create<GameStore>()((set, get) => {
           return { game: { ...s.game, decorInventory, ownedStyles } };
         }),
       forceEvent: (on) => set({ eventForced: on }),
+      spawnPlaneDemo: () => {
+        const now = Date.now().toString(36);
+        const decorSpec: [DecorId, number, number][] = [
+          ['plant_tall', 150, DEPTH_PLANES.back.z],
+          ['column', 420, DEPTH_PLANES.back.z],
+          ['castle', 700, DEPTH_PLANES.mid.z],
+          ['rock', 300, DEPTH_PLANES.mid.z],
+          ['plant_small', 560, DEPTH_PLANES.front.z],
+          ['moss_ball', 850, DEPTH_PLANES.front.z],
+        ];
+        const dropSpec: [number, DepthPlane, boolean][] = [
+          [100, 'back', false], [330, 'back', false], [560, 'back', true], [780, 'back', false],
+          [200, 'mid', false], [440, 'mid', true], [700, 'mid', false],
+          [150, 'front', false], [400, 'front', false], [575, 'front', true], [820, 'front', false],
+        ];
+        set((s) => ({
+          game: {
+            ...s.game,
+            tanks: s.game.tanks.map((t) =>
+              t.id !== s.game.activeTankId
+                ? t
+                : {
+                    ...t,
+                    decor: [...t.decor.filter((d) => !d.id.startsWith('plane-demo-')), ...decorSpec.map(([decorId, x, z], i) => ({ id: `plane-demo-${now}-${i}`, decorId, x, flipped: false, size: 'M' as const, z }))],
+                    shells: dropSpec.slice(0, MAX_DROPS_PER_TANK).map(([x, plane, pearl], i) => ({ id: `plane-drop-${now}-${i}`, x, plane, value: pearl ? 1 : 2, pearl })),
+                  },
+            ),
+          },
+        }));
+      },
       fillTank: () => {
         const { game } = get();
         const tank = game.tanks.find((t) => t.id === game.activeTankId);

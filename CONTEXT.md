@@ -16,6 +16,24 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
 - **Live:** https://fishbowl-break.vercel.app. Deploy with `npx vercel --prod --yes`; the CLI is already logged in and linked (`.vercel/`, which is gitignored).
   GitHub auto-deploy isn't connected (`npx vercel git connect`). The `.vercel` line in `.gitignore` may still be uncommitted.
 
+## Display setting: Compact / Comfortable (2026-10-06)
+- `settings.display` ('compact' default, older saves lack it; 'comfortable' = the original sizes). Settings → Preferences → Display.
+- Sizes are tokens: `ui/tokens.ts` `sizeSet(display, wide)` → `--text-*`, `--space-*`, `--radius-*` (+ `--radius-btn`), `--icon-{inline,btn,tool,currency}`,
+  `--ctl-h` / `--ctl-h-sm` / `--ctl-px*` (visual control height), `--tile-min*` / `--art-h*` (shop grid), `--lh-ui`, `--card-pad`, `--gap`, `--section-gap`.
+  `applyTokens(root, reduced, display, wide)` writes them on :root (`data-display`); `useDensity` re-derives `--space-*`/`--text-*` on `.app` per screen size from the same set (`densityVars(density, display, wide)`).
+- `--tap-min` (44px) is now only the touch hit area: on `pointer: coarse`, kit.css grows controls with an invisible `::after`. `e2e/overlays/measure.js` counts that area.
+- Before/after sizing check: `node qa/compact/shoot.cjs <tag> [compact|comfortable]` (dev server on :5198) → `qa/compact/<tag>.json` + screenshots.
+
+## Mini Tank (2026-10-06)
+- 🪟 button (Tools tray, Settings) and **P**: the live tank floats in a Document Picture-in-Picture window. Code in `src/mini/`, UI in `ui/MiniTankHost.tsx` + `ui/mini.css`.
+- **The canvas itself moves** into the PiP document (`mini/canvasMove.ts`), so there is one renderer. `Renderer.setHostWindow(win)` moves its rAF loop and pixel ratio
+  to that window; frames use the main window's `performance.now()` (rAF timestamps have a per-window origin). `setLowPower(30)` = quality 'low' + 30fps cap; `setPaused`
+  when the PiP document is hidden.
+- **TankView uses native listeners** on the canvas, not React props: React only hears events that reach its root in the main document. Hold timers use the canvas's own window.
+- While floating: panels never open (decor/pairing/try-it/fish taps show "Open in game ↗"); `isFloating()` gates that. The PiP window also drives `advanceTo` (the hidden main tab's timers are throttled).
+- Fallback: `canvas.captureStream` → hidden `<video>` → `requestPictureInPicture` (view-only). A Worker timer (`startWorkerClock`) drives `renderer.tickExternal()` because a hidden tab gets no animation frames.
+- Manual checklist: `qa/mini/MANUAL_CHECKLIST.md`. Playwright scripts that open and drive the real PiP window: `qa/mini/drive.cjs`, `sizes.cjs`, `fallback.cjs` (dev server on :5198, headed Chrome).
+
 ## Art direction: NOW "Art Style" in CLAUDE.md (glossy chunky cartoon)
 - **2026-10-02:** the user switched to the CLAUDE.md "Art Style" section (glossy, saturated, thick dark outlines, physical aquarium with frame, stand and room).
   **Implemented:**
@@ -131,7 +149,9 @@ departs from CLAUDE.md (the spec), and lessons learned the hard way. CLAUDE.md i
 - Magic links use the implicit flow (`detectSessionInUrl`), so a link opened in another browser still works; `#error_description` → toast.
 
 ## Departures from the spec (data model)
-- **Save version is 6.** Migrations in `src/store/save.ts`, keyed by the version they upgrade from:
+- **Save version is 8.** (v7→v8: shell/pearl drops get `plane` 'back'|'mid'|'front', existing drops → 'mid'; v6→v7 was decor depth `z`.)
+- **Depth planes (2026-10-06):** `DEPTH_PLANES` (constants) = decor Far/Mid/Near depths (now labelled Back/Mid/Front); `planeConfig(theme, plane)` (`game/decor.ts`) derives y offset, scale, tint from `depthGeometry` plus drop extras (shadow, fallSpeed, dropHaze). Sim picks a plane 30/40/30 (`pickPlane`). Renderer draws drops merged with decor by z (`drawMerged`: back/mid behind fish, front over). Drops mostly hidden by nearer decor are shown slid sideways (`game/dropVisibility.ts`, display only, never saved). Hit tests use drawn position, +10px slack, and run before decor. Dev panel → 🐚 Plane demo.
+- (older) **Save version was 6.** Migrations in `src/store/save.ts`, keyed by the version they upgrade from:
   - **1→2:** adds `feedXp`, adds `ownedThemes` (built from the themes the tanks use), and defaults `boostUntil` to null.
   - **2→3:** adds `lastBreakXpAt`.
   - **3→4 (breeding overhaul):** each tank gets `upgrades` (old `round((capacity − 6) / 2)`, max 3) and `capacity = base[i] + 3 × upgrades`

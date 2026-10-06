@@ -79,3 +79,41 @@ describe('dropHitTest', () => {
     expect(dropHitTest([], 100, SAND_Y, PHONE, aspect)).toBeNull();
   });
 });
+
+describe('drops on depth planes', () => {
+  const back = { dy: -24, scale: 0.8 };
+  const front = { dy: 18, scale: 1.15 };
+
+  it('draws back smaller and front larger than mid', () => {
+    expect(dropDrawWidth('shell', PHONE, back)).toBeCloseTo(dropDrawWidth('shell', PHONE) * 0.8, 6);
+    expect(dropDrawWidth('shell', PHONE, front)).toBeCloseTo(dropDrawWidth('shell', PHONE) * 1.15, 6);
+  });
+
+  it('centres a drop on its own plane (back higher up the sand, front lower)', () => {
+    expect(dropCenterY('shell', PHONE, 0.72, back)).toBeLessThan(dropCenterY('shell', PHONE));
+    expect(dropCenterY('shell', PHONE, 0.72, front)).toBeGreaterThan(dropCenterY('shell', PHONE));
+  });
+
+  it('every tap area is at least 44 px across plus 10 px of slack on each side', () => {
+    for (const plane of [back, front]) {
+      expect(dropHitRadius('pearl', PHONE, plane) * 2 * PHONE).toBeGreaterThanOrEqual(DROP_HIT_MIN_PX + 20 - 1e-9);
+    }
+  });
+
+  it('hits a drop on its plane, not on the mid line', () => {
+    const drops = [{ id: 'b', x: 500, pearl: false, plane: back }];
+    expect(dropHitTest(drops, 500, dropCenterY('shell', PHONE, 0.72, back), PHONE)).toBe('b');
+    expect(dropHitTest(drops, 500, SAND_Y + 60, PHONE)).toBeNull();
+  });
+
+  it('a sinking drop is hit where it is drawn', () => {
+    const drops = [{ id: 'f', x: 500, pearl: false, lift: 80 }];
+    expect(dropHitTest(drops, 500, dropCenterY('shell', PHONE) - 80, PHONE)).toBe('f');
+  });
+
+  it('the +10 px slack catches a tap just outside the sprite', () => {
+    const edge = dropDrawWidth('shell', DESKTOP) / 2 * 1.15;
+    const drops = [{ id: 'a', x: 500, pearl: false }];
+    expect(dropHitTest(drops, 500 + edge + 8 / DESKTOP, dropCenterY('shell', DESKTOP), DESKTOP)).toBe('a');
+  });
+});

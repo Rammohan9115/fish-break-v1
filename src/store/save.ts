@@ -16,6 +16,7 @@ import {
   SAVE_VERSION,
   UNLOCK_LEVEL,
 } from '../game/constants';
+import { validPlane } from '../game/decor';
 import { baseCapacity } from '../game/economy';
 import { createInitialState, simulateOffline, type OfflineSummary } from '../game/sim';
 import type { GameState, Rng } from '../game/types';
@@ -106,6 +107,16 @@ export const migrations: Record<number, Migration> = {
             ? t.layoutPresets.map((p) => (isObject(p) && Array.isArray(p.items) ? { ...p, items: p.items.map(toZ) } : p))
             : t.layoutPresets;
           return { ...t, decor, layoutPresets };
+        })
+      : data.tanks;
+    return { ...data, tanks };
+  },
+  // v7 → v8: depth planes. Drops already on the sand were all on the one flat line, which is the "mid" plane.
+  7: (data) => {
+    const tanks = Array.isArray(data.tanks)
+      ? data.tanks.map((t) => {
+          if (!isObject(t) || !Array.isArray(t.shells)) return t;
+          return { ...t, shells: t.shells.map((d) => (isObject(d) ? { ...d, plane: validPlane(d.plane) } : d)) };
         })
       : data.tanks;
     return { ...data, tanks };

@@ -11,6 +11,7 @@ import { breedingUnlocked } from '../game/breeding';
 import { sound } from '../audio/sound';
 import { fullscreenSupported, toggleFullscreen } from './fullscreen';
 import { Button, ConfirmDialog, Sheet, Switch } from './kit';
+import { MiniTankButton } from './MiniTankHost';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -164,9 +165,19 @@ function Preferences() {
   const reduced = useGameStore((s) => s.game.settings.reducedMotion);
   const toggleMute = useGameStore((s) => s.toggleMute);
   const setReducedMotion = useGameStore((s) => s.setReducedMotion);
+  const display = useGameStore((s) => s.game.settings.display ?? 'compact');
+  const setDisplay = useGameStore((s) => s.setDisplay);
   return (
     <section className="settings-section settings-prefs">
       <h3 className="section-title">Preferences</h3>
+      <div className="display-pick" role="radiogroup" aria-label="Display">
+        <span className="display-label">Display</span>
+        {(['compact', 'comfortable'] as const).map((d) => (
+          <button key={d} type="button" role="radio" aria-checked={display === d} className={`chip${display === d ? ' chip-on' : ''}`} onClick={() => setDisplay(d)}>
+            {d === 'compact' ? 'Compact' : 'Comfortable'}
+          </button>
+        ))}
+      </div>
       <Switch
         checked={!muted}
         hint="Off by default, for playing at work"
@@ -185,6 +196,7 @@ function Preferences() {
           ⤢ Toggle fullscreen
         </Button>
       )}
+      <MiniTankButton />
     </section>
   );
 }

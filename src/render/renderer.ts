@@ -1,6 +1,9 @@
 // Canvas render loop. Reads game state every frame; fish positions live only here.
 import {
   DECOR_BASE_OFFSET,
+  DECOR_Z,
+  DROP_OCCLUDE_WIDTH,
+  TANK_EDGE_MARGIN,
   DECOR_DROP_PUFFS,
   DECOR_LIFT_SMOOTHING,
   EGG_BURST_CHIPS,
@@ -45,7 +48,7 @@ import {
   DEFAULT_TANK_STYLE,
 } from '../game/constants';
 import { getSpecies, getVariant, SHINY_OUTLINE, SHINY_SPARKLE } from '../game/species';
-import type { BondLevel, Fish, GameState, PlacedDecor, Tank, TankStyle, ThemeId } from '../game/types';
+import type { BondLevel, Fish, GameState, PlacedDecor, ShellDrop, Tank, TankStyle, ThemeId } from '../game/types';
 import {
   createActor,
   heartPoint,
@@ -80,7 +83,7 @@ import { drawThemeScenery } from './drawScenery';
 import { drawEgg, eggProgress } from './drawEgg';
 import { iconSprite } from './assets';
 import { ThemeBackground } from './background';
-import { dropCenterY, dropDrawWidth, dropHitTest, DEFAULT_DROP_ASPECT, type DropKind } from './dropSize';
+import { dropCenterY, dropDrawWidth, dropHitTest, DEFAULT_DROP_ASPECT, type DropKind, type HitDrop } from './dropSize';
 import { hash01 } from './ambient/sandItems';
 import { decorBox, decorSpriteSize, depthOf, drawIconAt, drawSandItem, dropSquash, sizeScale, type PixelGrid } from './drawSprites';
 import { THEME_ART, type IconId } from './artConfig';
@@ -97,7 +100,8 @@ import { BondFx, type PetOutcome } from './bondFx';
 import { DecorVisits } from './ambient/decorVisits';
 import { SetEffects } from './ambient/setEffects';
 import { drawLightingTint, drawWaterTint, SubstrateLayer } from './drawSubstrate';
-import { activeSets, depthGeometry } from '../game/decor';
+import { activeSets, depthGeometry, dropDrawZ, planeConfig, type PlaneConfig } from '../game/decor';
+import { visibleX, type Occluder } from '../game/dropVisibility';
 import type { DecorAttractor } from './ambient/decorBehaviors';
 import { dailyGiftAvailable, localDateKey } from '../game/economy';
 import type { TrickId } from '../game/bond';
@@ -221,6 +225,10 @@ export class Renderer {
   private readonly fx = new BackgroundFx();
   private readonly behaviors = new DecorBehaviors();
   private readonly sandItems = new SandItems();
+  /** Where each drop was drawn last frame (x, plane, height of its sink/bounce): the tap targets. */
+  private readonly dropDrawn = new Map<string, HitDrop>();
+  /** The x each drop is drawn at this frame (slid out from behind decor in front of it). */
+  private readonly dropShownX = new Map<string, number>();
   /** Pellets already seen (a new one makes a ripple ring at the surface). */
   private seenPellets: Set<string> | null = null;
   private day: DayLight = dayLight(12);
@@ -236,6 +244,16 @@ export class Renderer {
   private readonly heartTimers = new Map<string, number>();
   private raf = 0;
   private last = 0;
+  /** The window whose animation frames and pixel ratio drive the canvas (the Mini Tank window while the tank floats). */
+  private win: Window = window;
+  /** Minimum ms between drawn frames (0 = every frame). The Mini Tank caps at 30fps. */
+  private minFrameMs = 0;
+  /** Nothing is updated or drawn while true (the floating window is hidden). */
+  private paused = false;
+  /** Frames come from tickExternal() (a worker timer), because a hidden tab gets no animation frames. */
+  private externalDriven = false;
+  /** Effect quality before the Mini Tank forced 'low'. */
+  private miniQuality: { saved: QualityLevel | null } | null = null;
   private dpr = 1;
   private scale = 1;
   /** Camera: tank-space x of the view's left edge, and y of its top edge. */
@@ -267,7 +285,7 @@ export class Renderer {
    * sideways) and extend the water upward. Handles devicePixelRatio.
    */
   resize(cssWidth: number, cssHeight: number): void {
-    this.dpr = window.devicePixelRatio || 1;
+    this.dpr = this.win.devicePixelRatio || 1;
     this.canvas.width = Math.max(1, Math.round(cssWidth * this.dpr));
     this.canvas.height = Math.max(1, Math.round(cssHeight * this.dpr));
     const fitH = cssHeight / TANK_HEIGHT;
@@ -323,11 +341,52 @@ export class Renderer {
     activeRenderer = this;
     if (this.raf) return;
     this.last = performance.now();
-    this.raf = requestAnimationFrame(this.frame);
+    this.raf = this.win.requestAnimationFrame(this.frame);
+  }
+
+  /** Moves the animation loop (and pixel ratio) to another window, e.g. the Mini Tank's. */
+  setHostWindow(win: Window): void {
+    if (win === this.win) return;
+    const running = this.raf !== 0;
+    this.win.cancelAnimationFrame(this.raf);
+    this.win = win;
+    this.raf = 0;
+    if (running) {
+      this.last = performance.now();
+      this.raf = win.requestAnimationFrame(this.frame);
+    }
+  }
+
+  /** The Mini Tank profile: effect quality 'low' and at most `fps` frames a second (null restores normal). */
+  setLowPower(fps: number | null): void {
+    this.minFrameMs = fps ? 1000 / fps : 0;
+    if (fps && !this.miniQuality) {
+      this.miniQuality = { saved: this.quality.overridden };
+      this.quality.setOverride('low');
+    } else if (!fps && this.miniQuality) {
+      this.quality.setOverride(this.miniQuality.saved);
+      this.miniQuality = null;
+    }
+  }
+
+  /** Pauses updating and drawing (the floating window is hidden or minimized). */
+  setPaused(on: boolean): void {
+    this.paused = on;
+    if (!on) this.last = performance.now();
+  }
+
+  /** Drive frames from outside (tickExternal) instead of animation frames. */
+  setExternalDriver(on: boolean): void {
+    this.externalDriven = on;
+    if (on) this.last = performance.now();
+  }
+
+  tickExternal(): void {
+    if (this.externalDriven) this.step(performance.now());
   }
 
   stop(): void {
-    cancelAnimationFrame(this.raf);
+    this.win.cancelAnimationFrame(this.raf);
     this.raf = 0;
     this.background.dispose();
     if (activeRenderer === this) activeRenderer = null;
@@ -469,12 +528,46 @@ export class Renderer {
     if (placed) this.particles.spawnSandPuff(placed.x, SAND_Y + depthOf(placed).dy, decorBox(placed.decorId)[0] * sizeScale(placed), DECOR_DROP_PUFFS);
   }
 
-  /** Uncollected shell/pearl drop under a tank-space point, or null (see dropHitTest: ≥ 44 px targets on every screen). */
+  /**
+   * Uncollected shell/pearl drop under a tank-space point, or null (see dropHitTest: ≥ 44 px targets on every screen,
+   * +10 px of slack). Callers test drops before decor, so a drop partly behind decor still wins the tap.
+   */
   dropAt(x: number, y: number): string | null {
     const game = this.deps.getGame();
     const tank = game.tanks.find((t) => t.id === game.activeTankId);
     if (!tank) return null;
-    return dropHitTest(tank.shells, x, y, this.scale, (kind) => this.dropAspect(kind));
+    const hits = tank.shells.map<HitDrop>((d) => this.dropDrawn.get(d.id) ?? { id: d.id, x: d.x, pearl: d.pearl, plane: planeConfig(tank.theme, d.plane) });
+    return dropHitTest(hits, x, y, this.scale, (kind) => this.dropAspect(kind));
+  }
+
+  /** The decor in front of a plane that would cover a drop on it (as x extents), for sliding the drop out. */
+  private occludersFor(tank: Tank, plane: PlaneConfig, kind: DropKind): Occluder[] {
+    const top = SAND_Y + plane.dy - dropDrawWidth(kind, this.scale, plane) * this.dropAspect(kind);
+    const bottom = SAND_Y + plane.dy;
+    const out: Occluder[] = [];
+    for (const d of tank.decor) {
+      if (DECOR[d.decorId].placement !== 'sand' || d.z <= plane.z + 0.01 || decorSpriteSize(d.decorId) === null) continue;
+      const k = sizeScale(d);
+      const [w0, h0] = decorBox(d.decorId);
+      const m = this.behaviors.motion(d, w0);
+      const baseY = this.decorBaseY(d) + m.dy;
+      if (baseY < top || baseY - h0 * k > bottom) continue;
+      const half = (w0 * k * DROP_OCCLUDE_WIDTH) / 2;
+      out.push({ x0: d.x + m.dx - half, x1: d.x + m.dx + half });
+    }
+    return out;
+  }
+
+  /** Slides drops that decor in front would mostly hide sideways (along their own plane) to the nearest visible spot. */
+  private updateDropVisibility(tank: Tank, dt: number): void {
+    this.dropShownX.clear();
+    for (const drop of tank.shells) {
+      const kind: DropKind = drop.pearl ? 'pearl' : 'shell';
+      const plane = planeConfig(tank.theme, drop.plane);
+      const half = dropDrawWidth(kind, this.scale, plane) / 2;
+      const target = visibleX(drop.x, half, this.occludersFor(tank, plane, kind), TANK_EDGE_MARGIN, TANK_WIDTH - TANK_EDGE_MARGIN);
+      this.dropShownX.set(drop.id, this.sandItems.showX(drop.id, target, dt));
+    }
   }
 
   /** Height / width of a drop's sprite. */
@@ -496,12 +589,14 @@ export class Renderer {
     if (!drop) return;
     const icon = drop.pearl ? 'pearl' : 'shell';
     const color = drop.pearl ? '#8a6be0' : '#e07a5f';
-    const width = dropDrawWidth(icon, this.scale);
-    const centerY = dropCenterY(icon, this.scale, this.dropAspect(icon));
+    const plane = planeConfig(this.deps.getGame().tanks.find((t) => t.shells.includes(drop))?.theme ?? 'classic', drop.plane);
+    const width = dropDrawWidth(icon, this.scale, plane);
+    const centerY = dropCenterY(icon, this.scale, this.dropAspect(icon), plane);
+    const x = this.dropDrawn.get(drop.id)?.x ?? drop.x;
     const target = this.deps.getHudTarget?.(icon);
-    if (target && iconSprite(icon)) this.sandItems.fly(icon, { x: drop.x, y: centerY }, this.toTank(target.x, target.y), performance.now(), width * 0.9);
-    if (iconSprite(icon)) this.particles.spawnPop(drop.x, SAND_Y - 4, `+${drop.value}`, color, icon);
-    else this.particles.spawnPop(drop.x, SAND_Y - 4, drop.pearl ? `+${drop.value} ⚪` : `+${drop.value} 🐚`, color);
+    if (target && iconSprite(icon)) this.sandItems.fly(icon, { x, y: centerY }, this.toTank(target.x, target.y), performance.now(), width * 0.9);
+    if (iconSprite(icon)) this.particles.spawnPop(x, SAND_Y + plane.dy - 4, `+${drop.value}`, color, icon);
+    else this.particles.spawnPop(x, SAND_Y + plane.dy - 4, drop.pearl ? `+${drop.value} ⚪` : `+${drop.value} 🐚`, color);
   }
 
   /** Sparkle burst + "+XP" pop where an algae spot was wiped. Call before removing it. */
@@ -524,7 +619,11 @@ export class Renderer {
   handleEvents(events: SimEvent[]): void {
     const now = performance.now();
     for (const e of events) {
-      if (e.type === 'eggLaid') {
+      if (e.type === 'drop') {
+        // The new drop sinks from the fish that let it go.
+        const actor = this.actors.get(e.fishId);
+        if (actor) this.sandItems.noteOrigin(e.dropId, actor.x, actor.y);
+      } else if (e.type === 'eggLaid') {
         // The egg settles where the pair danced; a little burst of hearts marks it.
         const egg = this.deps.getGame().eggs.find((g) => g.id === e.eggId);
         const x = egg ? this.eggPosition(egg) : null;
@@ -739,7 +838,19 @@ export class Renderer {
     }
   }
 
-  private frame = (t: number): void => {
+  private frame = (): void => {
+    // Timestamps come from this window's performance clock: another window's animation-frame time has a different origin.
+    if (!this.externalDriven) this.step(performance.now());
+    this.raf = this.win.requestAnimationFrame(this.frame);
+  };
+
+  private step(t: number): void {
+    if (this.paused) {
+      this.last = t;
+      return;
+    }
+    // A little slack so a 30fps cap still draws on every second 60Hz frame.
+    if (this.minFrameMs > 0 && t - this.last < this.minFrameMs - 2) return;
     this.quality.sample(t - this.last, t);
     const dt = Math.min(MAX_FRAME_DT_SEC, Math.max(0, (t - this.last) / SECOND_MS));
     this.last = t;
@@ -751,8 +862,7 @@ export class Renderer {
       this.update(game, tank, t, dt);
       this.draw(game, tank, t, dt);
     }
-    this.raf = requestAnimationFrame(this.frame);
-  };
+  }
 
   private update(game: GameState, tank: Tank, now: number, dt: number): void {
     const fish = game.fish.filter((f) => f.tankId === tank.id);
@@ -855,6 +965,7 @@ export class Renderer {
     });
     this.setFx.update(dt, activeSets(tank), this.view, Math.max(this.day.lights, THEME_ART[tank.theme].minLights), reduced);
     this.sandItems.update(tank.shells, now);
+    this.updateDropVisibility(tank, dt);
     // Food dropping in leaves a ripple ring on the surface.
     const ids = new Set(tank.pellets.map((p) => p.id));
     if (this.seenPellets) for (const p of tank.pellets) if (!this.seenPellets.has(p.id)) this.fx.ripple(p.x);
@@ -1007,7 +1118,12 @@ export class Renderer {
     const shadowShift = (-day.sunX + Math.sin(timeSec * RAY_SPEED) * 0.25) * SHADOW_SHIFT;
     const decor = this.decorList(tank);
     const order = this.paintOrder(decor);
-    for (const d of order.back) this.drawDecorItem(d, tank, now, timeSec, px, grid, shadowShift, fx);
+    const paintDecor = (d: PlacedDecor) => this.drawDecorItem(d, tank, now, timeSec, px, grid, shadowShift, fx);
+    const paintDrop = (d: ShellDrop) => this.drawDropItem(d, tank, now, timeSec, px, grid, reduced);
+    // Drops sit in the same painter's order as decor: back / mid drops with the pieces behind the fish, front drops with those in front.
+    const [dropsBehind, dropsFront] = this.dropsByLayer(tank);
+    this.dropDrawn.clear();
+    drawMerged(order.back, dropsBehind, paintDecor, paintDrop);
     drawWaterTint(ctx, style.water, view);
     this.particles.drawSandPuffs(ctx, pal.sandLight);
     this.fx.drawSpecks(fx, 1);
@@ -1098,24 +1214,13 @@ export class Renderer {
       if (actor?.indicator && f.tankId === tank.id) this.drawIndicator(actor, f, now, px);
     }
     this.drawBreedingMarkers(game.fish.filter((f) => f.tankId === tank.id), timeSec, reduced);
-    for (const d of order.front) this.drawDecorItem(d, tank, now, timeSec, px, grid, shadowShift, fx);
+    drawMerged(order.front, dropsFront, paintDecor, paintDrop);
     if (this.snapGuide !== null) this.drawSnapGuide(this.snapGuide, view, px);
     if (!picture) drawFrontPlants(ctx, pal, sceneTime, px, view);
-    // Eggs and shell drops sit in front of everything on the sand, so they're never hidden behind decor or fish.
+    // Eggs sit in front of everything on the sand, so they're never hidden behind decor or fish.
     const wallNow = Date.now();
     for (const egg of game.eggs) {
       if (egg.tankId === tank.id) this.drawEggItem(egg, wallNow, timeSec, px, grid, reduced);
-    }
-    for (const drop of tank.shells) {
-      const lift = this.sandItems.lift(drop.id, now);
-      const kind: DropKind = drop.pearl ? 'pearl' : 'shell';
-      // Sized for the screen (about 40 px wide), with a soft glow and a gentle bob so it stands out from the sand.
-      const width = dropDrawWidth(kind, this.scale);
-      const phase = hash01(drop.id) * Math.PI * 2;
-      const bob = reduced || lift !== 0 ? 0 : Math.sin(timeSec * 1.8 + phase) * DROP_BOB_AMP;
-      const halo = { color: drop.pearl ? '#c9b5ff' : '#fff0b8', pulse: reduced ? 1 : 0.5 + 0.5 * Math.sin(timeSec * 2.2 + phase) };
-      if (!drawSandItem(ctx, kind, drop.x, grid, { lift: -lift + bob, width, halo })) drawDrop(ctx, drop, px, timeSec);
-      else if (lift === 0) this.sandItems.drawGlint(ctx, drop, timeSec, px, width);
     }
     // Scene-wide light: the theme's ambient tint (e.g. moonlit blue), then the time of day.
     this.drawSceneLight(tank.theme, view);
@@ -1164,6 +1269,40 @@ export class Renderer {
       ctx.fillStyle = day.glow;
       fill();
     }
+    ctx.restore();
+  }
+
+  /** The tank's drops split by the layer they draw in (behind the fish / in front), each far → near. */
+  private dropsByLayer(tank: Tank): [ShellDrop[], ShellDrop[]] {
+    const sorted = [...tank.shells].sort((a, b) => dropDrawZ(a.plane) - dropDrawZ(b.plane));
+    const front = (d: ShellDrop) => dropDrawZ(d.plane) >= DECOR_Z.frontOfFish;
+    return [sorted.filter((d) => !front(d)), sorted.filter(front)];
+  }
+
+  /** One shell/pearl drop on its plane: sinks in with a drift, bounces, then rests (scaled, shadowed and tinted by plane). */
+  private drawDropItem(drop: ShellDrop, tank: Tank, now: number, timeSec: number, px: number, grid: PixelGrid, reduced: boolean): void {
+    const ctx = this.ctx;
+    const kind: DropKind = drop.pearl ? 'pearl' : 'shell';
+    const plane = planeConfig(tank.theme, drop.plane);
+    const baseY = SAND_Y + plane.dy;
+    const width = dropDrawWidth(kind, this.scale, plane);
+    const restX = this.dropShownX.get(drop.id) ?? drop.x;
+    const pose = this.sandItems.pose(drop.id, now, { x: restX, y: baseY }, plane.fallSpeed, reduced);
+    const x = restX + pose.dx;
+    this.dropDrawn.set(drop.id, { id: drop.id, x, pearl: drop.pearl, plane, lift: pose.lift });
+    // A soft glow and a gentle bob make it stand out from the sand once it rests.
+    const settled = pose.lift === 0 && !pose.falling;
+    const phase = hash01(drop.id) * Math.PI * 2;
+    const bob = reduced || !settled ? 0 : Math.sin(timeSec * 1.8 + phase) * DROP_BOB_AMP;
+    const halo = { color: drop.pearl ? '#c9b5ff' : '#fff0b8', pulse: reduced ? 1 : 0.5 + 0.5 * Math.sin(timeSec * 2.2 + phase) };
+    const haze = { color: THEME_ART[tank.theme].tint, tint: plane.tint * plane.dropHaze, desat: plane.desat * plane.dropHaze, key: `${tank.theme}:${drop.plane}` };
+    if (drawSandItem(ctx, kind, x, grid, { lift: -pose.lift + bob, width, halo, baseY, shadow: plane.shadow, haze })) {
+      if (settled) this.sandItems.drawGlint(ctx, drop, timeSec, px, width, { x, baseY });
+      return;
+    }
+    ctx.save();
+    ctx.translate(x - drop.x, plane.dy - pose.lift);
+    drawDrop(ctx, drop, px, timeSec);
     ctx.restore();
   }
 
@@ -1367,5 +1506,16 @@ export class Renderer {
       ctx.fillText('🌧️', actor.x, top - 10 - t * 6);
     }
     ctx.restore();
+  }
+}
+
+/** Paints decor and drops together, both already sorted far → near; a drop goes in front of decor at its own depth. */
+function drawMerged(decor: PlacedDecor[], drops: ShellDrop[], paintDecor: (d: PlacedDecor) => void, paintDrop: (d: ShellDrop) => void): void {
+  const key = (d: PlacedDecor) => (DECOR[d.decorId].placement === 'sand' ? d.z ?? DECOR_Z.default : -1);
+  let i = 0;
+  let j = 0;
+  while (i < decor.length || j < drops.length) {
+    if (j >= drops.length || (i < decor.length && key(decor[i]!) <= dropDrawZ(drops[j]!.plane))) paintDecor(decor[i++]!);
+    else paintDrop(drops[j++]!);
   }
 }

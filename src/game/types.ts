@@ -269,9 +269,14 @@ export interface Pellet {
   landedAt: number | null;
 }
 
+/** The three depth planes on the sand (shared by decor depth presets and drops). */
+export type DepthPlane = 'back' | 'mid' | 'front';
+
 export interface ShellDrop {
   id: string;
   x: number;
+  /** Which depth plane it landed on (decides its y, size and draw order). */
+  plane: DepthPlane;
   value: number;
   pearl: boolean;
 }
@@ -298,6 +303,8 @@ export interface Tank {
 export interface Settings {
   muted: boolean;
   reducedMotion: boolean;
+  /** UI sizing: 'compact' (default; older saves lack it) or 'comfortable' (the original larger sizes). */
+  display?: 'compact' | 'comfortable';
   /** The Tools tray is slid out (older saves lack it: closed). */
   toolsOpen?: boolean;
 }

@@ -1,7 +1,7 @@
 // All balance numbers live here. Logic must not contain magic numbers.
 import type { CollectionDef, CollectionId, DecorDef, DecorId, DecorSize, Price, StyleCategory, StyleOption, TankStyle, ThemeId } from './types';
 
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 8;
 
 // ---------------------------------------------------------------------------
 // Time
@@ -832,6 +832,19 @@ export const GIFT_FLAG_DOWN_DEG = 85;
 /** Floating decor casts a fainter shadow on the sand. */
 export const FLOATING_SHADOW = 0.35;
 /** Fish visiting decor (renderer ms): any visit every so often, favorites (clownfish → anemone) more often. */
+/**
+ * The three depth planes shared by decor and shell/pearl drops: back (up the sand, far), mid (the old sand line) and
+ * front (down toward the glass). Each plane is a depth `z`; its y offset, scale and tint come from `depthGeometry(z)`
+ * (so decor dragged to a plane and a drop landing on it always agree). `shadow`, `fallSpeed` and `dropHaze` (how much of the plane's tint a drop takes: only back drops fade, mid is the old look, front stays crisp) are drop-only extras.
+ */
+export const DEPTH_PLANES = {
+  back: { z: DECOR_Z.far, shadow: 0.8, fallSpeed: 0.8, dropHaze: 1 },
+  mid: { z: DECOR_Z.mid, shadow: 1, fallSpeed: 1, dropHaze: 0 },
+  front: { z: DECOR_Z.near, shadow: 1.2, fallSpeed: 1, dropHaze: 0 },
+} as const;
+/** Per-theme multiplier on a plane's water-tint strength (deeper, murkier water fades distant things more). */
+export const THEME_PLANE_TINT: Record<'classic' | 'night' | 'coral' | 'pond', number> = { classic: 1, night: 1.25, coral: 0.9, pond: 1.3 };
+
 export const DECOR_VISIT_GAP = [7000, 14000] as const;
 export const DECOR_VISIT_FAVORITE_GAP = [5000, 9000] as const;
 export const DECOR_VISIT_HOVER_MS = 9000;
@@ -872,6 +885,24 @@ export const DROP_HIT_PAD = 1.15;
 export const DROP_BOB_AMP = 1.5;
 /** New drops pick the roomiest of this many random spots, so shells don't pile on top of each other. */
 export const DROP_SPACING_TRIES = 6;
+/** Which of the three depth planes a new drop lands on (weights, summing to 1). */
+export const DROP_PLANE_WEIGHTS = { back: 0.3, mid: 0.4, front: 0.3 } as const;
+/** Extra tap radius around a drop (CSS px) so a shell partly behind decor is still easy to hit. */
+export const DROP_HIT_EXTRA_PX = 10;
+/** A drop sinks at this speed (tank units per ms), at least/at most this long (ms); back-plane drops are slower (`fallSpeed`). */
+export const DROP_SINK_SPEED = 0.35;
+export const DROP_SINK_MS = [700, 2200] as const;
+/** Side-to-side drift while sinking (tank units, wobbles per fall). */
+export const DROP_DRIFT_AMP = 9;
+export const DROP_DRIFT_WOBBLES = 1.5;
+/** A drop is "mostly hidden" when decor in front covers more than this share of its width. */
+export const DROP_HIDDEN_MAX = 0.45;
+/** Decor hides a drop only over this share of its drawn width (sprites have transparent margins). */
+export const DROP_OCCLUDE_WIDTH = 0.8;
+/** How far (tank units) a hidden drop may slide sideways to find a visible spot. */
+export const DROP_SLIDE_MAX = 220;
+/** How fast a drop eases to its visible x (fraction of the gap per second, exponential). */
+export const DROP_SLIDE_RATE = 6;
 export const POP_TEXT_DURATION_MS = 900;
 /** Notification budget: one toast at a time; the rest wait in a short queue (oldest dropped beyond it). */
 export const MAX_VISIBLE_TOASTS = 1;
@@ -929,7 +960,7 @@ export const STARTING = {
   fishSpecies: 'danio' as const,
   fishCount: 2,
   fishStage: 'baby' as const,
-  settings: { muted: true, reducedMotion: false },
+  settings: { muted: true, reducedMotion: false, display: 'compact' as const },
 } as const;
 
 /** Initial stats for any newly bought or hatched fish. */

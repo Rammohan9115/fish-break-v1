@@ -159,7 +159,7 @@ describe('eatPellet', () => {
 
 describe('collectDrop', () => {
   it('adds shells and 1 XP', () => {
-    load(makeState({ tank: { shells: [{ id: 'd1', x: 100, value: 5, pearl: false }] } }));
+    load(makeState({ tank: { shells: [{ id: 'd1', x: 100, plane: 'mid', value: 5, pearl: false }] } }));
     const before = game().shells;
     expect(store().collectDrop('d1')).toBe(true);
     expect(game().shells).toBe(before + 5);
@@ -168,7 +168,7 @@ describe('collectDrop', () => {
   });
 
   it('adds pearls for pearl drops', () => {
-    load(makeState({ tank: { shells: [{ id: 'd1', x: 100, value: 1, pearl: true }] } }));
+    load(makeState({ tank: { shells: [{ id: 'd1', x: 100, plane: 'mid', value: 1, pearl: true }] } }));
     store().collectDrop('d1');
     expect(game().pearls).toBe(1);
   });
@@ -179,7 +179,7 @@ describe('collectDrop', () => {
   });
 
   it('can trigger a level-up with shells reward and queue the level-up modal', () => {
-    load(makeState({ tank: { shells: [{ id: 'd1', x: 100, value: 1, pearl: false }] }, overrides: { xp: 39 } }));
+    load(makeState({ tank: { shells: [{ id: 'd1', x: 100, plane: 'mid', value: 1, pearl: false }] }, overrides: { xp: 39 } }));
     const before = game().shells;
     store().collectDrop('d1');
     expect(game().level).toBe(2);
@@ -313,7 +313,7 @@ describe('fish selection', () => {
 describe('onboarding', () => {
   const start = () => {
     const fish = makeFish({ hunger: 50 });
-    load(makeState({ fish: [fish], tank: { shells: [{ id: 'd1', x: 100, value: 2, pearl: false }] } }));
+    load(makeState({ fish: [fish], tank: { shells: [{ id: 'd1', x: 100, plane: 'mid', value: 2, pearl: false }] } }));
     useGameStore.setState({ onboardingStep: 0 });
     return fish;
   };

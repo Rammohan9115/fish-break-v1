@@ -10,8 +10,9 @@ import './styles.css';
 import './ui/kit/kit.css';
 import './ui/screens.css';
 import './ui/overlay/overlay.css';
+import './ui/mini.css';
 import { registerServiceWorker } from './pwa';
-import { applyTokens } from './ui/tokens';
+import { applyTokens, DEFAULT_DENSITY, DESKTOP_QUERY } from './ui/tokens';
 
 // Dev-only test hooks for e2e/screenshot scripts (stripped from production builds).
 if (import.meta.env.DEV) {
@@ -36,7 +37,7 @@ if (import.meta.env.DEV) {
 }
 
 // Tokens go on :root before the first paint; App re-applies them when the reduced-motion setting changes.
-applyTokens(document.documentElement, window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+applyTokens(document.documentElement, window.matchMedia('(prefers-reduced-motion: reduce)').matches, DEFAULT_DENSITY, window.matchMedia(DESKTOP_QUERY).matches);
 
 registerServiceWorker();
 

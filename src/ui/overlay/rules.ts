@@ -1,7 +1,7 @@
 // The pure rules of the overlay system: which primitive an overlay becomes on a given screen, how wide a side panel is,
 // which density the screen is in, where a sheet snaps, and where a popover goes. No DOM: unit-tested for every screen.
 // (The hooks in useScreenEnv.ts feed these from matchMedia / the visual viewport.)
-import { fontSize, space } from '../tokens';
+import { sizeSet, type Density as Display } from '../tokens';
 
 /** What the screen is like. Never derived from the user agent. */
 export interface ScreenEnv {
@@ -94,17 +94,24 @@ const DENSITY_SCALE: Record<Density, { space: number; text: number }> = {
   spacious: { space: 1.12, text: 1.15 },
 };
 
-/** Type never goes below these (readability) or above these (huge screens): body 14–18px, labels ≥ 12px. */
-const TEXT_LIMITS: Record<string, [number, number]> = { label: [12, 14], small: [13, 16], body: [14, 18], md: [16, 20], lg: [19, 24], xl: [24, 30], hero: [34, 42] };
+/** Type never goes above these (huge screens): body ≤ 18px, labels ≤ 14px. The floor is the display set's own size (compact: body 14, labels 12). */
+const TEXT_CAPS: Record<string, number> = { label: 14, small: 16, body: 18, md: 20, lg: 24, xl: 30, hero: 42 };
 
-/** CSS custom properties for a density: the spacing scale and the type scale, derived from the base tokens. */
-export function densityVars(density: Density): Record<string, string> {
+/**
+ * CSS custom properties for a screen density: the spacing scale and the type scale, derived from the base tokens of the chosen
+ * display ("comfortable" = the original sizes, "compact" = the tighter scale; `wide` picks the compact scale's desktop step).
+ * With the compact display the small-screen density never shrinks spacing further (the 4px base unit stays).
+ */
+export function densityVars(density: Density, display: Display = 'comfortable', wide = false): Record<string, string> {
   const k = DENSITY_SCALE[density];
+  const base = sizeSet(display, wide);
+  const spaceK = display === 'compact' ? Math.max(1, k.space) : k.space;
   const vars: Record<string, string> = {};
-  for (const [name, value] of Object.entries(space)) vars[`--space-${name}`] = `${Math.round(Number.parseFloat(value) * k.space)}px`;
-  for (const [name, value] of Object.entries(fontSize)) {
-    const [lo, hi] = TEXT_LIMITS[name] ?? [0, Infinity];
-    vars[`--text-${name}`] = `${Math.min(hi, Math.max(lo, Math.round(Number.parseFloat(value) * k.text)))}px`;
+  for (const [name, value] of Object.entries(base.space)) vars[`--space-${name}`] = `${Math.round(Number.parseFloat(value) * spaceK)}px`;
+  for (const [name, value] of Object.entries(base.text)) {
+    const floor = Number.parseFloat(value);
+    const cap = Math.max(floor, TEXT_CAPS[name] ?? Infinity);
+    vars[`--text-${name}`] = `${Math.min(cap, Math.max(floor, Math.round(floor * k.text)))}px`;
   }
   return vars;
 }

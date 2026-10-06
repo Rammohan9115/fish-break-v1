@@ -20,6 +20,7 @@ import { UpdatePrompt } from './ui/UpdatePrompt';
 import { LevelUpModal } from './ui/LevelUpModal';
 import { Onboarding } from './ui/Onboarding';
 import { Settings } from './ui/Settings';
+import { MiniTankHost } from './ui/MiniTankHost';
 import { Shop } from './ui/Shop';
 import { TankSwitcher } from './ui/TankSwitcher';
 import { TankView } from './ui/TankView';
@@ -37,7 +38,7 @@ import { TopChip } from './ui/TopChip';
 import { QuickActions } from './ui/QuickActions';
 import { enterFullscreen, isTouchLandscape } from './ui/fullscreen';
 import { closeTopSheet } from './ui/kit';
-import { applyTokens } from './ui/tokens';
+import { applyTokens, DEFAULT_DENSITY, DESKTOP_QUERY } from './ui/tokens';
 
 /** Production builds show the dev panel only after opening the page with `?dev=1` (remembered; `?dev=0` forgets). */
 function devToolsUnlocked(): boolean {
@@ -88,13 +89,19 @@ function useSoundSync() {
 /** Motion tokens follow the in-game "Reduce motion" setting or the OS preference. */
 function useMotionTokens() {
   const setting = useGameStore((s) => s.game.settings.reducedMotion);
+  const display = useGameStore((s) => s.game.settings.display ?? DEFAULT_DENSITY);
   useEffect(() => {
     const query = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const apply = () => applyTokens(document.documentElement, setting || query.matches);
+    const desktop = window.matchMedia(DESKTOP_QUERY);
+    const apply = () => applyTokens(document.documentElement, setting || query.matches, display, desktop.matches);
     apply();
     query.addEventListener('change', apply);
-    return () => query.removeEventListener('change', apply);
-  }, [setting]);
+    desktop.addEventListener('change', apply);
+    return () => {
+      query.removeEventListener('change', apply);
+      desktop.removeEventListener('change', apply);
+    };
+  }, [setting, display]);
 }
 
 /** Phones held sideways go fullscreen on the next tap (browsers only allow it inside a user gesture). */
@@ -195,6 +202,7 @@ export function App() {
         </>
       )}
       <BreakMode />
+      <MiniTankHost />
       <CloudConflictModal />
       <OverlayRoot />
     </div>
