@@ -634,6 +634,9 @@ export const SPRITE_WAVE_STRIP_PHASE = 0.5;
 export const SPRITE_WAVE_HEAD = 0.3;
 /** Wave envelope exponent: higher = the sway concentrates more toward the tail. */
 export const SPRITE_WAVE_FALLOFF = 1.4;
+/** Full-body wave (kuhli): per-strip phase lag (≈1.15 wavelengths over the body) and the share of the wave the nose keeps. */
+export const SPRITE_WAVE_FULL_PHASE = 0.36;
+export const SPRITE_WAVE_FULL_HEAD = 0.45;
 /** Body-wave speed in radians per second when idle and at full cruise speed (× species waveSpeed). */
 export const WAVE_IDLE_FREQ = 3;
 export const WAVE_SWIM_FREQ = 11;
@@ -1048,3 +1051,66 @@ export const JELLY_AVOID_WEIGHT = 1.4;
 export const JELLY_AVOID_MARGIN = 14;
 /** Dance Mode: beats per minute (jellies pulse on every beat). */
 export const DANCE_BPM = 112;
+
+// ---------------------------------------------------------------------------
+// Starter species: cory, cherry shrimp, kuhli loach, hatchetfish, crab
+// ---------------------------------------------------------------------------
+
+/** Hatchetfish stay in the top share of the water column (SWIM_TOP … SAND_Y). */
+export const SURFACE_ZONE_FRACTION = 0.15;
+/** Hatchetfish hop: gap range (ms), first-hop range (ms), airtime (ms) and peak height (tank units). */
+export const HATCHET_HOP_GAP = [60_000, 180_000] as const;
+export const HATCHET_FIRST_HOP = [15_000, 50_000] as const;
+export const HATCHET_HOP_MS = 900;
+export const HATCHET_HOP_HEIGHT = 46;
+
+/** Sand dwellers: how long they stick to a plane before maybe picking another (ms). */
+export const SAND_PLANE_GAP = [9_000, 25_000] as const;
+/** Fraction of a sprite's half-height that sinks into the sand line (so feet touch the floor). */
+export const SAND_FOOT_EMBED = 0.8;
+
+/** Cory modes (ms): burst, rest, snuffle; speed multiplier while snuffling; wink gap and length. */
+export const CORY_BURST_MS = [1_200, 2_600] as const;
+export const CORY_REST_MS = [900, 3_500] as const;
+export const CORY_SNUFFLE_MS = [1_500, 3_000] as const;
+export const CORY_SNUFFLE_SPEED = 0.3;
+export const CORY_WINK_GAP_MS = [6_000, 13_000] as const;
+export const CORY_WINK_MS = 380;
+/** Cory nose-down pitch while snuffling (radians). */
+export const CORY_SNUFFLE_PITCH = 0.32;
+
+/** Kuhli: swim and rest lengths, chance a finished stint ends in a burrow, burrow stay (ms), sink/rise time (ms). */
+export const KUHLI_MOVE_MS = [6_000, 14_000] as const;
+export const KUHLI_REST_MS = [2_000, 5_000] as const;
+export const KUHLI_BURROW_CHANCE = 0.4;
+export const KUHLI_BURROW_STAY_MS = [20_000, 60_000] as const;
+export const KUHLI_SINK_MS = 1_300;
+export const KUHLI_RISE_MS = 1_100;
+
+/** Crab: sideways walk and look-around lengths (ms); the waddle rock (radians) and bob (fraction of height). */
+export const CRAB_WALK_MS = [1_500, 3_500] as const;
+export const CRAB_PAUSE_MS = [1_500, 3_200] as const;
+export const CRAB_ROCK = 0.07; // ≈ 4 degrees
+export const CRAB_BOB = 0.04;
+export const CRAB_STEP_HZ = 5;
+
+/** Cherry shrimp: walk / pick / rest lengths (ms); flick length (ms), speed (px/s) and the near-fish trigger distance. */
+export const SHRIMP_WALK_MS = [1_000, 2_600] as const;
+export const SHRIMP_PICK_MS = [800, 2_000] as const;
+export const SHRIMP_REST_MS = [1_000, 3_000] as const;
+export const SHRIMP_FLICK_MS = 380;
+export const SHRIMP_FLICK_SPEED = 260;
+export const SHRIMP_FLICK_NEAR = 34;
+export const SHRIMP_FLICK_COOLDOWN_MS = 4_000;
+
+/** Helper roles. Cory: lets a landed pellet sit this long before eating it, then waits this long (ms) before the next. */
+export const CORY_EAT_DELAY_MS = 2_500;
+export const CORY_EAT_COOLDOWN_MS = 10_000;
+/** Hunger a cory regains from a pellet it cleans up. */
+export const CORY_EAT_HUNGER = 8;
+/** Shrimp: cleanliness per minute each (non-baby) shrimp adds, and the tank-wide cap. */
+export const SHRIMP_CLEAN_PER_MIN = 0.1;
+export const SHRIMP_CLEAN_CAP_PER_MIN = 0.4;
+/** Crab: minutes between digs, and how many shells (min, max) a dig turns up (worth 1 each). */
+export const CRAB_DIG_MINUTES = 15;
+export const CRAB_DIG_SHELLS = [1, 2] as const;

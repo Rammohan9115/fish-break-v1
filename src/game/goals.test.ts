@@ -20,7 +20,7 @@ describe('longTermGoals', () => {
 
   it('shows real progress numbers', () => {
     const goal = longTermGoals(makeState({ fish: [makeFish({ speciesId: 'danio' }), makeFish({ speciesId: 'koi' })] }), NOV).find((g) => g.id === 'species')!;
-    expect(goal.sub).toBe('2/11 species');
+    expect(goal.sub).toBe('2/16 species');
   });
 
   it('drops a goal once it is done', () => {

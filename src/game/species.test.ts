@@ -3,8 +3,8 @@ import { getVariant, randomVariantKey, SPECIES, SPECIES_LIST } from './species';
 import { randomName, FISH_NAMES } from './names';
 
 describe('species catalog', () => {
-  it('has all 11 species with ids matching keys', () => {
-    expect(SPECIES_LIST).toHaveLength(11);
+  it('has all 16 species with ids matching keys', () => {
+    expect(SPECIES_LIST).toHaveLength(16);
     for (const [key, species] of Object.entries(SPECIES)) expect(species.id).toBe(key);
   });
 
@@ -21,6 +21,14 @@ describe('species catalog', () => {
     expect(SPECIES.koi).toMatchObject({ unlockLevel: 20, growMinutes: 300, hungerRate: 0.6, sellPrice: 2500, dropMinutes: 30, dropValue: 80, themeOnly: 'pond' });
     expect(SPECIES.puffer.cost).toEqual({ currency: 'pearls', amount: 5 });
     expect(SPECIES.clownfish.themeOnly).toBe('coral');
+  });
+
+  it('matches the starter-species table', () => {
+    expect(SPECIES.cherry_shrimp).toMatchObject({ unlockLevel: 1, cost: { currency: 'shells', amount: 12 }, growMinutes: 15, hungerRate: 1.0, sellPrice: 20, dropMinutes: 10, dropValue: 2 });
+    expect(SPECIES.cory).toMatchObject({ unlockLevel: 1, cost: { currency: 'shells', amount: 20 }, growMinutes: 25, hungerRate: 1.6, sellPrice: 40, dropMinutes: 9, dropValue: 3 });
+    expect(SPECIES.kuhli_loach).toMatchObject({ unlockLevel: 2, cost: { currency: 'shells', amount: 25 }, growMinutes: 30, hungerRate: 1.5, sellPrice: 50, dropMinutes: 9, dropValue: 3 });
+    expect(SPECIES.crab).toMatchObject({ unlockLevel: 2, cost: { currency: 'shells', amount: 35 }, growMinutes: 40, hungerRate: 1.3, sellPrice: 70, dropMinutes: 10, dropValue: 4 });
+    expect(SPECIES.hatchetfish).toMatchObject({ unlockLevel: 3, cost: { currency: 'shells', amount: 30 }, growMinutes: 30, hungerRate: 1.7, sellPrice: 55, dropMinutes: 9, dropValue: 4 });
   });
 
   it('configures the jellyfish', () => {

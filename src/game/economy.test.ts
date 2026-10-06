@@ -35,7 +35,7 @@ import {
   sellValue,
   type Result,
 } from './economy';
-import { happinessTarget } from './sim';
+import { displayOccupancy, happinessTarget, tankOccupancy } from './sim';
 import { SPECIES } from './species';
 import { constRng, makeFish, makeState, makeTank, seededRng, T0 } from './testUtils';
 import type { Fish, GameState } from './types';
@@ -98,6 +98,19 @@ describe('buying fish', () => {
     expect(checkBuyFish(full, 'danio')).toBeNull();
     full.fish.push(makeFish());
     expect(checkBuyFish(full, 'danio')).toBe('full');
+  });
+
+  it('cherry shrimp take half a slot (2 shrimp = 1 slot)', () => {
+    const state = rich();
+    state.fish = Array.from({ length: TANK_BASE_CAPACITY[0] - 1 }, () => makeFish());
+    state.fish.push(makeFish({ speciesId: 'cherry_shrimp' }));
+    expect(tankOccupancy(state, 'tank-1')).toBe(TANK_BASE_CAPACITY[0] - 0.5);
+    expect(displayOccupancy(tankOccupancy(state, 'tank-1'))).toBe(TANK_BASE_CAPACITY[0]);
+    // Half a slot left: another shrimp fits, a full-slot fish does not.
+    expect(checkBuyFish(state, 'cherry_shrimp')).toBeNull();
+    expect(checkBuyFish(state, 'danio')).toBe('full');
+    state.fish.push(makeFish({ speciesId: 'cherry_shrimp' }));
+    expect(checkBuyFish(state, 'cherry_shrimp')).toBe('full');
   });
 
   it('theme-only species need the matching tank theme', () => {

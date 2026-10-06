@@ -312,7 +312,12 @@ export function FishCard() {
         ) : undefined
       }
     >
-      {tab === 'status' && <Meters fish={fish} />}
+      {tab === 'status' && (
+        <>
+          <Meters fish={fish} />
+          {species.special && <p className="fc-special">Special: {species.special}</p>}
+        </>
+      )}
       {tab === 'bond' && <BondSection fish={fish} />}
       {tab === 'breed' && <BreedingTab fish={fish} game={game} flag={flag} />}
     </Card>

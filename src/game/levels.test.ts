@@ -36,10 +36,10 @@ describe('unlocks', () => {
 
   it('lists the spec unlocks at the right levels', () => {
     const ids = (level: number) => unlocksAtLevel(level).map((u) => u.id).sort();
-    expect(ids(1)).toEqual(['danio', 'guppy']);
-    expect(ids(2)).toEqual(['premiumFood']);
+    expect(ids(1)).toEqual(['cherry_shrimp', 'cory', 'danio', 'guppy']);
+    expect(ids(2)).toEqual(['crab', 'kuhli_loach', 'premiumFood']);
     // Decor is never level-gated, so it never appears as an unlock.
-    expect(ids(3)).toEqual(['goldfish']);
+    expect(ids(3)).toEqual(['goldfish', 'hatchetfish']);
     expect(ids(4)).toEqual(['capacityUpgrade']);
     expect(ids(5)).toEqual(['betta', 'breeding']);
     expect(ids(6)).toEqual(['tetra']);

@@ -6,7 +6,7 @@ import { sound } from '../audio/sound';
 import { CAPACITY_WARN_FRACTION, UNLOCK_LEVEL } from '../game/constants';
 import { capacityUpgradeCost } from '../game/economy';
 import { xpToNext } from '../game/levels';
-import { tankOccupancy } from '../game/sim';
+import { displayOccupancy, tankOccupancy } from '../game/sim';
 import { useGameStore } from '../store/gameStore';
 import { fullscreenSupported, toggleFullscreen } from './fullscreen';
 import { SyncBadge } from './SyncIndicator';
@@ -41,7 +41,7 @@ export function Hud() {
   const toggleMute = useGameStore((s) => s.toggleMute);
   const tankName = useGameStore((s) => s.game.tanks.find((t) => t.id === s.game.activeTankId)?.name ?? '');
   const tankCount = useGameStore((s) => s.game.tanks.length);
-  const capUsed = useGameStore((s) => tankOccupancy(s.game, s.game.activeTankId));
+  const capUsed = useGameStore((s) => displayOccupancy(tankOccupancy(s.game, s.game.activeTankId)));
   const capMax = useGameStore((s) => s.game.tanks.find((t) => t.id === s.game.activeTankId)?.capacity ?? 0);
   const canUpgrade = useGameStore((s) => {
     const tank = s.game.tanks.find((t) => t.id === s.game.activeTankId);

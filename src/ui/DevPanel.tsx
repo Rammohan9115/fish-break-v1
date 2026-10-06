@@ -4,6 +4,8 @@ import { SPECIES, SPECIES_LIST } from '../game/species';
 import type { BondLevel, SpeciesId, ThemeId } from '../game/types';
 import { BOND } from '../game/constants';
 import { useGameStore } from '../store/gameStore';
+import { ClawEditor } from './ClawEditor';
+import { hasClaws } from '../render/clawSplit';
 import { EyeEditor } from './EyeEditor';
 import { sandLineY, setSandLineY } from '../render/artConfig';
 import { QUALITY_LEVELS } from '../render/ambient/quality';
@@ -224,6 +226,12 @@ export default function DevPanel() {
       <LidEditor />
       <div className="dev-label">Sprite eye ({stage === 'baby' ? 'baby' : 'adult/juvenile'}): click the eye</div>
       <EyeEditor speciesId={speciesId} art={stage === 'baby' ? 'baby' : 'adult'} />
+      {hasClaws(speciesId) && (
+        <>
+          <div className="dev-label">Claws ({stage === 'baby' ? 'baby' : 'adult/juvenile'}): click the wrist pivot, set the reach</div>
+          <ClawEditor speciesId={speciesId} art={stage === 'baby' ? 'baby' : 'adult'} />
+        </>
+      )}
       {species.bellSplitY && (
         <>
           <div className="dev-label">Bell split ({stage === 'baby' ? 'baby' : 'adult/juvenile'}): click where the bell ends</div>

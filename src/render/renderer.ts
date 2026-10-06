@@ -63,6 +63,7 @@ import {
 } from './behavior';
 import type { JellyDrawState } from './drawJelly';
 import { jellySize } from './jellyMotion';
+import { SAND_FOOT_EMBED } from '../game/constants';
 import { drawFish, drawStar, fishHalfHeight, FISH_ART, fishScale, mouthOffset, setFishViewBoost } from './drawFish';
 import { eatSquash, pokeBounce, speedFraction } from './fishMotion';
 import { dropShadow } from './paint';
@@ -101,6 +102,9 @@ import { DecorVisits } from './ambient/decorVisits';
 import { SetEffects } from './ambient/setEffects';
 import { drawLightingTint, drawWaterTint, SubstrateLayer } from './drawSubstrate';
 import { activeSets, depthGeometry, dropDrawZ, planeConfig, type PlaneConfig } from '../game/decor';
+import { clawAngles, type ClawAngles } from './clawSplit';
+import type { Perch } from './critterMotion';
+import { critterPose, drainFx, triggerFlick, type CritterFxKind } from './critterMotion';
 import { visibleX, type Occluder } from '../game/dropVisibility';
 import type { DecorAttractor } from './ambient/decorBehaviors';
 import { dailyGiftAvailable, localDateKey } from '../game/economy';
@@ -169,6 +173,9 @@ function pelletY(p: Tank['pellets'][number], game: GameState): number {
   const since = Math.max(0, Date.now() - game.lastTickAt) / SECOND_MS;
   return Math.min(SAND_Y, p.y + p.vy * since);
 }
+
+/** Decor pieces a crab or shrimp can climb onto. */
+const PERCH_DECOR = new Set<string>(['rock', 'driftwood']);
 
 function puffAmount(actor: FishActor, now: number): number {
   if (actor.inflateUntil <= 0) return 0;
@@ -623,6 +630,8 @@ export class Renderer {
         // The new drop sinks from the fish that let it go.
         const actor = this.actors.get(e.fishId);
         if (actor) this.sandItems.noteOrigin(e.dropId, actor.x, actor.y);
+        // A crab's dig: a dust puff where it stands.
+        if (actor?.speciesId === 'crab') this.particles.spawnSandPuff(actor.x, actor.y + fishHalfHeight('crab', actor.stage) * SAND_FOOT_EMBED, 36, 8);
       } else if (e.type === 'eggLaid') {
         // The egg settles where the pair danced; a little burst of hearts marks it.
         const egg = this.deps.getGame().eggs.find((g) => g.id === e.eggId);
@@ -671,6 +680,69 @@ export class Renderer {
     return Math.min(TANK_WIDTH - EGG_EDGE_MARGIN * 2, Math.max(EGG_EDGE_MARGIN * 2, (a.x + b.x) / 2));
   }
 
+  /** A soft, wobbling light patch on the water surface above a surface-dwelling fish (fainter the deeper it swims). */
+  private drawSurfaceShimmer(actor: FishActor, f: Fish, timeSec: number, reduced: boolean): void {
+    const { ctx } = this;
+    const y = this.view.y0 + 24;
+    const depth = Math.max(0, Math.min(1, (actor.y - y) / 160));
+    const wob = reduced ? 1 : 0.75 + 0.25 * Math.sin(timeSec * 3 + actor.phase);
+    const rx = fishScale(f.stage) * 34 * wob;
+    ctx.save();
+    ctx.translate(actor.x, y);
+    ctx.scale(1, 0.16);
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+    g.addColorStop(0, `rgba(255, 255, 255, ${0.3 * (1 - depth * 0.7)})`);
+    g.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0, 0, rx, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  /** Low decor pieces crabs and shrimp can climb on (rocks and driftwood small enough to scramble up). */
+  private perchesOf(tank: Tank): Perch[] {
+    const out: Perch[] = [];
+    for (const d of tank.decor) {
+      if (!PERCH_DECOR.has(d.decorId)) continue;
+      const [w, h] = decorBox(d.decorId);
+      const sc = sizeScale(d);
+      if (h * sc > 110) continue;
+      const geo = depthOf(d);
+      out.push({ id: d.id, x: d.x, y: SAND_Y + geo.dy - h * sc * 0.78, halfW: w * sc * 0.28, z: d.z ?? DECOR_Z.default });
+    }
+    return out;
+  }
+
+  private readonly clawOut: ClawAngles = { left: 0, right: 0 };
+
+  /** The crab's claw angles this frame (snips, waves, claps, beat snaps). */
+  private crabClaws(f: Fish, actor: FishActor, now: number, timeSec: number, reduced: boolean): ClawAngles {
+    const mood = this.bond.clawMood(f.id);
+    return clawAngles(
+      { timeSec, seed: hash01(actor.id) * 6.28, waving: mood.waving, clapping: mood.clapping, happy: f.happiness >= 85, beatMs: this.beatMs, nowMs: now, reduced },
+      this.clawOut,
+    );
+  }
+
+  /** A starter species' one-shot effect: a puff of sand at its feet, or a splash/ripple at the water's surface. */
+  private spawnCritterFx(kind: CritterFxKind, actor: FishActor, f: Fish, reduced: boolean): void {
+    const hh = fishHalfHeight(f.speciesId, f.stage);
+    if (kind === 'sandPuff') {
+      this.particles.spawnSandPuff(actor.x, actor.y + hh * SAND_FOOT_EMBED, 30, reduced ? 2 : 6);
+      return;
+    }
+    const surfaceY = this.view.y0 + 22;
+    if (kind === 'splash') {
+      for (let i = 0; i < (reduced ? 2 : 6); i++) this.particles.spawnBubble(actor.x + (Math.random() - 0.5) * 22, surfaceY + Math.random() * 10, 1.5 + Math.random() * 2.2);
+      this.particles.spawnRing(actor.x, surfaceY, 10, 0.6);
+    } else if (kind === 'ripple') {
+      this.particles.spawnRing(actor.x, surfaceY + 4, 20, 1.1);
+    } else {
+      this.particles.spawnHeartBurst(actor.x, actor.y - hh, 4, 40);
+    }
+  }
+
   /** Visual-only reaction to a click: every fish bounces, puffers also inflate. */
   poke(fishId: string): void {
     const actor = this.actors.get(fishId);
@@ -678,6 +750,7 @@ export class Renderer {
     const now = performance.now();
     actor.pokeAt = now;
     if (getSpecies(actor.speciesId).traits.includes('inflates')) actor.inflateUntil = now + PUFF_DURATION_MS;
+    if (actor.crit && actor.speciesId === 'cherry_shrimp') triggerFlick(actor.crit, now, actor.facing);
     if (actor.jelly) {
       // Three quick happy pulses, a glow flash, bubbles and a heart.
       jellyHappy(actor.jelly, now);
@@ -875,6 +948,11 @@ export class Renderer {
     const current = this.currents.state.total;
     const beat = this.beatMs !== null ? Math.floor(now / this.beatMs) : null;
     const beatTempo = this.beatMs !== null ? this.beatMs / (JELLY_CONTRACT_MS + JELLY_EXPAND_MS) : 1;
+    const perches = this.perchesOf(tank);
+    // Where every non-shrimp fish is (a shrimp flicks away from one swimming close).
+    const others = fish.some((f) => f.speciesId === 'cherry_shrimp')
+      ? fish.filter((f) => f.speciesId !== 'cherry_shrimp').map((f) => this.actors.get(f.id)!)
+      : [];
     for (const f of fish) {
       const actor = this.actors.get(f.id)!;
       const mates = getSpecies(f.speciesId).traits.includes('schools')
@@ -893,8 +971,11 @@ export class Renderer {
         beatTempo,
         reduced,
         jellies: zones,
+        nearby: f.speciesId === 'cherry_shrimp' ? others : undefined,
+        perches: getSpecies(f.speciesId).traits.includes('climbs') ? perches : undefined,
         ...this.steer(f.id, now, reduced),
       });
+      if (actor.crit) for (const kind of drainFx(actor.crit)) this.spawnCritterFx(kind, actor, f, reduced);
       this.updateGaze(actor, food, dt);
       if (eaten) {
         food = food.filter((p) => p.id !== eaten);
@@ -1122,43 +1203,10 @@ export class Renderer {
     const paintDrop = (d: ShellDrop) => this.drawDropItem(d, tank, now, timeSec, px, grid, reduced);
     // Drops sit in the same painter's order as decor: back / mid drops with the pieces behind the fish, front drops with those in front.
     const [dropsBehind, dropsFront] = this.dropsByLayer(tank);
-    this.dropDrawn.clear();
-    drawMerged(order.back, dropsBehind, paintDecor, paintDrop);
-    drawWaterTint(ctx, style.water, view);
-    this.particles.drawSandPuffs(ctx, pal.sandLight);
-    this.fx.drawSpecks(fx, 1);
-    for (const p of tank.pellets) drawPellet(ctx, p.x, Math.min(pelletY(p, game), SAND_Y - 1), p.premium, px, timeSec);
-    this.particles.drawBubbles(ctx, px);
-
-    // Soft shadows on the sand under each fish: darker and tighter the closer the fish swims to the floor.
-    for (const f of game.fish) {
-      if (f.tankId !== tank.id) continue;
-      const actor = this.actors.get(f.id);
-      if (!actor) continue;
-      const height = Math.max(0, SAND_Y - actor.y);
-      const closeness = 1 - Math.min(1, height / 420);
-      if (actor.jelly) {
-        // A jelly's shadow: very faint, large and blurry (it floats high and lets light through).
-        const size = jellySize(f.stage).w * JELLY_SHADOW_SCALE * (1 + (1 - closeness) * 0.4);
-        dropShadow(ctx, actor.x, SAND_Y + 8, size, size * 0.2, JELLY_SHADOW_ALPHA * (0.6 + 0.4 * closeness));
-        continue;
-      }
-      const size = mouthOffset(f.speciesId, f.stage) * (1.1 + (1 - closeness) * 0.6);
-      dropShadow(ctx, actor.x, SAND_Y + 8, size, size * 0.22, 0.12 + 0.28 * closeness);
-    }
-    // Pairing mode: the tank dims a little; compatible partners glow and bob, everyone else fades.
+    // Fish painter (shared by the ordinary fish layer and the sand dwellers, which are painted in depth order with the decor).
     const pairing = this.breeding.pairing;
-    if (pairing) {
-      ctx.save();
-      ctx.fillStyle = 'rgba(12, 22, 60, 0.3)';
-      ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0);
-      ctx.restore();
-    }
     const selectedId = this.deps.getSelectedFishId();
-    for (const f of game.fish) {
-      if (f.tankId !== tank.id) continue;
-      const actor = this.actors.get(f.id);
-      if (!actor) continue;
+    const paintFish = (f: Fish, actor: FishActor): void => {
       const glowing = pairing?.compatibleIds.has(f.id) ?? false;
       const chooser = pairing?.fishId === f.id;
       const bob = glowing && !reduced ? Math.sin(timeSec * 4 + actor.phase) * 3 : 0;
@@ -1174,6 +1222,35 @@ export class Renderer {
         ctx.translate(actor.x, actor.y);
         ctx.rotate((1 - (1 - t) ** 3) * Math.PI * 2 * (actor.facing >= 0 ? -1 : 1));
         ctx.translate(-actor.x, -actor.y);
+      }
+      // Starter species: sand dwellers stand on their plane (perspective scale + haze, sinking clipped at the sand line);
+      // the hatchetfish hops, the crab waddles, the kuhli burrows.
+      let winking = false;
+      if (actor.crit) {
+        const traits = getSpecies(f.speciesId).traits;
+        const hh = fishHalfHeight(f.speciesId, f.stage);
+        const moving = Math.min(1, speedFraction(actor.speed, getSpecies(f.speciesId).speed) * 1.6);
+        const cp = critterPose(actor.crit, f.speciesId, now, actor.facing, timeSec, moving, reduced, f.stage === 'baby');
+        winking = cp.winking;
+        if (traits.includes('sandDweller')) {
+          const geo = depthGeometry(actor.crit.z);
+          const feetY = actor.y + hh * geo.scale * SAND_FOOT_EMBED;
+          if (cp.burrow > 0.01) {
+            ctx.beginPath();
+            ctx.rect(actor.x - 600, feetY - 2000, 1200, 2002);
+            ctx.clip();
+          }
+          ctx.globalAlpha *= 1 - geo.tint * 0.55;
+          ctx.translate(actor.x, feetY);
+          ctx.scale(geo.scale, geo.scale);
+          ctx.translate(-actor.x, -feetY);
+          ctx.translate(0, cp.burrow * hh * 1.2);
+        }
+        if (cp.dy !== 0 || cp.rot !== 0) {
+          ctx.translate(actor.x, actor.y + cp.dy);
+          ctx.rotate(cp.rot);
+          ctx.translate(-actor.x, -actor.y);
+        }
       }
       // Tricks, the greeting wiggle and petting flavor pose the fish around its center.
       const pose = this.bond.poseFor(f, actor, now, reduced);
@@ -1196,7 +1273,7 @@ export class Renderer {
         eat: eatSquash(now - actor.eatAt),
         bounce: pokeBounce(now - actor.pokeAt),
         gaze: { x: actor.gazeX, y: actor.gazeY },
-        blinking: now < actor.blinkUntil || this.bond.happyEyes(f.id),
+        blinking: now < actor.blinkUntil || winking || this.bond.happyEyes(f.id),
         sad: isSad(f) && !this.bond.happyEyes(f.id),
         gloom: this.bond.happyEyes(f.id) ? 0 : actor.gloom,
         inflate: Math.max(puffAmount(actor, now), this.bond.minInflate(f)),
@@ -1206,15 +1283,75 @@ export class Renderer {
         wobbleAmp: (reduced ? REDUCED_WAVE : 1) * (pose?.wave ?? 1),
         time: timeSec,
         jelly: this.jellyState(actor, now),
+        claws: f.speciesId === 'crab' ? this.crabClaws(f, actor, now, timeSec, reduced) : undefined,
       });
       ctx.restore();
+    };
+    // Sand dwellers stand on a depth plane: perspective scale and haze by depth, drawn between the decor pieces
+    // that are behind and in front of them (the same painter's order drops use).
+    const dwellers: { z: number; f: Fish; actor: FishActor }[] = [];
+    for (const f of game.fish) {
+      if (f.tankId !== tank.id || !getSpecies(f.speciesId).traits.includes('sandDweller')) continue;
+      const actor = this.actors.get(f.id);
+      if (actor) dwellers.push({ z: dwellerZ(actor), f, actor });
+    }
+    dwellers.sort((a, b) => a.z - b.z);
+    const dwellerItems = (front: boolean) => dwellers.filter((d) => d.z >= DECOR_Z.frontOfFish === front).map((d) => ({ z: d.z, paint: () => paintFish(d.f, d.actor) }));
+    this.dropDrawn.clear();
+    drawMerged(order.back, dropsBehind, paintDecor, paintDrop, dwellerItems(false));
+    drawWaterTint(ctx, style.water, view);
+    this.particles.drawSandPuffs(ctx, pal.sandLight);
+    this.fx.drawSpecks(fx, 1);
+    for (const p of tank.pellets) drawPellet(ctx, p.x, Math.min(pelletY(p, game), SAND_Y - 1), p.premium, px, timeSec);
+    this.particles.drawBubbles(ctx, px);
+
+    // Soft shadows on the sand under each fish: darker and tighter the closer the fish swims to the floor.
+    for (const f of game.fish) {
+      if (f.tankId !== tank.id) continue;
+      const actor = this.actors.get(f.id);
+      if (!actor) continue;
+      if (actor.crit && getSpecies(f.speciesId).traits.includes('sandDweller')) {
+        // A contact shadow right under the feet, sized by the plane's perspective (gone while burrowed).
+        const hh = fishHalfHeight(f.speciesId, f.stage);
+        const geo = depthGeometry(actor.crit.z);
+        const size = Math.max(10, mouthOffset(f.speciesId, f.stage) * 1.15) * geo.scale;
+        dropShadow(ctx, actor.x, actor.y + hh * geo.scale * SAND_FOOT_EMBED + 1, size, size * 0.24, 0.34 * (1 - actor.crit.burrow) * (1 - geo.tint * 0.5));
+        continue;
+      }
+      const height = Math.max(0, SAND_Y - actor.y);
+      const closeness = 1 - Math.min(1, height / 420);
+      if (actor.jelly) {
+        // A jelly's shadow: very faint, large and blurry (it floats high and lets light through).
+        const size = jellySize(f.stage).w * JELLY_SHADOW_SCALE * (1 + (1 - closeness) * 0.4);
+        dropShadow(ctx, actor.x, SAND_Y + 8, size, size * 0.2, JELLY_SHADOW_ALPHA * (0.6 + 0.4 * closeness));
+        continue;
+      }
+      const size = mouthOffset(f.speciesId, f.stage) * (1.1 + (1 - closeness) * 0.6);
+      dropShadow(ctx, actor.x, SAND_Y + 8, size, size * 0.22, 0.12 + 0.28 * closeness);
+    }
+    // Pairing mode: the tank dims a little; compatible partners glow and bob, everyone else fades.
+    if (pairing) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(12, 22, 60, 0.3)';
+      ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0);
+      ctx.restore();
+    }
+    for (const f of game.fish) {
+      if (f.tankId !== tank.id) continue;
+      const actor = this.actors.get(f.id);
+      if (actor && !getSpecies(f.speciesId).traits.includes('sandDweller')) paintFish(f, actor);
+    }
+    // Surface dwellers leave a faint shimmer on the water's surface right above them.
+    for (const f of game.fish) {
+      const actor = this.actors.get(f.id);
+      if (actor && f.tankId === tank.id && f.speciesId === 'hatchetfish') this.drawSurfaceShimmer(actor, f, timeSec, reduced);
     }
     for (const f of game.fish) {
       const actor = this.actors.get(f.id);
       if (actor?.indicator && f.tankId === tank.id) this.drawIndicator(actor, f, now, px);
     }
     this.drawBreedingMarkers(game.fish.filter((f) => f.tankId === tank.id), timeSec, reduced);
-    drawMerged(order.front, dropsFront, paintDecor, paintDrop);
+    drawMerged(order.front, dropsFront, paintDecor, paintDrop, dwellerItems(true));
     if (this.snapGuide !== null) this.drawSnapGuide(this.snapGuide, view, px);
     if (!picture) drawFrontPlants(ctx, pal, sceneTime, px, view);
     // Eggs sit in front of everything on the sand, so they're never hidden behind decor or fish.
@@ -1509,13 +1646,28 @@ export class Renderer {
   }
 }
 
-/** Paints decor and drops together, both already sorted far → near; a drop goes in front of decor at its own depth. */
-function drawMerged(decor: PlacedDecor[], drops: ShellDrop[], paintDecor: (d: PlacedDecor) => void, paintDrop: (d: ShellDrop) => void): void {
+/** Painter's depth of a sand dweller (from where its feet are), just in front of a drop or decor piece at the same depth. */
+function dwellerZ(actor: FishActor): number {
+  return (actor.crit?.z ?? DECOR_Z.default) + 2e-3;
+}
+
+/**
+ * Paints decor, drops and sand dwellers together in painter's order. Decor is sorted far → near and the other items
+ * (drops, dwellers) go by their own depth; an item goes in front of decor at its own depth.
+ */
+function drawMerged(
+  decor: PlacedDecor[],
+  drops: ShellDrop[],
+  paintDecor: (d: PlacedDecor) => void,
+  paintDrop: (d: ShellDrop) => void,
+  extras: { z: number; paint: () => void }[] = [],
+): void {
   const key = (d: PlacedDecor) => (DECOR[d.decorId].placement === 'sand' ? d.z ?? DECOR_Z.default : -1);
+  const items = [...drops.map((d) => ({ z: dropDrawZ(d.plane), paint: () => paintDrop(d) })), ...extras].sort((a, b) => a.z - b.z);
   let i = 0;
   let j = 0;
-  while (i < decor.length || j < drops.length) {
-    if (j >= drops.length || (i < decor.length && key(decor[i]!) <= dropDrawZ(drops[j]!.plane))) paintDecor(decor[i++]!);
-    else paintDrop(drops[j++]!);
+  while (i < decor.length || j < items.length) {
+    if (j >= items.length || (i < decor.length && key(decor[i]!) <= items[j]!.z)) paintDecor(decor[i++]!);
+    else items[j++]!.paint();
   }
 }

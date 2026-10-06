@@ -26,7 +26,7 @@ import {
 } from './constants';
 import { isCourting } from './breeding';
 import { grantXp } from './levels';
-import { createFish, createTank, tankOccupancy } from './sim';
+import { createFish, createTank, tankHasRoom } from './sim';
 import { SPECIES } from './species';
 import type { DecorId, Fish, GameState, PlacedDecor, Price, Rng, SpeciesId, StyleCategory, Tank, ThemeId } from './types';
 
@@ -87,7 +87,7 @@ export function checkBuyFish(state: GameState, speciesId: SpeciesId): PurchaseEr
   if (!tank) return 'notFound';
   if (state.level < species.unlockLevel) return 'locked';
   if (species.themeOnly && tank.theme !== species.themeOnly) return 'theme';
-  if (tankOccupancy(state, tank.id) >= tank.capacity) return 'full';
+  if (!tankHasRoom(state, tank, speciesId)) return 'full';
   if (!canAfford(state, species.cost)) return 'cost';
   return null;
 }
@@ -499,7 +499,7 @@ export function checkMoveFish(state: GameState, fishId: string, tankId: string):
   if (isCourting(state, fishId)) return 'courting';
   const need = SPECIES[fish.speciesId].themeOnly;
   if (need && tank.theme !== need) return 'theme';
-  if (tankOccupancy(state, tankId) >= tank.capacity) return 'full';
+  if (!tankHasRoom(state, tank, fish.speciesId)) return 'full';
   return null;
 }
 
@@ -520,7 +520,7 @@ export function checkMoveFromNursery(state: GameState, babyId: string, tankId: s
   if (!baby || !tank) return 'notFound';
   const need = SPECIES[baby.speciesId].themeOnly;
   if (need && tank.theme !== need) return 'theme';
-  if (tankOccupancy(state, tankId) >= tank.capacity) return 'full';
+  if (!tankHasRoom(state, tank, baby.speciesId)) return 'full';
   return null;
 }
 
@@ -597,7 +597,7 @@ export function collectDrop(state: GameState, dropId: string): GameState | null 
 export function restoreSoldFish(state: GameState, fish: Fish, soldFor: number): GameState | null {
   const tank = state.tanks.find((t) => t.id === fish.tankId);
   if (!tank || state.fish.some((f) => f.id === fish.id) || state.shells < soldFor) return null;
-  if (tankOccupancy(state, tank.id) >= tank.capacity) return null;
+  if (!tankHasRoom(state, tank, fish.speciesId)) return null;
   return { ...state, shells: state.shells - soldFor, fish: [...state.fish, fish] };
 }
 

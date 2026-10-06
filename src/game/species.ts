@@ -254,13 +254,133 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
       v('ogon', 'Ogon', '#ffc21a', '#fff0a0', '#ffd84a', '#e8900a', '#b0800a'),
     ],
   },
+  cory: {
+    id: 'cory',
+    special: 'Gobbles pellets that land on the sand before they dissolve',
+    name: 'Cory Catfish',
+    unlockLevel: 1,
+    cost: { currency: 'shells', amount: 20 },
+    growMinutes: 25,
+    hungerRate: 1.6,
+    sellPrice: 40,
+    dropMinutes: 9,
+    dropValue: 3,
+    speed: 35,
+    themeOnly: null,
+    traits: ['sandDweller', 'smiles'],
+    motion: { waveAmp: 0.5, waveSpeed: 1.4, gait: 'swim' },
+    eye: { adult: { x: 0.86, y: 0.42, size: 0.15 }, baby: { x: 0.84, y: 0.46, size: 0.2 } },
+    variants: [
+      v('cream', 'Cream', '#f4e2bc', '#fff8e8', '#e8cfa0', '#6a4020', '#8a6a3a'),
+
+      { ...v('rose', 'Rose', '#f4b8c4', '#fff0f4', '#e898aa', '#7a2a44', '#a8506a'), hue: 330 },
+      { ...v('mint', 'Mint', '#b8ecd0', '#f0fff8', '#8ad4b0', '#2a6a4a', '#4a9a78'), hue: 150 },
+    ],
+  },
+  cherry_shrimp: {
+    id: 'cherry_shrimp',
+    special: 'Nibbles algae: +0.1 cleanliness per minute (counts as half a tank slot)',
+    name: 'Cherry Shrimp',
+    unlockLevel: 1,
+    cost: { currency: 'shells', amount: 12 },
+    growMinutes: 15,
+    hungerRate: 1.0,
+    sellPrice: 20,
+    dropMinutes: 10,
+    dropValue: 2,
+    speed: 28,
+    themeOnly: null,
+    traits: ['sandDweller', 'halfSlot', 'climbs'],
+    motion: { waveAmp: 0.4, waveSpeed: 1.2, gait: 'walk' },
+    eye: { adult: { x: 0.82, y: 0.4, size: 0.14 }, baby: { x: 0.8, y: 0.44, size: 0.2 } },
+    variants: [
+      v('cherry', 'Cherry', '#ff3a4a', '#ffd0d4', '#ff7a84', '#a81a2a', '#a01a2c'),
+
+      { ...v('sunny', 'Sunny', '#ffb02e', '#fff0c4', '#ffd070', '#c46a0a', '#b0700a'), hue: 40 },
+      { ...v('blue', 'Blue', '#4a9cff', '#d8ecff', '#8ac0ff', '#1a4ab8', '#1d4f9e'), hue: 225 },
+    ],
+  },
+  kuhli_loach: {
+    id: 'kuhli_loach',
+    special: 'Burrows into the sand and wiggles back out',
+    name: 'Kuhli Loach',
+    unlockLevel: 2,
+    cost: { currency: 'shells', amount: 25 },
+    growMinutes: 30,
+    hungerRate: 1.5,
+    sellPrice: 50,
+    dropMinutes: 9,
+    dropValue: 3,
+    speed: 30,
+    themeOnly: null,
+    traits: ['sandDweller', 'burrows'],
+    motion: { waveAmp: 1.6, waveSpeed: 0.9, gait: 'swim', fullBody: true },
+    eye: { adult: { x: 0.9, y: 0.45, size: 0.12 }, baby: { x: 0.86, y: 0.48, size: 0.17 } },
+    variants: [
+      v('salmon', 'Salmon', '#ff9a5c', '#ffe0c4', '#ffb87a', '#4a2a14', '#a8481c'),
+
+      { ...v('gold', 'Gold', '#ffd25a', '#fff4c4', '#ffe08a', '#6a4a14', '#b08a1a'), hue: 25 },
+      { ...v('rose', 'Rose', '#ff8aa8', '#ffe4ec', '#ffb0c4', '#5a1a30', '#b0405a'), hue: 320 },
+    ],
+  },
+  hatchetfish: {
+    id: 'hatchetfish',
+    special: 'Skims the surface and hops out of the water now and then',
+    name: 'Hatchetfish',
+    unlockLevel: 3,
+    cost: { currency: 'shells', amount: 30 },
+    growMinutes: 30,
+    hungerRate: 1.7,
+    sellPrice: 55,
+    dropMinutes: 9,
+    dropValue: 4,
+    speed: 70,
+    themeOnly: null,
+    traits: ['surface', 'darts'],
+    motion: { waveAmp: 0.5, waveSpeed: 2.0, gait: 'swim' },
+    eye: { adult: { x: 0.85, y: 0.36, size: 0.18 }, baby: { x: 0.83, y: 0.42, size: 0.22 } },
+    variants: [
+      v('silver', 'Silver', '#b8d8ff', '#f0f8ff', '#8ab8f0', '#3a6ab0', '#4a7ab8'),
+
+      { ...v('violet', 'Violet', '#c8b0ff', '#f4eeff', '#a888f0', '#5a3ab0', '#7a5ac0'), hue: 50 },
+      { ...v('teal', 'Teal', '#8aece0', '#e8fffb', '#5ad0c4', '#1a7a70', '#2a9a90'), hue: 320 },
+    ],
+  },
+  crab: {
+    id: 'crab',
+    special: 'Digs up 1–2 bonus shells every ~15 minutes',
+    name: 'Crab',
+    unlockLevel: 2,
+    cost: { currency: 'shells', amount: 35 },
+    growMinutes: 40,
+    hungerRate: 1.3,
+    sellPrice: 70,
+    dropMinutes: 10,
+    dropValue: 4,
+    speed: 24,
+    themeOnly: null,
+    traits: ['sandDweller', 'sideways', 'climbs'],
+    motion: { waveAmp: 0.05, waveSpeed: 1.0, gait: 'walk' },
+    eye: { adult: { x: 0.39, y: 0.26, size: 0.17, twinX: 0.61 }, baby: { x: 0.37, y: 0.27, size: 0.24, twinX: 0.64 } },
+    variants: [
+      v('red', 'Red', '#ff5a3a', '#ffd4c4', '#ff8a6a', '#a8200a', '#a8301a'),
+
+      { ...v('orange', 'Orange', '#ff9a3a', '#ffe0b8', '#ffba6a', '#b05a0a', '#b0600a'), hue: 35 },
+      { ...v('violet', 'Violet', '#b07aff', '#efe2ff', '#c8a4ff', '#5a2ab0', '#6a36b8'), hue: 270 },
+    ],
+  },
 };
 
 /** Species in table order (by shop listing). */
-export const SPECIES_LIST: SpeciesDef[] = Object.values(SPECIES);
+export const SPECIES_LIST: SpeciesDef[] = Object.values(SPECIES).sort((a, b) => a.unlockLevel - b.unlockLevel);
 
 export function getSpecies(id: SpeciesId): SpeciesDef {
   return SPECIES[id];
+}
+
+/** How many tank slots one of this species takes (cherry shrimp: half a slot). */
+export function slotWeight(id: SpeciesId): number {
+  return SPECIES[id].traits.includes('halfSlot') ? 0.5 : 1;
 }
 
 export function getVariant(speciesId: SpeciesId, variantKey: string): FishVariant {

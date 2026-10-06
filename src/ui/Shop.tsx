@@ -23,7 +23,7 @@ import {
   setProgress,
 } from "../game/decor";
 import * as economy from "../game/economy";
-import { tankOccupancy } from "../game/sim";
+import { displayOccupancy, tankOccupancy } from "../game/sim";
 import { SPECIES_LIST } from "../game/species";
 import type {
   CollectionDef,
@@ -252,7 +252,7 @@ function FishTab({ game }: { game: GameState }) {
     <>
       <p className="lead">
         Buying for <strong>{tank.name}</strong> · 🐟{" "}
-        {tankOccupancy(game, tank.id)}/{tank.capacity}
+        {displayOccupancy(tankOccupancy(game, tank.id))}/{tank.capacity}
       </p>
       <div className="shop-grid">
         {SPECIES_LIST.map((s) => {
@@ -277,7 +277,7 @@ function FishTab({ game }: { game: GameState }) {
               }
               note={
                 <RichText
-                  text={`Grows in ${formatMinutes(s.growMinutes)} · drops ${s.dropValue} 🐚`}
+                  text={`Grows in ${formatMinutes(s.growMinutes)} · drops ${s.dropValue} 🐚${s.special ? ` · Special: ${s.special}` : ""}`}
                 />
               }
               details={{
@@ -285,6 +285,7 @@ function FishTab({ game }: { game: GameState }) {
                   ["Grows up in", formatMinutes(s.growMinutes)],
                   ["Drops", <RichText key="d" text={`${s.dropValue} 🐚 every ${formatMinutes(s.dropMinutes)}`} />],
                   ["Sells for", <RichText key="s" text={`${s.sellPrice} 🐚 as an adult`} />],
+                  ...(s.special ? ([["Special", s.special]] as [string, ReactNode][]) : []),
                   ["Unlocks at", `Lv ${s.unlockLevel}`],
                   ...(theme ? ([["Lives in", `${theme} tanks only`]] as [string, ReactNode][]) : []),
                 ],
@@ -692,7 +693,7 @@ function TanksTab({ game }: { game: GameState }) {
           unlockLevel={UNLOCK_LEVEL.capacityUpgrade}
           error={economy.checkCapacityUpgrade(game)}
           game={game}
-          note={`${tank.name}: 🐟 ${tankOccupancy(game, tank.id)}/${tank.capacity} · ${economy.capacityUpgradesBought(tank)}/${CAPACITY_UPGRADE.maxPurchases} upgrades`}
+          note={`${tank.name}: 🐟 ${displayOccupancy(tankOccupancy(game, tank.id))}/${tank.capacity} · ${economy.capacityUpgradesBought(tank)}/${CAPACITY_UPGRADE.maxPurchases} upgrades`}
           onBuy={store.buyCapacityUpgrade}
         />
         <ShopItem

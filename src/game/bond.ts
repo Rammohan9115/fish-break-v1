@@ -34,6 +34,11 @@ export const SIGNATURE_TRICKS: Record<SpeciesId, { label: string; icon: string }
   axolotl: { label: 'Backflip', icon: '🤸' },
   koi: { label: 'Leap', icon: '🌊' },
   jellyfish: { label: 'Rainbow Glow', icon: '✨' },
+  cory: { label: 'Snuffle Dance', icon: '💞' },
+  cherry_shrimp: { label: 'Backflip', icon: '🤸' },
+  kuhli_loach: { label: 'Loop-de-loop', icon: '➰' },
+  hatchetfish: { label: 'Rainbow Splash', icon: '🌈' },
+  crab: { label: 'Claw Clap', icon: '👏' },
 };
 
 /** Display label + icon for a trick on this species. */

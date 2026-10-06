@@ -293,7 +293,7 @@ export class BondFx {
   poseFor(fish: Fish, actor: FishActor, now: number, reduced: boolean): TrickPose | null {
     const trick = this.tricks.get(fish.id);
     if (trick) {
-      const leap = trick.visual === 'leap' ? Math.max(0, actor.y - LEAP_TOP_Y) : 0;
+      const leap = trick.visual === 'leap' ? Math.max(0, actor.y - LEAP_TOP_Y) : trick.visual === 'splashJump' ? Math.max(40, actor.y - 10) : 0;
       return trickPose(trick.visual, (now - trick.start) / TRICK_DURATION_MS, actor.facing, reduced, leap, this.pose);
     }
     const greet = this.greeting.get(fish.id);
@@ -315,6 +315,23 @@ export class BondFx {
       if (species.traits.includes('walksOnSand') && !reduced) {
         const roll = Math.min(1, (now - pet.startedAt) / ROLL_MS);
         p.rot = roll * Math.PI * (actor.facing >= 0 ? -1 : 1);
+      } else if (species.id === 'kuhli_loach' && !reduced) {
+        // Curls into a happy spiral (about one and a half turns), wiggling all the way.
+        const roll = Math.min(1, (now - pet.startedAt) / ROLL_MS);
+        p.rot = roll * Math.PI * 3 * (actor.facing >= 0 ? -1 : 1);
+        p.wave = 2.4;
+      } else if (species.id === 'hatchetfish' && !reduced) {
+        // A little shimmer: quick shivering scale.
+        p.scale = 1 + 0.06 * Math.sin(now / 45);
+        p.rot = Math.sin(now / 70) * 0.05;
+      } else if (species.id === 'cherry_shrimp' && !reduced) {
+        // Antennae wave: a quick little sway of the whole front.
+        p.rot = Math.sin(now / 110) * 0.14;
+      } else if (species.id === 'cory' && !reduced) {
+        // Eyes closed (everyone's are) and whiskers wiggling: a tiny bob and shiver.
+        p.dy = Math.abs(Math.sin(now / 130)) * -2;
+        p.rot = Math.sin(now / 60) * 0.035;
+        p.wave = 1.8;
       } else if (!reduced) {
         p.rot = Math.sin(now / 90) * 0.12 * pet.wiggle;
       }
@@ -332,6 +349,12 @@ export class BondFx {
   /** Petted puffers puff up a little. */
   minInflate(fish: Fish): number {
     return this.pet?.fishId === fish.id && getSpecies(fish.speciesId).traits.includes('inflates') ? 0.45 : 0;
+  }
+
+  /** Crab claws: waving while petted or during a claw-raising trick, clapping during the signature. */
+  clawMood(fishId: string): { waving: boolean; clapping: boolean } {
+    const visual = this.tricks.get(fishId)?.visual;
+    return { waving: this.pet?.fishId === fishId || visual === 'spin' || visual === 'hoop', clapping: visual === 'clawClap' };
   }
 
   /** The jelly's signature: a rainbow shimmer (drawn as shiny). */
@@ -446,6 +469,28 @@ export class BondFx {
           t.fired = 1;
           for (let i = 0; i < 6; i++) this.particles.spawnBubble(actor.x + (Math.random() - 0.5) * 30, actor.y + (Math.random() - 0.5) * 20, 2 + Math.random() * 2);
         }
+        break;
+      case 'snuffleDance':
+        // A heart-shaped puff of sand: sand dust with hearts rising out of it.
+        if (t.fired === 0 && p > 0.45) {
+          t.fired = 1;
+          const feet = actor.y + fishHalfHeight(fish.speciesId, fish.stage);
+          this.particles.spawnSandPuff(actor.x, feet, 40, reduced ? 3 : 10);
+          this.particles.spawnHeartBurst(actor.x, feet - 8, reduced ? 2 : 6, 38);
+        }
+        if (!reduced && Math.random() < 0.15) this.particles.spawnSandPuff(actor.x, actor.y + fishHalfHeight(fish.speciesId, fish.stage), 24, 1);
+        break;
+      case 'splashJump':
+        // A big jump out of the water: a rainbow splash going out and coming back in.
+        if ((t.fired === 0 && p > 0.3) || (t.fired === 1 && p > 0.75)) {
+          t.fired += 1;
+          this.particles.spawnChips(actor.x, 4, '#bfe9ff', reduced ? 4 : 10);
+          for (let i = 0; i < (reduced ? 3 : 9); i++) this.particles.spawnSparkle(actor.x + (Math.random() - 0.5) * 44, 12 + Math.random() * 12, RAINBOW[i % RAINBOW.length]);
+          for (let i = 0; i < 4; i++) this.particles.spawnBubble(actor.x + (Math.random() - 0.5) * 30, 14, 2 + Math.random() * 2);
+        }
+        break;
+      case 'clawClap':
+        if (!reduced && Math.random() < 0.12) this.particles.spawnSparkle(actor.x + (Math.random() - 0.5) * 20, actor.y - fishHalfHeight(fish.speciesId, fish.stage) * 0.8);
         break;
       case 'rainbowGlow':
         if (!reduced && Math.random() < 0.4) this.particles.spawnSparkle(actor.x + (Math.random() - 0.5) * 50, actor.y + (Math.random() - 0.5) * 50, RAINBOW[Math.floor(Math.random() * RAINBOW.length)]);

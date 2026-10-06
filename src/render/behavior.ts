@@ -29,10 +29,15 @@ import {
   SAD_HAPPINESS,
   SAD_SINK,
   COURTSHIP_SPEED,
+  DEPTH_PLANES,
   GLOOM_SMOOTHING,
   SAD_SPEED_MULTIPLIER,
+  SAND_FOOT_EMBED,
   SAND_Y,
   SCHOOL_COHESION,
+  SHRIMP_FLICK_NEAR,
+  SHRIMP_FLICK_SPEED,
+  SURFACE_ZONE_FRACTION,
   SCHOOL_RADIUS,
   SCHOOL_SEPARATION,
   SCHOOL_SEPARATION_DIST,
@@ -79,9 +84,11 @@ import {
   PET_FOLLOW_GAP,
   PET_FOLLOW_SPEED,
 } from '../game/constants';
+import { depthGeometry } from '../game/decor';
 import { getSpecies } from '../game/species';
-import type { Fish, Rng, SpeciesId } from '../game/types';
-import { mouthOffset } from './drawFish';
+import type { DepthPlane, Fish, Rng, SpeciesId } from '../game/types';
+import { createCritter, isCritter, stepCritter, triggerFlick, type CritterState, type Perch } from './critterMotion';
+import { fishHalfHeight, mouthOffset } from './drawFish';
 import { speedFraction, turnFacing, turnSpeedFactor, waveFrequency } from './fishMotion';
 import { bellSplitY, inBox, isContracting, jellySize, tentacleBox, type Box } from './jellyMotion';
 
@@ -90,6 +97,8 @@ export type IndicatorKind = 'sad' | 'hungry';
 export interface FishActor {
   id: string;
   speciesId: SpeciesId;
+  /** Life stage (sizes the sand dwellers' standing height). */
+  stage: Fish['stage'];
   x: number;
   y: number;
   /** Direction of travel, radians. */
@@ -127,6 +136,8 @@ export interface FishActor {
   gloom: number;
   /** Jellyfish-only motion state (pulse propulsion instead of steering), else null. */
   jelly: JellyActor | null;
+  /** Starter-species state machine (zone, gait modes, hops, burrowing), else null. */
+  crit: CritterState | null;
 }
 
 /** A jelly moves by pulsing: velocity, pulse timing, tentacle shape, and the pellet it's eating. */
@@ -203,6 +214,10 @@ export interface BehaviorInput {
   pet?: PetInput;
   /** Swim toward this point instead of wandering (say hi, follow mode, the greeting). Food still wins. */
   seek?: { x: number; y: number };
+  /** Low decor pieces a crab or shrimp may climb onto. */
+  perches?: Perch[];
+  /** Positions of other (non-shrimp) fish in the tank, so a shrimp can flick away from one swimming close. */
+  nearby?: { x: number; y: number }[];
 }
 
 export interface PetInput {
@@ -245,8 +260,24 @@ export function setSwimExtent(x0: number, x1: number, y0: number): void {
   swimExtent = { minX: x0 + SWIM_SIDE_MARGIN, maxX: x1 - SWIM_SIDE_MARGIN, minY: Math.min(SWIM_TOP, y0 + SWIM_TOP) };
 }
 
-export function swimBounds(speciesId: SpeciesId): Bounds {
+/** Where a sand dweller's center sits when standing on a depth plane (its feet on that plane's sand line). */
+export function sandCenterY(plane: DepthPlane, speciesId: SpeciesId, stage: Fish['stage']): number {
+  const geo = depthGeometry(DEPTH_PLANES[plane].z);
+  return SAND_Y + geo.dy - fishHalfHeight(speciesId, stage) * geo.scale * SAND_FOOT_EMBED;
+}
+
+/** The water's top share where surface dwellers (hatchetfish) swim. */
+function surfaceZoneBottom(): number {
+  return swimExtent.minY + (SAND_Y - swimExtent.minY) * SURFACE_ZONE_FRACTION;
+}
+
+export function swimBounds(speciesId: SpeciesId, stage: Fish['stage'] = 'adult'): Bounds {
   const base = { minX: swimExtent.minX, maxX: swimExtent.maxX };
+  const traits = getSpecies(speciesId).traits;
+  if (traits.includes('surface')) return { ...base, minY: swimExtent.minY, maxY: surfaceZoneBottom() };
+  if (traits.includes('sandDweller')) {
+    return { ...base, minY: sandCenterY('back', speciesId, stage), maxY: sandCenterY('front', speciesId, stage) };
+  }
   if (isJelly(speciesId)) {
     // Upper part of the water column only: the tentacles never reach the sand.
     return { ...base, minY: swimExtent.minY + JELLY_TOP_MARGIN, maxY: SAND_Y * JELLY_MAX_Y_FRAC };
@@ -266,19 +297,30 @@ export function jellyFloorY(stage: Fish['stage']): number {
 }
 
 function pickWanderTarget(actor: FishActor, rng: Rng, now: number): void {
-  const b = swimBounds(actor.speciesId);
+  const b = swimBounds(actor.speciesId, actor.stage);
   actor.targetX = rand(rng, b.minX, b.maxX);
-  // Sad fish mope lower in the water.
-  actor.targetY = rand(rng, b.minY + (b.maxY - b.minY) * SAD_SINK * actor.gloom, b.maxY);
+  const perch = actor.crit?.perch;
+  if (perch) {
+    // Walking around on top of a decor piece.
+    actor.targetX = perch.x + (rng() * 2 - 1) * perch.halfW * 0.7;
+    actor.targetY = perch.cy;
+  } else if (actor.crit && getSpecies(actor.speciesId).traits.includes('sandDweller')) {
+    // Sand dwellers walk along the plane they picked (it changes now and then).
+    actor.targetY = sandCenterY(actor.crit.plane, actor.speciesId, actor.stage);
+  } else {
+    // Sad fish mope lower in the water.
+    actor.targetY = rand(rng, b.minY + (b.maxY - b.minY) * SAD_SINK * actor.gloom, b.maxY);
+  }
   actor.nextWanderAt = now + rand(rng, WANDER_MIN_MS, WANDER_MAX_MS);
 }
 
 export function createActor(fish: Fish, rng: Rng, now: number, at?: { x: number; y: number }): FishActor {
-  const b = swimBounds(fish.speciesId);
+  const b = swimBounds(fish.speciesId, fish.stage);
   const facing = rng() < 0.5 ? -1 : 1;
   const actor: FishActor = {
     id: fish.id,
     speciesId: fish.speciesId,
+    stage: fish.stage,
     x: at?.x ?? rand(rng, b.minX, b.maxX),
     y: at?.y ?? rand(rng, b.minY, b.maxY),
     heading: facing > 0 ? 0 : Math.PI,
@@ -305,6 +347,7 @@ export function createActor(fish: Fish, rng: Rng, now: number, at?: { x: number;
     inflateUntil: 0,
     gloom: isSad(fish) ? 1 : 0,
     jelly: null,
+    crit: isCritter(fish.speciesId) ? createCritter(fish.speciesId, now, rng) : null,
   };
   if (isJelly(fish.speciesId)) {
     actor.facing = 1;
@@ -454,6 +497,64 @@ export function jellyAvoidance(x: number, y: number, zones: JellyZone[] | undefi
   return { x: ax * JELLY_AVOID_WEIGHT, y: ay * JELLY_AVOID_WEIGHT };
 }
 
+/** How long a crab / shrimp stays up on a decor piece (ms), and how long before it climbs again. */
+const PERCH_STAY: Record<string, readonly [number, number]> = { crab: [8_000, 15_000], cherry_shrimp: [6_000, 12_000] };
+const PERCH_GAP = [15_000, 40_000] as const;
+const PERCH_RANGE = 260;
+
+/** Climbs onto a nearby low decor piece now and then, sits or walks on it a while, then climbs down. Sets `crit.perch`. */
+function updatePerch(actor: FishActor, crit: CritterState, input: BehaviorInput): void {
+  const { now, rng } = input;
+  const list = input.perches ?? [];
+  const had = crit.perch !== null && crit.perch !== undefined;
+  const stay = PERCH_STAY[actor.speciesId] ?? [8_000, 12_000];
+  if (crit.perchId) {
+    const p = list.find((x) => x.id === crit.perchId);
+    if (!p || now >= crit.perchUntil || input.reduced === true) {
+      crit.perchId = null;
+      crit.perch = null;
+      crit.perchArrived = false;
+      crit.nextPerchAt = now + rand(rng, PERCH_GAP[0], PERCH_GAP[1]);
+      actor.nextWanderAt = 0;
+      return;
+    }
+    crit.targetZ = p.z;
+    crit.perch = { x: p.x, halfW: p.halfW, cy: p.y - fishHalfHeight(actor.speciesId, actor.stage) * depthGeometry(p.z).scale * SAND_FOOT_EMBED };
+    if (!had) actor.nextWanderAt = 0;
+    if (!crit.perchArrived && Math.abs(actor.y - crit.perch.cy) < 4 && Math.abs(actor.x - p.x) <= p.halfW) {
+      crit.perchArrived = true;
+      crit.perchUntil = now + rand(rng, stay[0], stay[1]);
+    }
+    return;
+  }
+  crit.perch = null;
+  if (now < crit.nextPerchAt || input.reduced === true) return;
+  let best: Perch | null = null;
+  let bestD = PERCH_RANGE;
+  for (const p of list) {
+    const d = Math.abs(p.x - actor.x);
+    if (d < bestD) {
+      bestD = d;
+      best = p;
+    }
+  }
+  if (best) {
+    crit.perchId = best.id;
+    crit.perchUntil = now + 40_000; // gives up if it never gets there; the stay starts on arrival
+    crit.perchArrived = false;
+    crit.targetZ = best.z;
+  } else {
+    crit.nextPerchAt = now + 8_000;
+  }
+}
+
+/** Food a species can actually get to: sand dwellers only go for pellets near the floor, surface dwellers for those up top. */
+function reachable(traits: string[], food: FoodTarget[]): FoodTarget[] {
+  if (traits.includes('sandDweller')) return food.filter((f) => f.y > SAND_Y - 90);
+  if (traits.includes('surface')) return food.filter((f) => f.y < surfaceZoneBottom() + 50);
+  return food;
+}
+
 /**
  * Advances one actor by `dt` seconds. Mutates the actor (renderer-only state).
  * Returns the id of a pellet the fish's mouth reached (or a jelly's tentacles caught), or null.
@@ -466,10 +567,27 @@ export function updateActor(actor: FishActor, input: BehaviorInput): string | nu
   }
   const { fish, now, dt, rng } = input;
   const species = getSpecies(fish.speciesId);
-  const swim = swimBounds(fish.speciesId);
+  actor.stage = fish.stage;
+  const swim = swimBounds(fish.speciesId, fish.stage);
   actor.gloom += ((isSad(fish) ? 1 : 0) - actor.gloom) * Math.min(1, dt * GLOOM_SMOOTHING);
 
   blink(actor, now, rng);
+
+  // Starter species: zone gait modes (rest, snuffle, burrow, hop…). `locked` = busy, ignores food and wandering.
+  const crit = actor.crit;
+  const cstep = crit ? stepCritter(crit, fish.speciesId, now, dt, rng, input.reduced === true) : null;
+  const locked = crit !== null && (crit.mode === 'sink' || crit.mode === 'buried' || crit.mode === 'rise' || crit.mode === 'flick');
+  const sideways = species.traits.includes('sideways');
+  const grounded = species.traits.includes('sandDweller');
+  if (crit && species.traits.includes('climbs')) updatePerch(actor, crit, input);
+  if (crit && species.id === 'cherry_shrimp' && !locked && input.nearby) {
+    // A fish swimming close makes a shrimp flick away backward.
+    for (const o of input.nearby) {
+      if (Math.abs(o.x - actor.x) < SHRIMP_FLICK_NEAR && Math.abs(o.y - actor.y) < SHRIMP_FLICK_NEAR * 1.5 && input.reduced !== true) {
+        if (triggerFlick(crit, now, actor.facing)) break;
+      }
+    }
+  }
 
   // Darting species occasionally burst forward
   const darts = species.traits.includes('darts');
@@ -480,7 +598,7 @@ export function updateActor(actor: FishActor, input: BehaviorInput): string | nu
 
   // Target: the courtship loop, else nearest food if hungry enough, otherwise wander
   const courting = input.courtship;
-  const food = !courting && fish.hunger < FULL_HUNGER ? nearestFood(actor, input.food) : null;
+  const food = !courting && !locked && fish.hunger < FULL_HUNGER ? nearestFood(actor, reachable(species.traits, input.food)) : null;
   let tx: number;
   let ty: number;
   if (courting) {
@@ -504,7 +622,8 @@ export function updateActor(actor: FishActor, input: BehaviorInput): string | nu
   }
 
   // While chasing food, the fish may dip to the sand or the surface to reach it.
-  const bounds = food ? { ...swim, minY: Math.min(swim.minY, food.y), maxY: Math.max(swim.maxY, food.y) } : swim;
+  let bounds = food ? { ...swim, minY: Math.min(swim.minY, food.y), maxY: Math.max(swim.maxY, food.y) } : swim;
+  if (crit?.perch) bounds = { ...bounds, minY: Math.min(bounds.minY, crit.perch.cy - EDGE_AVOID_ZONE) };
 
   // Steering: seek + edge avoidance + schooling, then turn toward it at a limited rate.
   const dx = tx - actor.x;
@@ -512,7 +631,9 @@ export function updateActor(actor: FishActor, input: BehaviorInput): string | nu
   const dist = Math.hypot(dx, dy) || 1;
   let sx = dx / dist;
   let sy = dy / dist;
-  const avoid = edgeAvoidance(actor.x, actor.y, bounds);
+  // Thin zones (sand band, surface strip) are narrower than the avoidance margin: only the sides push back there.
+  const thin = crit !== null && (grounded || species.traits.includes('surface'));
+  const avoid = edgeAvoidance(actor.x, actor.y, thin ? { ...bounds, minY: bounds.minY - EDGE_AVOID_ZONE, maxY: bounds.maxY + EDGE_AVOID_ZONE } : bounds);
   sx += avoid.x * EDGE_AVOID_WEIGHT;
   sy += avoid.y * EDGE_AVOID_WEIGHT;
   if (!courting) {
@@ -529,14 +650,17 @@ export function updateActor(actor: FishActor, input: BehaviorInput): string | nu
   const desiredHeading = Math.atan2(sy, sx);
   const turnRate = TURN_RATE * (darts ? DART_TURN_MULTIPLIER : 1);
   const delta = wrapAngle(desiredHeading - actor.heading);
-  actor.heading = wrapAngle(actor.heading + clamp(delta, -turnRate * dt, turnRate * dt));
+  // A crab never turns around (front view): it just scuttles whichever way it needs to go.
+  actor.heading = sideways ? desiredHeading : wrapAngle(actor.heading + clamp(delta, -turnRate * dt, turnRate * dt));
 
   // Courting is a slow, dreamy glide once on the loop; catching up to it is a normal swim.
-  const maxSpeed = maxSpeedFor(fish, actor, now, food !== null) * (courting ? COURTSHIP_SPEED : 1);
+  const critMul = locked ? 0 : food ? 1 : (cstep?.speedMul ?? 1);
+  const maxSpeed = maxSpeedFor(fish, actor, now, food !== null) * (courting ? COURTSHIP_SPEED : 1) * critMul;
   // Courting fish ease onto the moving loop point instead of overshooting it.
   const arriveFactor = food ? 1 : Math.max(courting ? 0.15 : MIN_CRUISE_FRACTION, Math.min(1, dist / ARRIVE_SLOWDOWN_DIST));
   const targetSpeed = maxSpeed * arriveFactor;
-  const accel = maxSpeed * ACCEL_FRACTION * dt;
+  // Standing still (critMul 0) stops dead instead of coasting.
+  const accel = (critMul === 0 ? maxSpeedFor(fish, actor, now, false) : maxSpeed) * ACCEL_FRACTION * dt * (critMul === 0 ? 3 : 1);
   const prevSpeed = actor.speed;
   actor.speed = clamp(targetSpeed, actor.speed - accel, actor.speed + accel);
 
@@ -547,7 +671,11 @@ export function updateActor(actor: FishActor, input: BehaviorInput): string | nu
   // Face the direction of travel: a quick eased turn-around (scaleX 1 → 0 → -1), slowing down through it.
   const vx = Math.cos(actor.heading) * actor.speed;
   const side = actor.facing >= 0 ? 1 : -1;
-  if (actor.turnStart === null && Math.abs(vx) > TURN_MIN_VX && Math.sign(vx) !== side) {
+  if (sideways) {
+    actor.facing = 1;
+    actor.turnFrom = 1;
+    actor.turnStart = null;
+  } else if (actor.turnStart === null && Math.abs(vx) > TURN_MIN_VX && Math.sign(vx) !== side) {
     actor.turnStart = now;
     actor.turnFrom = side;
   }
@@ -564,11 +692,18 @@ export function updateActor(actor: FishActor, input: BehaviorInput): string | nu
     }
   }
 
-  actor.x = clamp(actor.x + Math.cos(actor.heading) * moveSpeed * dt, bounds.minX, bounds.maxX);
-  actor.y = clamp(actor.y + Math.sin(actor.heading) * moveSpeed * dt, bounds.minY, bounds.maxY);
+  if (crit?.mode === 'flick') {
+    // Backward tail-flick: a quick dart away from where the shrimp faces.
+    actor.speed = SHRIMP_FLICK_SPEED;
+    actor.x = clamp(actor.x + crit.flickDir * SHRIMP_FLICK_SPEED * dt, bounds.minX, bounds.maxX);
+  } else {
+    actor.x = clamp(actor.x + Math.cos(actor.heading) * moveSpeed * dt, bounds.minX, bounds.maxX);
+    actor.y = clamp(actor.y + Math.sin(actor.heading) * moveSpeed * dt, bounds.minY, bounds.maxY);
+  }
 
-  // Tilt toward the velocity, smoothed.
-  actor.tilt += (pitchOf(actor) - actor.tilt) * Math.min(1, dt * TILT_SMOOTHING);
+  // Tilt toward the velocity, smoothed. Sand dwellers stay level (cory dips its nose to snuffle).
+  const tiltTarget = grounded ? (cstep?.pitch ?? 0) : pitchOf(actor);
+  actor.tilt += (tiltTarget - actor.tilt) * Math.min(1, dt * TILT_SMOOTHING);
 
   // The body wave runs faster when swimming faster (per-species rhythm, quicker for babies).
   actor.phase += dt * waveFrequency(species.motion, speedFraction(actor.speed, species.speed), fish.stage === 'baby');
@@ -601,7 +736,7 @@ const PET_WAVE = 0.45;
 function updatePetted(actor: FishActor, input: BehaviorInput, pet: PetInput): void {
   const { fish, now, dt } = input;
   const species = getSpecies(fish.speciesId);
-  const bounds = swimBounds(fish.speciesId);
+  const bounds = swimBounds(fish.speciesId, fish.stage);
   actor.speed += (0 - actor.speed) * Math.min(1, dt * PET_SETTLE);
   actor.nextWanderAt = now + WANDER_MIN_MS;
   actor.indicator = null;
@@ -609,11 +744,16 @@ function updatePetted(actor: FishActor, input: BehaviorInput, pet: PetInput): vo
   // Face the pointer (a normal eased turn-around when it crosses to the other side).
   const dx = pet.x - actor.x;
   const side = actor.turnStart === null ? (actor.facing >= 0 ? 1 : -1) : actor.turnFrom;
-  if (actor.turnStart === null && Math.abs(dx) > PET_FOLLOW_GAP * 0.3 && Math.sign(dx) !== side) {
+  const sideways = species.traits.includes('sideways');
+  if (!sideways && actor.turnStart === null && Math.abs(dx) > PET_FOLLOW_GAP * 0.3 && Math.sign(dx) !== side) {
     actor.turnStart = now;
     actor.turnFrom = side;
   }
-  if (actor.turnStart !== null) {
+  if (sideways) {
+    actor.facing = 1;
+    actor.turnFrom = 1;
+    actor.turnStart = null;
+  } else if (actor.turnStart !== null) {
     const progress = (now - actor.turnStart) / TURN_MS;
     if (progress >= 1) {
       actor.turnFrom = -actor.turnFrom;

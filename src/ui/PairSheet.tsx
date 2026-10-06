@@ -2,7 +2,7 @@
 // chance and hatch time, and a gentle (non-blocking) warning when the tank is full.
 import { babyColorOdds, hatchMinutes, shinyChance } from '../game/breeding';
 import { BREEDING } from '../game/constants';
-import { tankOccupancy } from '../game/sim';
+import { tankHasRoom } from '../game/sim';
 import { getSpecies, getVariant } from '../game/species';
 import { currentRenderer } from '../render/renderer';
 import { useGameStore } from '../store/gameStore';
@@ -24,7 +24,7 @@ export function PairSheet() {
   if (!a || !b) return null;
   const species = getSpecies(a.speciesId);
   const tank = game.tanks.find((t) => t.id === a.tankId);
-  const full = tank ? tankOccupancy(game, tank.id) >= tank.capacity : false;
+  const full = tank ? !tankHasRoom(game, tank, a.speciesId) : false;
   const odds = babyColorOdds(a, b);
   const shiny = shinyChance(a, b);
   const mins = hatchMinutes(a.speciesId);

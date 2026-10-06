@@ -2,7 +2,7 @@
 import { CAPACITY_UPGRADE, COLLECTIONS, TANK_NAME_MAX_LENGTH, THEMES } from '../game/constants';
 import { activeSets, maxDecor } from '../game/decor';
 import { checkBuyTank, nextTankPurchase } from '../game/economy';
-import { tankOccupancy } from '../game/sim';
+import { displayOccupancy, tankOccupancy } from '../game/sim';
 import type { GameState, Tank } from '../game/types';
 import { useGameStore } from '../store/gameStore';
 import { formatCount } from './format';
@@ -23,7 +23,7 @@ function TankCard({ tank, game }: { tank: Tank; game: GameState }) {
       <div className="tankcard-info">
         <NameField key={tank.id} value={tank.name} maxLength={TANK_NAME_MAX_LENGTH} label="Tank name" size="md" onSave={(name) => renameTank(tank.id, name)} />
         <div className="meta">
-          {THEMES[tank.theme].name} · 🐟 {tankOccupancy(game, tank.id)}/{tank.capacity}
+          {THEMES[tank.theme].name} · 🐟 {displayOccupancy(tankOccupancy(game, tank.id))}/{tank.capacity}
           {eggs > 0 ? ` · 🥚 ${eggs}` : ''} · {tank.upgrades}/{CAPACITY_UPGRADE.maxPurchases} upgrades
         </div>
         <div className="meta">

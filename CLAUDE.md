@@ -183,9 +183,23 @@ The sim runs on a 1-second fixed tick. Rendering is separate at 60fps.
 | puffer | Puffy | 15 | 5 pearls | 180 | 0.8 | 900 | 20 | 35 | inflates when clicked |
 | axolotl | Axolotl | 18 | 10 pearls | 240 | 0.6 | 1500 | 25 | 50 | walks on the sand, smiles |
 | koi | Koi | 20 | 15 pearls | 300 | 0.6 | 2500 | 30 | 80 | pond theme only |
+| cherry_shrimp | Cherry Shrimp | 1 | 12 shells | 15 | 1.0 | 20 | 10 | 2 | half a capacity slot; +0.1 cleanliness/min (tank cap +0.4) |
+| cory | Cory Catfish | 1 | 20 shells | 25 | 1.6 | 40 | 9 | 3 | sand dweller; eats landed pellets (1 per 10s each) |
+| kuhli_loach | Kuhli Loach | 2 | 25 shells | 30 | 1.5 | 50 | 9 | 3 | sand dweller; S-wave, burrows for 20–60s |
+| crab | Crab | 2 | 35 shells | 40 | 1.3 | 70 | 10 | 4 | sand dweller, walks sideways, claws animate; digs 1–2 shells every ~15 min |
+| hatchetfish | Hatchetfish | 3 | 30 shells | 30 | 1.7 | 55 | 9 | 4 | stays in the top ~15% of the water; hops out every 1–3 min |
 
 Each species has 3–4 color variants (pastel palettes defined in `species.ts`) plus a rare shiny variant (sparkle overlay + golden outline).
 Selling a juvenile gives 40% of the adult price. Babies cannot be sold.
+
+**Starter species** (cory, cherry shrimp, kuhli loach, hatchetfish, crab): each has 3 hue-shifted variants (`variant.hue`, like the jelly) plus the usual shiny, and breeds with the normal rules.
+- **Zones:** the hatchetfish keeps to the top ~15 % of the water (`SURFACE_ZONE_FRACTION`); the others walk the sand on a depth plane (`critter.plane`, changes every 9–25s), with perspective scale/haze by depth and a contact shadow, painted in depth order with decor and drops (`dwellerZ` in the renderer's `drawMerged`). Sand dwellers only chase pellets near the floor, the hatchetfish those near the top.
+- **Gaits** live in `render/critterMotion.ts` (pure state machine per actor, `actor.crit`): cory burst / rest / snuffle (nose-down, sand puffs) + wink; kuhli full-body S-wave (`motion.fullBody`) and burrowing (sink → buried 20–60s → rise, clipped at the sand line); crab sideways-only (never flips), ±4° waddle rock + bob, look-around pauses; shrimp walk / pick / rest and a backward tail-flick (tap, or a fish swimming within `SHRIMP_FLICK_NEAR`); hatchetfish quick darts plus a hop with splash + ripples. Crabs and shrimp climb onto low rocks/driftwood (`perches`) and walk on top. Reduced motion: no hops, flicks, climbing or puffs, smaller waves.
+- **Capacity:** cherry shrimp take half a slot (`slotWeight`, `tankOccupancy`/`tankHasRoom`/`displayOccupancy` in `sim.ts`); the UI shows occupancy rounded up.
+- **Helpers:** cory eats a landed pellet after `CORY_EAT_DELAY_MS`, at most one per `CORY_EAT_COOLDOWN_MS` per cory (`Fish.lastPelletEatAt`); each grown shrimp adds `SHRIMP_CLEAN_PER_MIN` cleanliness/min, capped per tank (`shrimpCleaning`); an adult crab digs 1–2 value-1 shells every `CRAB_DIG_MINUTES` (`Fish.lastDigAt`), counting toward `MAX_DROPS_PER_TANK`. `SpeciesDef.special` is the one-liner shown as "Special:" in the Shop and Fish card.
+- **Crab claws** are separate sprite parts (`render/clawSplit.ts`: body with claw regions cut out + two claws rotated about wrist pivots). Idle snip, wave when happy/petted, clap (signature), snap to the beat in Dance Mode. Set regions/pivots with the dev panel's **Claws** tool (`ui/ClawEditor.tsx`), like the eye tool.
+- **Bond:** petted flavor — cory shivers, shrimp sways, kuhli curls into a spiral, hatchetfish shimmers, crab waves both claws. Signatures: cory Snuffle Dance (heart-shaped sand puff), shrimp Backflip, kuhli Loop-de-loop, hatchetfish Rainbow Splash, crab Claw Clap.
+- **Art:** `art-src/fish/{cory,shrimp,kuhli,hatchet,crab}.PNG` + `…baby.PNG` → `npm run build:assets`.
 
 **Jellyfish (Jelly)** has 5 variants (pink, sky blue, lavender, peach, mint), all made in code by hue-rotating one pink
 sprite (`variant.hue`). Its shiny is a slow rainbow shimmer instead of the gold outline. It breeds like every other species.
@@ -364,7 +378,8 @@ stress relief, so it must always feel soft and rewarding.
   - Best Friend: Follow mode (30s) and +10% shell drops (rounded up).
   - Soulmate: the species signature, a golden heart badge and a name glow.
   - Signatures: goldfish heart bubble · guppy rainbow twirl · danio/tetra zoom dash · betta fin fan · angelfish loop-de-loop ·
-    clownfish wiggle dance · puffer puff-spin-pop · axolotl backflip · koi leap and splash · jelly rainbow glow.
+    clownfish wiggle dance · puffer puff-spin-pop · axolotl backflip · koi leap and splash · jelly rainbow glow ·
+    cory snuffle dance · cherry shrimp backflip · kuhli loop-de-loop · hatchetfish rainbow splash · crab claw clap.
   - Play tricks from the FishCard Tricks row (locked tricks show the level needed) or by double-tapping the fish (it cycles through tricks).
     Each trick has a 5s cooldown and gives no rewards.
 - **Greeting:** after 30+ minutes away, Friendly+ fish swim to the front and wiggle.

@@ -14,7 +14,12 @@ export type SpeciesId =
   | 'clownfish'
   | 'puffer'
   | 'axolotl'
-  | 'koi';
+  | 'koi'
+  | 'cory'
+  | 'cherry_shrimp'
+  | 'kuhli_loach'
+  | 'hatchetfish'
+  | 'crab';
 
 export type DecorId =
   | 'plant_small'
@@ -80,7 +85,7 @@ export interface FishVariant {
   hue?: number;
 }
 
-export type SpeciesTrait = 'darts' | 'flowyTail' | 'chubby' | 'glowStripe' | 'schools' | 'bigFins' | 'tall' | 'inflates' | 'walksOnSand' | 'smiles' | 'jelly';
+export type SpeciesTrait = 'darts' | 'flowyTail' | 'chubby' | 'glowStripe' | 'schools' | 'bigFins' | 'tall' | 'inflates' | 'walksOnSand' | 'smiles' | 'jelly' | 'surface' | 'sandDweller' | 'halfSlot' | 'sideways' | 'burrows' | 'climbs';
 
 /** How a sprite fish moves its body (renderer only). */
 export type Gait = 'swim' | 'bob' | 'walk' | 'pulse';
@@ -96,6 +101,8 @@ export interface SpriteMotion {
    * 'pulse' = jellyfish bell pulse + tentacle sway (render/jellyMotion.ts, waveAmp/waveSpeed scale the sway).
    */
   gait: Gait;
+  /** The wave runs along the whole body (kuhli loach S-curve) instead of a rigid head and swinging tail. */
+  fullBody?: boolean;
 }
 
 /** An eye drawn over a sprite: center as a fraction of the trimmed sprite (x from the tail, y from the top), diameter as a fraction of its height. */
@@ -124,6 +131,8 @@ export interface SpeciesDef {
   /** If set, this species can only live in a tank with this theme. */
   themeOnly: ThemeId | null;
   traits: SpeciesTrait[];
+  /** One-line helper role shown as "Special:" in the Shop and Fish card. */
+  special?: string;
   variants: FishVariant[];
   motion: SpriteMotion;
   /** Eye placement on the adult sprite (also used for juveniles) and on the baby sprite. */
@@ -178,6 +187,10 @@ export interface Fish {
   lastPettedAt: number | null;
   /** Timestamps of hand-feeding bond grants in the last hour (pruned; enforces the per-hour cap). */
   feedBondLog: number[];
+  /** Cory: when it last cleaned up a landed pellet (ms). Optional: absent in older saves. */
+  lastPelletEatAt?: number;
+  /** Crab: when it last dug up shells (ms); starts when it becomes an adult. */
+  lastDigAt?: number;
 }
 
 export type BondLevel = 0 | 1 | 2 | 3 | 4 | 5;

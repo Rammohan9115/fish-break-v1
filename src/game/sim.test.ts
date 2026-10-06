@@ -27,6 +27,7 @@ import {
   growthMultiplier,
   happinessTarget,
   simulateOffline,
+  shrimpCleaning,
   stageForGrowth,
   stageProgress,
   thresholdsCrossed,
@@ -615,7 +616,7 @@ describe('simulateOffline', () => {
   });
 
   it('summarizes drops, hatches, and growth', () => {
-    const adult = makeFish({ stage: 'adult', growth: 1200, hunger: 100, lastDropAt: T0 });
+    const adult = makeFish({ stage: 'adult', growth: 1200, hunger: 100, lastDropAt: T0 + 24 * HOUR_MS });
     const baby = makeFish({ hunger: 100, happiness: 100, growth: 0 });
     const state = { ...makeState({ fish: [adult, baby] }), eggs: [egg({ speciesId: 'danio', variant: 'mint' })] };
     const { state: next, summary } = simulateOffline(state, T0 + 8 * HOUR_MS, rng());
@@ -729,5 +730,65 @@ describe('wipeAlgae', () => {
     expect(wipeAlgae(state, 'nope')).toBeNull();
     wipeAlgae(state, 'a1');
     expect(state).toEqual(snapshot);
+  });
+});
+
+describe('starter-species helper roles', () => {
+  const landed = (id: string, at: number) => pellet({ id, y: SAND_Y, vy: 0, landedAt: at });
+
+  it('a cory eats a landed pellet before it dissolves (no algae penalty), at most one per 10s', () => {
+    const start = makeState({ fish: [makeFish({ speciesId: 'cory', hunger: 50 })], tank: { cleanliness: 100, pellets: [landed('a', T0 - 5_000), landed('b', T0 - 5_000)] } });
+    const { state, events } = tick(start, SECOND_MS, rng());
+    expect(tankOf(state).pellets.map((p) => p.id)).toEqual(['b']);
+    expect(events.some((e) => e.type === 'pelletEaten')).toBe(true);
+    expect(state.fish[0]!.hunger).toBeGreaterThan(50);
+    // 10 seconds later it may eat the next one; sooner it may not.
+    const soon = tick(state, 5 * SECOND_MS, rng()).state;
+    expect(tankOf(soon).pellets).toHaveLength(1);
+    const later = tick(soon, 6 * SECOND_MS, rng()).state;
+    expect(tankOf(later).pellets).toHaveLength(0);
+    expect(tankOf(later).cleanliness).toBeGreaterThan(95);
+  });
+
+  it('cory ignores pellets that just landed', () => {
+    const { state } = tick(makeState({ fish: [makeFish({ speciesId: 'cory' })], tank: { pellets: [landed('a', T0)] } }), SECOND_MS, rng());
+    expect(tankOf(state).pellets).toHaveLength(1);
+  });
+
+  it('cherry shrimp add 0.1 cleanliness per minute each, capped at 0.4 per tank', () => {
+    const run = (n: number) => {
+      const fish = Array.from({ length: n }, () => makeFish({ speciesId: 'cherry_shrimp', stage: 'adult' }));
+      const base = makeState({ fish, tank: { cleanliness: 50 } });
+      const without = tick(makeState({ fish: [], tank: { cleanliness: 50 } }), MINUTE_MS, rng());
+      void base;
+      return { with: tankOf(tick(base, MINUTE_MS, rng()).state).cleanliness, none: tankOf(without.state).cleanliness };
+    };
+    expect(shrimpCleaning(makeState({ fish: [makeFish({ speciesId: 'cherry_shrimp', stage: 'adult' })] }), makeState().tanks[0]!)).toBeCloseTo(0.1);
+    const capped = Array.from({ length: 9 }, () => makeFish({ speciesId: 'cherry_shrimp', stage: 'adult' }));
+    expect(shrimpCleaning(makeState({ fish: capped }), makeState().tanks[0]!)).toBeCloseTo(0.4);
+    const r = run(2);
+    expect(r.with).toBeGreaterThan(r.none - 0.2);
+  });
+
+  it('baby shrimp do not clean yet', () => {
+    expect(shrimpCleaning(makeState({ fish: [makeFish({ speciesId: 'cherry_shrimp', stage: 'baby' })] }), makeState().tanks[0]!)).toBe(0);
+  });
+
+  it('an adult crab digs up 1–2 shells every ~15 minutes, within the drop cap', () => {
+    const crab = makeFish({ speciesId: 'crab', stage: 'adult', growth: 99999, hunger: 100, lastDropAt: T0 + 24 * HOUR_MS });
+    let state = makeState({ fish: [crab], tank: { cleanliness: 100 } });
+    state = { ...state, lastTickAt: T0 };
+    // Starts the dig timer, then 15 minutes later digs.
+    state = tick(state, SECOND_MS, rng()).state;
+    expect(tankOf(state).shells).toHaveLength(0);
+    const after = tick(state, 15 * MINUTE_MS, rng());
+    const digs = after.events.filter((e) => e.type === 'drop' && e.fishId === crab.id);
+    expect(digs.length).toBeGreaterThanOrEqual(1);
+    expect(tankOf(after.state).shells.length).toBeGreaterThanOrEqual(1);
+    for (const s of tankOf(after.state).shells.filter((d) => !d.pearl)) expect(s.value).toBe(1);
+    // A long absence never overflows the cap.
+    const long = tick(state, 10 * HOUR_MS, rng(), { offline: true }).state;
+    expect(tankOf(long).shells.length).toBeGreaterThan(0);
+    expect(tankOf(long).shells.length).toBeLessThanOrEqual(MAX_DROPS_PER_TANK);
   });
 });

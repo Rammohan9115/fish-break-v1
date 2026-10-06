@@ -17,6 +17,8 @@ import {
   SPRITE_WAVE_AMP,
   SPRITE_WAVE_FALLOFF,
   SPRITE_WAVE_HEAD,
+  SPRITE_WAVE_FULL_HEAD,
+  SPRITE_WAVE_FULL_PHASE,
   SPRITE_WAVE_STRIP_PHASE,
   TURN_SPEED_FACTOR,
   WALK_BOB_AMP,
@@ -72,8 +74,12 @@ export function waveEnvelope(u: number): number {
  * Vertical offset of strip `i` of `n` (strip 0 is the tail end of the art, n-1 the nose), in the
  * same units as `amp`. Each strip lags the one in front of it, so the wave travels head → tail.
  */
-export function stripOffset(i: number, n: number, phase: number, amp: number): number {
+export function stripOffset(i: number, n: number, phase: number, amp: number, fullBody = false): number {
   const fromNose = n - 1 - i;
+  if (fullBody) {
+    const u = (fromNose + 0.5) / n;
+    return amp * (SPRITE_WAVE_FULL_HEAD + (1 - SPRITE_WAVE_FULL_HEAD) * u) * Math.sin(phase - fromNose * SPRITE_WAVE_FULL_PHASE);
+  }
   return amp * waveEnvelope((fromNose + 0.5) / n) * Math.sin(phase - fromNose * SPRITE_WAVE_STRIP_PHASE);
 }
 

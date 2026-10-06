@@ -1137,7 +1137,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
         const { game } = get();
         const tank = game.tanks.find((t) => t.id === game.activeTankId);
         if (!tank) return;
-        const room = tank.capacity - tankOccupancy(game, tank.id);
+        const room = Math.floor(tank.capacity - tankOccupancy(game, tank.id));
         for (let i = 0; i < room; i++) get().dev.spawnFish({ speciesId: 'danio', stage: 'baby' });
       },
     },

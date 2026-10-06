@@ -4,6 +4,13 @@ import { decorHappiness, pickPlane } from './decor';
 import {
   ALGAE_FLOOR_CLEANLINESS,
   ALGAE_WIPE_CLEANLINESS,
+  CORY_EAT_COOLDOWN_MS,
+  CORY_EAT_DELAY_MS,
+  CORY_EAT_HUNGER,
+  CRAB_DIG_MINUTES,
+  CRAB_DIG_SHELLS,
+  SHRIMP_CLEAN_CAP_PER_MIN,
+  SHRIMP_CLEAN_PER_MIN,
   AUTO_COLLECT_FRACTION_OFFLINE,
   AUTO_COLLECT_FRACTION_ONLINE,
   NURSERY_MAX,
@@ -68,7 +75,7 @@ import {
 import { completeCourtships } from './breeding';
 import { applyXp, levelUpReward } from './levels';
 import { randomName } from './names';
-import { getSpecies, randomVariantKey } from './species';
+import { getSpecies, randomVariantKey, slotWeight } from './species';
 import type { AlgaeSpot, Egg, Fish, GameState, Rng, SpeciesId, Stage, Tank } from './types';
 
 // ---------------------------------------------------------------------------
@@ -86,6 +93,8 @@ export type SimEvent =
   | { type: 'questComplete'; shells: number; pearls: number }
   | { type: 'algaeSpawned'; tankId: string }
   | { type: 'pelletDissolved'; tankId: string }
+  /** A cory cleaned up a landed pellet before it could dissolve. */
+  | { type: 'pelletEaten'; tankId: string; fishId: string }
   | { type: 'levelUp'; level: number; shells: number };
 
 export interface TickResult {
@@ -126,7 +135,19 @@ export function stageForGrowth(speciesId: SpeciesId, growth: number): Exclude<St
 
 /** Hatched fish in a tank. Eggs (and Nursery babies) don't take up room. */
 export function tankOccupancy(state: GameState, tankId: string): number {
-  return state.fish.filter((f) => f.tankId === tankId).length;
+  let used = 0;
+  for (const f of state.fish) if (f.tankId === tankId) used += slotWeight(f.speciesId);
+  return used;
+}
+
+/** Whole slots to show for an occupancy (a half-slot shrimp rounds up, so the readout never shows decimals). */
+export function displayOccupancy(occupancy: number): number {
+  return Math.ceil(occupancy);
+}
+
+/** Whether one more fish of this species fits the tank (shrimp need only half a slot). */
+export function tankHasRoom(state: GameState, tank: Tank, speciesId: SpeciesId): boolean {
+  return tankOccupancy(state, tank.id) + slotWeight(speciesId) <= tank.capacity;
 }
 
 export function happinessTarget(hunger: number, tank: Tank, occupancy: number): number {
@@ -203,6 +224,7 @@ function updatePellets(ctx: TickCtx, tank: Tank): void {
   const dtSec = ctx.dtMs / SECOND_MS;
   const dissolveMs = PELLET_DISSOLVE_SECONDS * SECOND_MS;
   const remaining = [];
+  const corys = ctx.state.fish.filter((f) => f.tankId === tank.id && f.speciesId === 'cory');
   for (const pellet of tank.pellets) {
     if (pellet.landedAt === null) {
       pellet.y += pellet.vy * dtSec;
@@ -212,6 +234,16 @@ function updatePellets(ctx: TickCtx, tank: Tank): void {
         pellet.y = SAND_Y;
         pellet.vy = 0;
         pellet.landedAt = ctx.now - overshootSec * SECOND_MS;
+      }
+    }
+    // A cory cleans up a landed pellet before it dissolves (one pellet per cory per cooldown), so it never fouls the tank.
+    if (pellet.landedAt !== null && ctx.now - pellet.landedAt >= CORY_EAT_DELAY_MS) {
+      const cory = corys.find((c) => ctx.now - (c.lastPelletEatAt ?? -Infinity) >= CORY_EAT_COOLDOWN_MS);
+      if (cory) {
+        cory.lastPelletEatAt = ctx.now;
+        cory.hunger = clamp(cory.hunger + CORY_EAT_HUNGER, HUNGER_MIN, HUNGER_MAX);
+        ctx.events.push({ type: 'pelletEaten', tankId: tank.id, fishId: cory.id });
+        continue;
       }
     }
     if (pellet.landedAt !== null && ctx.now - pellet.landedAt >= dissolveMs) {
@@ -225,10 +257,16 @@ function updatePellets(ctx: TickCtx, tank: Tank): void {
   tank.pellets = remaining;
 }
 
+/** Cleanliness per minute the tank's cherry shrimp add (each grown shrimp a little, capped for the whole tank). */
+export function shrimpCleaning(state: GameState, tank: Tank): number {
+  const shrimp = state.fish.filter((f) => f.tankId === tank.id && f.speciesId === 'cherry_shrimp' && f.stage !== 'baby').length;
+  return Math.min(SHRIMP_CLEAN_CAP_PER_MIN, shrimp * SHRIMP_CLEAN_PER_MIN);
+}
+
 function updateCleanliness(ctx: TickCtx, tank: Tank, cleanlinessBefore: number): void {
   const fishCount = ctx.state.fish.filter((f) => f.tankId === tank.id).length;
   const decay = cleanlinessDecayPerMin(fishCount) * (ctx.dtMs / MINUTE_MS);
-  tank.cleanliness = clamp(tank.cleanliness - decay, CLEANLINESS_MIN, CLEANLINESS_MAX);
+  tank.cleanliness = clamp(tank.cleanliness - decay + shrimpCleaning(ctx.state, tank) * (ctx.dtMs / MINUTE_MS), CLEANLINESS_MIN, CLEANLINESS_MAX);
   const crossed = thresholdsCrossed(cleanlinessBefore, tank.cleanliness);
   for (let i = 0; i < crossed; i++) spawnAlgae(ctx, tank, randomAlgaeSize(ctx.rng));
   // A dirty tank always has algae to wipe (otherwise it could sit at 0% with nothing to clean):
@@ -244,10 +282,11 @@ export function algaeNeeded(cleanliness: number): number {
   return Math.min(MAX_ALGAE_SPOTS, Math.ceil((ALGAE_FLOOR_CLEANLINESS - cleanliness) / ALGAE_WIPE_CLEANLINESS));
 }
 
-function addDrop(ctx: TickCtx, tank: Tank, fish: Fish): void {
+/** `plainShell`: a fixed value-1 shell, never a pearl (a crab's dig). */
+function addDrop(ctx: TickCtx, tank: Tank, fish: Fish, plainShell = false): void {
   const species = getSpecies(fish.speciesId);
-  const pearl = ctx.rng() < DROP_PEARL_CHANCE;
-  const value = pearl ? PEARL_DROP_VALUE : bondDropValue(fish, species.dropValue);
+  const pearl = !plainShell && ctx.rng() < DROP_PEARL_CHANCE;
+  const value = plainShell ? 1 : pearl ? PEARL_DROP_VALUE : bondDropValue(fish, species.dropValue);
   const dropId = ctx.newId('drop');
   // Pick the roomiest of a few random spots so shells land apart from each other.
   let x = TANK_EDGE_MARGIN + ctx.rng() * (TANK_WIDTH - 2 * TANK_EDGE_MARGIN);
@@ -317,6 +356,16 @@ function updateFish(ctx: TickCtx, fish: Fish, tank: Tank, occupancy: number): vo
       fish.lastDropAt += dropMs;
       addDrop(ctx, tank, fish);
     }
+    // A crab also digs up a shell or two now and then (counts toward the same drop cap).
+    if (fish.speciesId === 'crab') {
+      const digMs = CRAB_DIG_MINUTES * MINUTE_MS;
+      fish.lastDigAt ??= ctx.now;
+      while (ctx.now - fish.lastDigAt >= digMs) {
+        fish.lastDigAt += digMs;
+        const shells = CRAB_DIG_SHELLS[0] + Math.floor(ctx.rng() * (CRAB_DIG_SHELLS[1] - CRAB_DIG_SHELLS[0] + 1));
+        for (let i = 0; i < shells; i++) addDrop(ctx, tank, fish, true);
+      }
+    }
   }
 }
 
@@ -331,7 +380,7 @@ function hatchEggs(ctx: TickCtx): void {
     const tank = state.tanks.find((t) => t.id === egg.tankId);
     // A full tank never blocks a hatch: the baby naps in the Nursery until there's room. Only when the
     // Nursery is full too does the egg wait (unhatched, never lost).
-    const roomy = tank !== undefined && tankOccupancy(state, tank.id) < tank.capacity;
+    const roomy = tank !== undefined && tankHasRoom(state, tank, egg.speciesId);
     if (!roomy && state.nursery.length >= NURSERY_MAX) {
       if (!egg.waiting) {
         egg.waiting = true;

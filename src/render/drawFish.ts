@@ -22,7 +22,8 @@ import {
 import { getSpecies, SHINY_OUTLINE, SHINY_SPARKLE } from '../game/species';
 import type { FishVariant, SpeciesId, SpriteEye, Stage } from '../game/types';
 import { bodyBob, pupilOffset, squashStretch, stripOffset, waveAmplitude } from './fishMotion';
-import { fishSprite, samplePixels, type Sprite } from './sprites';
+import { fishSprite, huedSprite, samplePixels, type Sprite } from './sprites';
+import { clawConfig, splitSprite, type ClawAngles, type SplitSprite } from './clawSplit';
 import { drawJelly, type JellyDrawState } from './drawJelly';
 import { COOL_SHADOW, glossHighlight, GLOSS_SATURATION, hashSeq, mix, RIM_LIGHT, rgba, saturate, WARM_LIGHT } from './paint';
 
@@ -60,6 +61,8 @@ export interface FishDrawParams {
   inflate: number;
   /** Night theme glow color, or null. */
   glow: string | null;
+  /** Crab claws: rotation of each claw about its wrist (radians), or absent for a still pose. */
+  claws?: ClawAngles;
   /** Tank units per CSS pixel (so outlines stay ~2px on screen). */
   px: number;
   /** Device pixels per CSS pixel (shadowBlur ignores transforms). */
@@ -89,7 +92,15 @@ export const FISH_ART: Record<SpeciesId, { mouthX: number; halfHeight: number; s
   puffer: { mouthX: 19, halfHeight: 19, spriteLen: 46 },
   axolotl: { mouthX: 31, halfHeight: 16, spriteLen: 72 },
   koi: { mouthX: 34, halfHeight: 14, spriteLen: 74 },
+  cory: { mouthX: 20, halfHeight: 14, spriteLen: 46 },
+  cherry_shrimp: { mouthX: 14, halfHeight: 10, spriteLen: 34 },
+  kuhli_loach: { mouthX: 28, halfHeight: 8, spriteLen: 64 },
+  hatchetfish: { mouthX: 17, halfHeight: 18, spriteLen: 42 },
+  crab: { mouthX: 0, halfHeight: 16, spriteLen: 40 },
 };
+
+/** Some babies are drawn even smaller than the stage scale (baby cherry shrimp are very tiny). */
+const BABY_SPECIES_SCALE: Partial<Record<SpeciesId, number>> = { cherry_shrimp: 0.7 };
 
 /** Phone portrait zooms the scene but leaves the fish small; this multiplies every fish (art, hit areas, mouths) alike. */
 let viewBoost = 1;
@@ -1125,7 +1136,7 @@ function drawKoi(c: Paint): void {
 }
 
 /** Code-drawn art per species (the jellyfish has its own module, drawJelly.ts). */
-const SPECIES_DRAW: Record<Exclude<SpeciesId, 'jellyfish'>, (c: Paint) => void> = {
+const SPECIES_DRAW: Partial<Record<SpeciesId, (c: Paint) => void>> = {
   danio: drawDanio,
   guppy: drawGuppy,
   goldfish: drawGoldfish,
@@ -1179,7 +1190,10 @@ export function drawFish(ctx: Ctx, x: number, y: number, p: FishDrawParams): voi
   }
   const sprite = fishSprite(p.speciesId, p.stage);
   if (sprite) {
-    drawSpriteFish(ctx, x, y, p, sprite);
+    const hued = huedSprite(sprite, p.variant.hue ?? 0);
+    const cfg = clawConfig(p.speciesId, spriteArtFor(p.stage));
+    const split = cfg ? splitSprite(hued, cfg) : null;
+    drawSpriteFish(ctx, x, y, p, split ? split.body : hued, split);
     return;
   }
   const scale = fishScale(p.stage);
@@ -1204,7 +1218,7 @@ export function drawFish(ctx: Ctx, x: number, y: number, p: FishDrawParams): voi
     wob: Math.sin(p.phase) * 0.3 * p.wobbleAmp,
     p,
   };
-  SPECIES_DRAW[p.speciesId](paint);
+  (SPECIES_DRAW[p.speciesId] ?? drawGoldfish)(paint);
   if (p.shiny) drawShinyGlints(paint);
   ctx.restore();
 }
@@ -1296,7 +1310,7 @@ function waveScratch(w: number, h: number): CanvasRenderingContext2D | null {
  * Bends a pre-scaled sprite into a travelling sine wave (rigid head, tail swinging most) by copying
  * its strips into the scratch canvas with vertical offsets. `amp` is in pixels. Returns the padding.
  */
-function bendSprite(sc: ScaledSprite, amp: number, phase: number): number | null {
+function bendSprite(sc: ScaledSprite, amp: number, phase: number, fullBody: boolean): number | null {
   const pad = Math.ceil(Math.abs(amp)) + 2;
   const c = waveScratch(sc.w, sc.h + pad * 2);
   if (!c) return null;
@@ -1305,19 +1319,20 @@ function bendSprite(sc: ScaledSprite, amp: number, phase: number): number | null
     const x0 = sc.edges[i]!;
     const x1 = sc.edges[i + 1]!;
     if (x1 <= x0) continue;
-    c.drawImage(sc.canvas, x0, 0, x1 - x0, sc.h, x0, pad + stripOffset(i, n, phase, amp), x1 - x0, sc.h);
+    c.drawImage(sc.canvas, x0, 0, x1 - x0, sc.h, x0, pad + stripOffset(i, n, phase, amp, fullBody), x1 - x0, sc.h);
   }
   return pad;
 }
 
-function drawSpriteFish(ctx: Ctx, x: number, y: number, p: FishDrawParams, s: Sprite): void {
+function drawSpriteFish(ctx: Ctx, x: number, y: number, p: FishDrawParams, s: Sprite, split: SplitSprite | null = null): void {
   const scale = fishScale(p.stage);
   const art = FISH_ART[p.speciesId];
   const motion = getSpecies(p.speciesId).motion;
   const baby = p.stage === 'baby';
-  const len = art.spriteLen * scale;
+  const sm = baby ? (BABY_SPECIES_SCALE[p.speciesId] ?? 1) : 1;
+  const len = art.spriteLen * scale * sm;
   const ht = (len * s.h) / s.w;
-  const left = art.mouthX * scale - len;
+  const left = art.mouthX * scale * sm - len;
   const dir = p.facing >= 0 ? 1 : -1;
   const bob = bodyBob(motion.gait, baby, p.time, p.phase, p.speedFrac);
   const gloom = p.gloom ?? (p.sad ? 1 : 0);
@@ -1342,7 +1357,7 @@ function drawSpriteFish(ctx: Ctx, x: number, y: number, p: FishDrawParams, s: Sp
     let pad = 0;
     const amp = ampFrac * sc.h;
     if (amp > 0.05) {
-      const bent = bendSprite(sc, amp, p.phase);
+      const bent = bendSprite(sc, amp, p.phase, motion.fullBody === true);
       if (bent !== null && waveCanvas) {
         img = waveCanvas;
         pad = bent;
@@ -1365,12 +1380,26 @@ function drawSpriteFish(ctx: Ctx, x: number, y: number, p: FishDrawParams, s: Sp
     ctx.shadowColor = 'transparent';
     ctx.shadowBlur = 0;
     blit();
+    if (split) drawClaws(ctx, split, p.claws, left, ht, len, s);
   } else {
     ctx.drawImage(s.canvas, left, -ht / 2, len, ht);
   }
   drawSpriteEyes(ctx, p, s, { left, len, ht, x, y, tilt, flipX }, gloom);
   if (p.shiny) drawSpriteGlints(ctx, left, len, ht, scale, p);
   ctx.restore();
+}
+
+/** The crab's claws, each rotated about its wrist pivot on top of the (claw-less) body. */
+function drawClaws(ctx: Ctx, split: SplitSprite, angles: ClawAngles | undefined, left: number, ht: number, len: number, s: Sprite): void {
+  const kx = len / s.w;
+  const ky = ht / s.h;
+  for (const claw of split.claws) {
+    ctx.save();
+    ctx.translate(left + claw.pivotX * kx, -ht / 2 + claw.pivotY * ky);
+    ctx.rotate(angles ? angles[claw.side] : 0);
+    ctx.drawImage(claw.canvas, (claw.x - claw.pivotX) * kx, (claw.y - claw.pivotY) * ky, claw.canvas.width * kx, claw.canvas.height * ky);
+    ctx.restore();
+  }
 }
 
 /** Lid color for a blink: the sprite's skin just around the eye (brighter half of a ring of samples), cached. */

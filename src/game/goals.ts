@@ -2,6 +2,7 @@
 // Pure: derived from the game state; the date only decides which one is highlighted today.
 import { BOND, COLLECTION_LIST } from './constants';
 import { collectionInSeason, collectionProgress } from './decor';
+import { tankOccupancy } from './sim';
 import { SPECIES } from './species';
 import type { GameState } from './types';
 
@@ -35,7 +36,7 @@ export function longTermGoals(game: GameState, today: Date): Goal[] {
   const speciesTotal = Object.keys(SPECIES).length;
   if (speciesOwned < speciesTotal) goals.push({ id: 'species', text: '🐟 Raise every species', sub: `${speciesOwned}/${speciesTotal} species` });
 
-  const room = game.tanks.reduce((n, t) => n + Math.max(0, t.capacity - game.fish.filter((f) => f.tankId === t.id).length), 0);
+  const room = game.tanks.reduce((n, t) => n + Math.max(0, Math.floor(t.capacity - tankOccupancy(game, t.id))), 0);
   if (room > 0) goals.push({ id: 'fill', text: '🏠 Fill every tank', sub: `${room} spots left` });
 
   return goals;

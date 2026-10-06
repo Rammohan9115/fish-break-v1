@@ -78,7 +78,7 @@ export interface TrickPose {
 const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
 
 /** Which visual a trick plays for this species (danio and tetra share the zoom dash). */
-export type TrickVisual = 'spin' | 'hoop' | 'heartBubble' | 'rainbowTwirl' | 'zoom' | 'finFan' | 'loop' | 'wiggle' | 'puffPop' | 'backflip' | 'leap' | 'rainbowGlow';
+export type TrickVisual = 'spin' | 'hoop' | 'heartBubble' | 'rainbowTwirl' | 'zoom' | 'finFan' | 'loop' | 'wiggle' | 'puffPop' | 'backflip' | 'leap' | 'rainbowGlow' | 'snuffleDance' | 'splashJump' | 'clawClap';
 
 const SIGNATURE_VISUAL: Record<SpeciesId, TrickVisual> = {
   goldfish: 'heartBubble',
@@ -92,6 +92,11 @@ const SIGNATURE_VISUAL: Record<SpeciesId, TrickVisual> = {
   axolotl: 'backflip',
   koi: 'leap',
   jellyfish: 'rainbowGlow',
+  cory: 'snuffleDance',
+  cherry_shrimp: 'backflip',
+  kuhli_loach: 'loop',
+  hatchetfish: 'splashJump',
+  crab: 'clawClap',
 };
 
 export function trickVisual(trick: Exclude<TrickId, 'follow'>, speciesId: SpeciesId): TrickVisual {
@@ -166,6 +171,20 @@ export function trickPose(visual: TrickVisual, t: number, facing: number, reduce
       break;
     case 'rainbowGlow':
       out.scale = 1 + 0.1 * Math.sin(t * Math.PI * 6) * bell;
+      break;
+    case 'snuffleDance':
+      out.dy = Math.abs(Math.sin(t * Math.PI * 6)) * 3 * bell;
+      out.rot = Math.sin(t * Math.PI * 6) * 0.12 * bell * (facing >= 0 ? 1 : -1);
+      out.wave = 1.8;
+      break;
+    case 'splashJump':
+      out.dy = -bell * (leapHeight || 60);
+      out.rot = (t - 0.5) * 1.2 * (facing >= 0 ? 1 : -1);
+      out.wave = 1.6;
+      break;
+    case 'clawClap':
+      out.dy = -Math.abs(Math.sin(t * Math.PI * 6)) * 5 * bell;
+      out.rot = Math.sin(t * Math.PI * 6) * 0.07 * bell;
       break;
   }
   return out;

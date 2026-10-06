@@ -35,6 +35,11 @@ export const FISH_FILES: Record<SpeciesId, { adult: string; baby: string }> = {
   puffer: { adult: 'puffer.PNG', baby: 'pufferbaby.PNG' },
   axolotl: { adult: 'axo.PNG', baby: 'axobaby.PNG' },
   koi: { adult: 'koi.PNG', baby: 'koibaby.PNG' },
+  cory: { adult: 'cory.PNG', baby: 'corybaby.PNG' },
+  cherry_shrimp: { adult: 'shrimp.PNG', baby: 'shrimpbaby.PNG' },
+  kuhli_loach: { adult: 'kuhli.PNG', baby: 'kuhlibaby.PNG' },
+  hatchetfish: { adult: 'hatchet.PNG', baby: 'hatchetbaby.PNG' },
+  crab: { adult: 'crab.PNG', baby: 'crabbaby.PNG' },
 };
 
 const fishSprites = new Map<string, Sprite>();
