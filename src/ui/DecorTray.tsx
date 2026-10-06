@@ -1,5 +1,6 @@
-// Decorate mode tray: the decor box (drag an item into the tank, or tap to drop it in the middle), saved
-// layouts (3 slots per tank) and Tank Style. A bottom sheet on phones, docked right on desktop.
+// Decorate mode shelf: no side bar, the tank stays full size. A slim strip under the water holds the decor box (drag a
+// piece into the tank, or tap it to drop it in the middle) and opens Manage box, Layouts (3 slots per tank) and Tank Style
+// as on-demand windows.
 import { useEffect, useRef, useState } from 'react';
 import { DECOR, LAYOUT_PRESET_SLOTS } from '../game/constants';
 import { boxCount, snapZ, zFromBaseY } from '../game/decor';
@@ -7,7 +8,7 @@ import type { DecorId } from '../game/types';
 import { currentRenderer } from '../render/renderer';
 import { sound } from '../audio/sound';
 import { useGameStore, type TrayTab } from '../store/gameStore';
-import { Button, ConfirmDialog, EmptyState, Sheet, Tabs } from './kit';
+import { Button, ConfirmDialog, EmptyState, Sheet } from './kit';
 import { DecorPreview } from './Preview';
 import { PriceTag } from './Shop';
 import { StylePicker } from './StylePicker';
@@ -34,7 +35,7 @@ function dropInTank(decorId: DecorId, clientX: number | null, clientY: number | 
   return ok;
 }
 
-function BoxItem({ decorId, count }: { decorId: DecorId; count: number }) {
+function BoxItem({ decorId, count, compact = false }: { decorId: DecorId; count: number; compact?: boolean }) {
   const [selling, setSelling] = useState(false);
   const sellBoxed = useGameStore((s) => s.sellBoxedDecor);
   const ghost = useRef<HTMLDivElement | null>(null);
@@ -74,8 +75,7 @@ function BoxItem({ decorId, count }: { decorId: DecorId; count: number }) {
     if (under?.classList.contains('tank-canvas')) dropInTank(decorId, e.clientX, e.clientY);
   };
 
-  return (
-    <li className="tile tray-item">
+  const grab = (
       <button
         type="button"
         className="tray-grab"
@@ -93,6 +93,11 @@ function BoxItem({ decorId, count }: { decorId: DecorId; count: number }) {
         <span className="tray-name">{DECOR[decorId].name}</span>
         {count > 1 && <span className="badge badge-brand badge-count">×{count}</span>}
       </button>
+  );
+  if (compact) return <li className="shelf-item">{grab}</li>;
+  return (
+    <li className="tile tray-item">
+      {grab}
       <Button size="sm" variant="ghost" onClick={() => setSelling(true)} aria-label={`Sell ${DECOR[decorId].name}`}>
         Sell
       </Button>
@@ -192,53 +197,56 @@ function LayoutsTab() {
   );
 }
 
-/** Phones: the tray would cover the sand, so it starts folded down to its header. */
-const NARROW_PX = 640;
-
 export function DecorTray() {
   const mode = useGameStore((s) => s.mode);
-  const [collapsed, setCollapsed] = useState(() => window.innerWidth <= NARROW_PX);
   const selected = useGameStore((s) => s.selectedDecorId);
-  // On phones, picking a piece in the tank folds the tray so the piece (and its toolbar) stay in view.
-  useEffect(() => {
-    if (selected && window.innerWidth <= NARROW_PX) setCollapsed(true);
-  }, [selected]);
-  const tab = useGameStore((s) => s.trayTab);
-  const setTab = useGameStore((s) => s.setTrayTab);
-  const setMode = useGameStore((s) => s.setMode);
+  const [win, setWin] = useState<TrayTab | null>(null);
+  const inventory = useGameStore((s) => s.game.decorInventory);
+  const openPanel = useGameStore((s) => s.openPanel);
   const boxed = useGameStore((s) => boxCount(s.game));
+  // Leaving Decorate mode puts any open window away.
+  useEffect(() => {
+    if (mode !== 'decorate') setWin(null);
+  }, [mode]);
   if (mode !== 'decorate') return null;
+  const items = (Object.entries(inventory) as [DecorId, number][]).filter(([, n]) => n > 0);
+  const titles: Record<TrayTab, string> = { box: '📦 Decor box', layouts: '💾 Layouts', style: '✨ Tank Style' };
   return (
-    <Sheet
-      modal={false}
-      layout="dock"
-      snap="half"
-      collapsed={collapsed}
-      title="🎨 Decorate"
-      onClose={() => setMode('look')}
-      className={`decor-tray${collapsed ? ' decor-tray-collapsed' : ''}`}
-      scrollKey={tab}
-      tabs={
-        <Tabs<TrayTab>
-                ariaLabel="Decorate"
-                value={tab}
-                onChange={setTab}
-                items={[
-                  { id: 'box', label: `📦 Box${boxed > 0 ? ` (${boxed})` : ''}`, title: `Box${boxed > 0 ? ` (${boxed})` : ''}: your decor box` },
-                  { id: 'layouts', label: '💾 Layouts' },
-                  { id: 'style', label: '✨ Tank Style' },
-                ]}
-              />
-      }
-      headerExtra={
-        <button type="button" className="mini-btn tray-fold" aria-expanded={!collapsed} aria-label={collapsed ? 'Show the decor tray' : 'Fold the decor tray'} onClick={() => setCollapsed((c) => !c)}>
-          {collapsed ? '▲' : '▼'}
-        </button>
-      }
-    >
-      {tab === 'box' && <BoxTab />}
-      {tab === 'layouts' && <LayoutsTab />}
-      {tab === 'style' && <StylePicker />}
-    </Sheet>
+    <>
+      <div className={`decor-shelf${selected ? ' decor-shelf-quiet' : ''}`} role="region" aria-label="Decor shelf">
+        <ul className="shelf-list">
+          {items.length === 0 ? (
+            <li className="shelf-empty">
+              <span className="meta">Box is empty</span>
+              <Button size="sm" variant="primary" onClick={() => openPanel('shop', 'decor')}>
+                🛒 Shop decor
+              </Button>
+            </li>
+          ) : (
+            items.map(([id, n]) => <BoxItem key={id} decorId={id} count={n} compact />)
+          )}
+        </ul>
+        <div className="shelf-actions">
+          {items.length > 0 && (
+            <Button size="sm" onClick={() => setWin('box')}>
+              📦 Box{boxed > 0 ? ` (${boxed})` : ''}
+            </Button>
+          )}
+          <Button size="sm" onClick={() => setWin('layouts')}>
+            💾 Layouts
+          </Button>
+          <Button size="sm" onClick={() => setWin('style')}>
+            ✨ Style
+          </Button>
+        </div>
+      </div>
+      {win && (
+        <Sheet size="md" className="decor-window" title={titles[win]} onClose={() => setWin(null)} scrollKey={win}>
+          {win === 'box' && <BoxTab />}
+          {win === 'layouts' && <LayoutsTab />}
+          {win === 'style' && <StylePicker />}
+        </Sheet>
+      )}
+    </>
   );
 }

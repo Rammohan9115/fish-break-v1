@@ -10,6 +10,18 @@ export interface SoundEngineOptions {
   /** Clock for rate limiting (ms). */
   now?: () => number;
   random?: () => number;
+  /** Logs AudioContext state transitions (also on via localStorage 'fishbowl:sound-debug' or ?sounddebug). */
+  debug?: boolean | ((line: string) => void);
+  /** Whether the page has had a user gesture already (injectable for tests). */
+  userActive?: () => boolean;
+}
+
+function debugFromEnvironment(): boolean {
+  try {
+    return typeof window !== 'undefined' && (window.localStorage.getItem('fishbowl:sound-debug') === '1' || /[?&]sounddebug\b/.test(window.location.search));
+  } catch {
+    return false;
+  }
 }
 
 function defaultContext(): AudioContext | null {
@@ -24,8 +36,12 @@ export class SoundEngine {
   private readonly lastPlayed = new Map<SoundName, number>();
   private ambienceWanted = false;
   private ambience: { stop: () => void } | null = null;
-  /** iOS needs a sound started inside a gesture once before Web Audio is truly unlocked. */
+  /** iOS needs a sound started inside a gesture once before Web Audio is truly unlocked (set once it is running). */
   private primed = false;
+  /** The context is only ever created after a user gesture. */
+  private gestureSeen = false;
+  private readonly log: (line: string) => void;
+  private readonly userActive: () => boolean;
   private readonly createContext: () => AudioContext | null;
   private readonly now: () => number;
   private readonly random: () => number;
@@ -34,6 +50,13 @@ export class SoundEngine {
     this.createContext = opts.createContext ?? defaultContext;
     this.now = opts.now ?? (() => performance.now());
     this.random = opts.random ?? Math.random;
+    const dbg = opts.debug ?? debugFromEnvironment();
+    this.log = typeof dbg === 'function' ? dbg : dbg ? (line) => console.log(`[sound] ${line}`) : () => undefined;
+    this.userActive = opts.userActive ?? (() => (typeof navigator !== 'undefined' ? (navigator as Navigator & { userActivation?: { isActive: boolean } }).userActivation?.isActive === true : false));
+  }
+
+  private trace(event: string): void {
+    this.log(`${event}: muted=${this.muted} state=${this.state}`);
   }
 
   get isMuted(): boolean {
@@ -42,9 +65,17 @@ export class SoundEngine {
 
   /** Lazily creates the context and master gain (only ever called while unmuted). */
   private ensureContext(): AudioContext | null {
+    // iOS can close a context behind our back; start over with a fresh one.
+    if (this.ctx && (this.ctx.state as string) === 'closed') {
+      this.stopAmbienceNodes();
+      this.ctx = null;
+      this.master = null;
+      this.primed = false;
+    }
     if (this.ctx) return this.ctx;
     const ctx = this.createContext();
     if (!ctx) return null;
+    ctx.addEventListener?.('statechange', () => this.trace('statechange'));
     const master = ctx.createGain();
     // No compressor: it squashed these short blips by ~10 dB. Effect peaks are tuned to stay
     // below full scale on their own (roughly -3 to -10 dBFS), and repeats are rate-limited.
@@ -55,39 +86,64 @@ export class SoundEngine {
     return ctx;
   }
 
+  /** The store's mute setting is the single source of truth; this only reacts to it. */
   setMuted(muted: boolean): void {
     this.muted = muted;
     if (muted) {
       this.stopAmbienceNodes();
       void this.ctx?.suspend().catch(() => undefined);
+      this.trace('muted');
       return;
     }
-    this.unlock();
+    // A toggle tap is a gesture; a saved "unmuted" setting restored at load is not (the first real gesture unlocks it).
+    if (this.gestureSeen || this.userActive()) this.unlock();
+    else this.trace('unmuted (waiting for a gesture)');
     if (this.ambienceWanted) this.startAmbienceNodes();
   }
 
   /**
    * Call from user-gesture handlers. Browsers start contexts 'suspended'; Safari can also be
-   * 'interrupted' (app switch, call). Anything other than 'running' gets resumed.
+   * 'interrupted' (app switch, call). The context is created here, inside the gesture, and always
+   * resumed: a pending suspend() from a quick mute/unmute can leave it 'running' on paper only.
    */
   unlock(): void {
+    this.gestureSeen = true;
     if (this.muted) return;
     const ctx = this.ensureContext();
     if (!ctx) return;
     allowPlaybackWhenSilentSwitchIsOn();
-    if (ctx.state !== 'running') void ctx.resume().catch(() => undefined);
+    this.resume(ctx);
     if (!this.primed) {
-      // Classic iOS unlock: start a 1-sample silent buffer inside the gesture.
-      this.primed = true;
+      // Classic iOS unlock: start a 1-sample silent buffer inside the gesture. Repeats on later gestures until the
+      // context is actually running, so an early attempt that didn't take doesn't use up the only chance.
       try {
         const source = ctx.createBufferSource();
         source.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
         source.connect(ctx.destination);
         source.start();
       } catch {
-        this.primed = false;
+        // try again on the next gesture
       }
     }
+    this.trace('unlock');
+  }
+
+  /** Resume unconditionally (a no-op when running, and it queues after any pending suspend). */
+  private resume(ctx: AudioContext): void {
+    void ctx
+      .resume()
+      .then(() => {
+        if (ctx.state === 'running') this.primed = true;
+        this.trace('resumed');
+      })
+      .catch(() => undefined);
+  }
+
+  /** The tab/app became visible again: if sound is ON but the context fell asleep, wake it (iOS may still need a tap). */
+  handleVisible(): void {
+    this.trace('visible');
+    if (this.muted || !this.ctx) return;
+    if (this.ctx.state !== 'running') this.resume(this.ctx);
   }
 
   /** The AudioContext state ('none' before creation), for diagnostics. */
@@ -101,10 +157,12 @@ export class SoundEngine {
     const t = this.now();
     const last = this.lastPlayed.get(name);
     if (last !== undefined && t - last < SOUND_MIN_GAP_MS[name]) return false;
+    if (!this.gestureSeen && !this.userActive()) return false;
     const ctx = this.ensureContext();
     if (!ctx || !this.master) return false;
-    // Most plays come from click/tap handlers, so this doubles as a late unlock.
-    if (ctx.state !== 'running') void ctx.resume().catch(() => undefined);
+    // Setting is ON but the context is asleep (suspended/interrupted): wake it before the sound is scheduled.
+    if (ctx.state !== 'running') this.resume(ctx);
+    this.trace(`play ${name}`);
     this.lastPlayed.set(name, t);
     SYNTHS[name](ctx, this.master, this.random);
     return true;

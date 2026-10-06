@@ -54,7 +54,7 @@ describe('SoundEngine', () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  const engine = (fake = fakeAudio()) => ({ fake, sfx: new SoundEngine({ createContext: fake.createContext, now: () => clock, random: () => 0.5 }) });
+  const engine = (fake = fakeAudio()) => ({ fake, sfx: new SoundEngine({ createContext: fake.createContext, now: () => clock, random: () => 0.5, userActive: () => true }) });
 
   it('starts muted and never creates an AudioContext while muted', () => {
     const { fake, sfx } = engine();
@@ -90,7 +90,7 @@ describe('SoundEngine', () => {
   it('ambience follows the mute toggle and remembers the request', () => {
     const fake = fakeAudio();
     let i = 0;
-    const sfx = new SoundEngine({ createContext: fake.createContext, now: () => clock, random: () => (i++ % 5) / 5 });
+    const sfx = new SoundEngine({ createContext: fake.createContext, now: () => clock, random: () => (i++ % 5) / 5, userActive: () => true });
     sfx.setAmbience(true); // requested while muted: silent
     expect(sfx.ambiencePlaying).toBe(false);
     sfx.setMuted(false); // unmute → starts
@@ -108,7 +108,7 @@ describe('SoundEngine', () => {
   });
 
   it('degrades quietly when Web Audio is unavailable', () => {
-    const sfx = new SoundEngine({ createContext: () => null, now: () => clock });
+    const sfx = new SoundEngine({ createContext: () => null, now: () => clock, userActive: () => true });
     sfx.setMuted(false);
     expect(sfx.play('coin')).toBe(false);
     sfx.setAmbience(true);
@@ -127,13 +127,14 @@ describe('levels', () => {
 describe('unlocking (Safari/iOS quirks)', () => {
   const fresh = () => {
     const fake = fakeAudio();
-    return { fake, sfx: new SoundEngine({ createContext: fake.createContext, now: () => 0, random: () => 0.5 }) };
+    return { fake, sfx: new SoundEngine({ createContext: fake.createContext, now: () => 0, random: () => 0.5, userActive: () => true }) };
   };
 
-  it('primes iOS with a silent buffer once, inside the first gesture', () => {
+  it('primes iOS with a silent buffer until the context is really running, inside a gesture', async () => {
     const { fake, sfx } = fresh();
     sfx.setMuted(false); // unmute click → unlock
     expect(fake.counts.sources).toBe(1);
+    await Promise.resolve(); // the context is now running, so the unlock is done
     sfx.unlock();
     sfx.unlock();
     expect(fake.counts.sources).toBe(1);
@@ -172,5 +173,96 @@ describe('unlocking (Safari/iOS quirks)', () => {
   it('reports state for diagnostics', () => {
     const { sfx } = fresh();
     expect(sfx.state).toBe('none');
+  });
+});
+
+describe('mute / resume logic', () => {
+  /** A context whose suspend() lands later, like a real browser's async control thread. */
+  function laggyAudio() {
+    const fake = fakeAudio();
+    const pending: (() => void)[] = [];
+    const createContext = () => {
+      const ctx = fake.createContext() as unknown as { state: string; suspend: () => Promise<void>; resume: () => Promise<void> };
+      ctx.suspend = () => new Promise<void>((done) => pending.push(() => ((ctx.state = 'suspended'), done())));
+      ctx.resume = async () => {
+        fake.counts.resumes += 1;
+        // Control messages run in order: a resume queued after a suspend wins.
+        pending.splice(0).forEach((run) => run());
+        ctx.state = 'running';
+      };
+      return ctx as unknown as AudioContext;
+    };
+    return { fake, createContext };
+  }
+
+  it('creates the context only inside a user gesture, not when a saved "unmuted" setting loads', async () => {
+    const fake = fakeAudio();
+    let active = false;
+    const sfx = new SoundEngine({ createContext: fake.createContext, now: () => 0, userActive: () => active });
+    sfx.setMuted(false); // restored from the save at load
+    expect(fake.counts.contexts).toBe(0);
+    expect(sfx.play('plop')).toBe(false);
+    sfx.unlock(); // first pointerdown/keydown anywhere
+    await Promise.resolve();
+    expect(fake.counts.contexts).toBe(1);
+    expect(sfx.state).toBe('running');
+    active = false;
+    expect(sfx.play('plop')).toBe(true);
+  });
+
+  it('toggling ON resumes within the same tap, even right after a toggle OFF whose suspend has not landed yet', async () => {
+    const { fake, createContext } = laggyAudio();
+    const sfx = new SoundEngine({ createContext, now: () => 0, userActive: () => true });
+    sfx.setMuted(false);
+    await Promise.resolve();
+    expect(sfx.state).toBe('running');
+    sfx.setMuted(true); // suspend() is still in flight: state still says running
+    expect(sfx.state).toBe('running');
+    const resumesBefore = fake.counts.resumes;
+    sfx.setMuted(false);
+    expect(fake.counts.resumes).toBeGreaterThan(resumesBefore); // resumed although "running"
+    await Promise.resolve();
+    expect(sfx.state).toBe('running');
+    expect(sfx.play('coin')).toBe(true);
+  });
+
+  it('wakes a sleeping context when the tab becomes visible, but only while sound is ON', async () => {
+    const fake = fakeAudio();
+    const sfx = new SoundEngine({ createContext: fake.createContext, now: () => 0, userActive: () => true });
+    sfx.setMuted(false);
+    await Promise.resolve();
+    fake.created[0]!.state = 'interrupted';
+    sfx.handleVisible();
+    await Promise.resolve();
+    expect(sfx.state).toBe('running');
+    sfx.setMuted(true);
+    await Promise.resolve();
+    const resumes = fake.counts.resumes;
+    sfx.handleVisible();
+    expect(fake.counts.resumes).toBe(resumes);
+  });
+
+  it('replaces a context the OS closed', async () => {
+    const fake = fakeAudio();
+    const sfx = new SoundEngine({ createContext: fake.createContext, now: () => 0, userActive: () => true });
+    sfx.setMuted(false);
+    await Promise.resolve();
+    fake.created[0]!.state = 'closed';
+    sfx.unlock();
+    await Promise.resolve();
+    expect(fake.counts.contexts).toBe(2);
+    expect(sfx.state).toBe('running');
+  });
+
+  it('logs the context state on unlock, toggle and play when debugging', async () => {
+    const fake = fakeAudio();
+    const lines: string[] = [];
+    const sfx = new SoundEngine({ createContext: fake.createContext, now: () => 0, userActive: () => true, debug: (l) => lines.push(l) });
+    sfx.setMuted(false);
+    sfx.play('plop');
+    sfx.setMuted(true);
+    expect(lines.some((l) => l.startsWith('unlock'))).toBe(true);
+    expect(lines.some((l) => l.startsWith('play plop'))).toBe(true);
+    expect(lines.some((l) => l.startsWith('muted'))).toBe(true);
   });
 });

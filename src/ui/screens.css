@@ -1442,12 +1442,83 @@
   flex: none;
 }
 
-.decor-tray-collapsed .sheet-body {
-  display: none;
+/* Decorate shelf: a slim strip under the water (no side bar); the tank keeps its full size. */
+.decor-shelf {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--dock-h, 86px) + var(--space-2));
+  transform: translateX(-50%);
+  z-index: var(--z-card);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: max-content;
+  max-width: min(760px, calc(100vw - 2 * var(--space-3)));
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-lg, 16px);
+  background: rgba(255, 255, 255, 0.84);
+  backdrop-filter: blur(14px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 6px 22px rgba(20, 40, 90, 0.22);
 }
 
-.tray-fold {
-  margin-left: auto;
+.decor-shelf-quiet {
+  opacity: 0.55;
+}
+
+.decor-shelf-quiet:hover,
+.decor-shelf-quiet:focus-within {
+  opacity: 1;
+}
+
+.shelf-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior: contain;
+}
+
+.shelf-item,
+.shelf-empty {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.shelf-item .tray-grab {
+  flex: none;
+  flex-direction: column;
+  gap: 0;
+  min-width: var(--tap-min);
+  padding: 2px var(--space-2);
+  position: relative;
+  border-radius: var(--radius-md, 12px);
+}
+
+.shelf-item .tray-grab:hover {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.shelf-item .tray-name {
+  flex: none;
+  font-size: 12px;
+}
+
+.shelf-item .badge-count {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.shelf-actions {
+  flex: none;
+  display: flex;
+  gap: var(--space-1);
 }
 
 /* Settings → restore a set-aside save */
@@ -1565,20 +1636,6 @@
   min-height: var(--tap-min);
   color: var(--color-brand);
   font-weight: 700;
-}
-
-/* The always-visible Feed button beside the tool handle. */
-.app .dock-feed {
-  flex: none;
-}
-@media (max-width: 560px) and (orientation: portrait) {
-  .app .dock-feed {
-    width: 56px;
-    align-self: flex-end;
-  }
-  .app .toolbar:has(.dock-feed) {
-    gap: 6px;
-  }
 }
 
 .filters-more {

@@ -70,8 +70,16 @@ function useSoundSync() {
     const unlock = () => sound.unlock();
     const events = ['pointerdown', 'pointerup', 'click', 'touchend', 'keydown'] as const;
     for (const type of events) window.addEventListener(type, unlock, { capture: true, passive: true });
+    // Coming back to the tab/app: wake a context the browser put to sleep (the next gesture covers iOS).
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') sound.handleVisible();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('pageshow', onVisible);
     return () => {
       unsubscribe();
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('pageshow', onVisible);
       for (const type of events) window.removeEventListener(type, unlock, { capture: true });
     };
   }, []);
@@ -119,7 +127,7 @@ export function App() {
   useVisualViewportVars();
   useDensity(art.ready);
 
-  // Esc ends a break, or closes cards/panels and leaves Feed/Premium/Clean mode.
+  // Esc ends a break, tucks the Tools tray away, or closes cards/panels and leaves Feed/Premium/Clean mode.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
@@ -127,6 +135,10 @@ export function App() {
       if (store.breakSession) {
         if (document.fullscreenElement) document.exitFullscreen().catch(() => undefined);
         store.exitBreak();
+        return;
+      }
+      if (store.game.settings.toolsOpen) {
+        store.setToolsOpen(false);
         return;
       }
       // The topmost sheet/dialog/card closes first.

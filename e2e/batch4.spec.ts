@@ -1,13 +1,20 @@
 import { expect, test } from '@playwright/test';
 import { freshGame, gameState, openTools } from './helpers';
 
-test('a Feed button stays one tap away while the dock is tucked in', async ({ page }) => {
+test('the Tools pill slides the tray out, Feed turns it into a mode pill, and Esc/tank-tap/T close it', async ({ page }) => {
   await freshGame(page, { seed: true });
-  await page.getByRole('button', { name: 'Hide tools' }).click().catch(() => undefined);
-  const feed = page.getByRole('button', { name: 'Feed', exact: true });
-  await expect(feed).toBeVisible();
-  await feed.click();
+  await expect(page.getByRole('button', { name: 'Show tools' })).toBeVisible();
+  await page.keyboard.press('t');
+  await expect(page.getByRole('button', { name: 'Hide tools' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'Show tools' })).toBeVisible();
+  await openTools(page);
+  await page.getByRole('button', { name: 'Feed', exact: true }).click();
   await expect(page.getByText('Tap the water to feed')).toBeVisible();
+  const stop = page.locator('.dock-pill-mode');
+  await expect(stop).toBeVisible();
+  await stop.click();
+  await expect(page.getByRole('button', { name: 'Show tools' })).toBeVisible();
 });
 
 test('selling a fish offers Undo, and Undo brings it back', async ({ page }) => {

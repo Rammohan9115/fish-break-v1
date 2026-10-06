@@ -52,9 +52,10 @@ const OVERLAYS = [
   { id: 'tanks', kind: 'panel', selector: '.sheet', open: openWith("g.openPanel('tanks');") },
   { id: 'settings', kind: 'panel', selector: '.settings', open: openWith("g.openPanel('settings');") },
   { id: 'settings-login', kind: 'panel', selector: '.settings', open: async (page) => { await page.evaluate(st("g.openPanel('settings');")); await clickText(page, /Save progress/); } },
-  { id: 'decor-tray-box', kind: 'dock', selector: '.decor-tray', open: openWith("g.setMode('decorate'); s.setState({ trayTab: 'box' });") },
-  { id: 'decor-tray-layouts', kind: 'dock', selector: '.decor-tray', open: openWith("g.setMode('decorate'); s.setState({ trayTab: 'layouts' });") },
-  { id: 'decor-tray-style', kind: 'dock', selector: '.decor-tray', open: openWith("g.setMode('decorate'); s.setState({ trayTab: 'style' });") },
+  { id: 'decor-shelf', kind: 'banner', selector: '.decor-shelf', open: openWith("g.setMode('decorate');") },
+  { id: 'decor-box-window', kind: 'panel', selector: '.decor-window', open: async (page) => { await page.evaluate(st("g.setMode('decorate');")); await clickText(page, /^📦 Box/); } },
+  { id: 'decor-layouts-window', kind: 'panel', selector: '.decor-window', open: async (page) => { await page.evaluate(st("g.setMode('decorate');")); await clickText(page, /Layouts/); } },
+  { id: 'decor-style-window', kind: 'panel', selector: '.decor-window', open: async (page) => { await page.evaluate(st("g.setMode('decorate');")); await clickText(page, /Style/); } },
   // ---- dialogs (fit budget: never scroll)
   { id: 'levelup', kind: 'dialog', fit: true, selector: '.levelup', open: openWith('s.setState({ pendingLevelUps: [13] });') },
   { id: 'pair-confirm', kind: 'dialog', fit: true, selector: '.sheet', open: openWith('const gf = g.game.fish.filter((f) => f.speciesId === "goldfish"); g.startPairing(gf[0].id, gf[1].id);') },

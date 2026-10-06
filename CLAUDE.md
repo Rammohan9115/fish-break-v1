@@ -300,10 +300,10 @@ No "Unlocks at Lv X" labels for decor. Theme level gates (Night/Coral/Pond) stay
 
 **Decorate mode 🎨** (toolbar, or the DecorCard's "🎨 Decorate"; never times out)
 - Fish fade to 50%, decor gets an edit outline, and the banner shows `🪸 9/15 · ↶ ↷ · ✕`.
-- **Tray** (docked right on desktop; a bottom sheet folded to its header on phones):
-  - **Box**: drag a piece into the water, or tap it to drop it in the middle. Each piece can also be sold from here.
-  - **Layouts**: 3 slots per tank. Save the current layout, or apply one. Applying puts everything in the box first, then places the layout's pieces; pieces you no longer own are skipped and counted in a toast.
-  - **Tank Style**: see below.
+- **Shelf** (no side bar: the tank stays full size; a slim strip above the dock, folding to 55 % opacity while a piece is selected):
+  - **Box tiles**: drag a piece into the water, or tap it to drop it in the middle. **📦 Box** opens a window to sell boxed pieces.
+  - **💾 Layouts** (window): 3 slots per tank. Save the current layout, or apply one. Applying puts everything in the box first, then places the layout's pieces; pieces you no longer own are skipped and counted in a toast.
+  - **✨ Style** (window): Tank Style, see below.
 - **Pieces:** a press drags straight away. Snap guides line a piece up with the tank center or another piece's center or edges (6 units).
   The selected piece gets a floating toolbar: ⇋ Flip · Far/Mid/Near (sand pieces; ↑/↓ also nudge depth) · S/M/L (0.8/1.0/1.2) · 📦 To box · Sell.
 - **Undo/redo** (last 20 steps, this session): the banner buttons, Ctrl/Cmd+Z (Shift to redo), or a two-finger tap on touch. Selling clears the history, because money can't be undone.
@@ -495,7 +495,7 @@ One responsive system for every popup, panel and card (Phases 1–4).
   **Window** (browse/manage panels: Shop, My Fish, Breeding, Tanks, Settings: a big centred window, up to 94 % × 88 % of the screen
   (lg 1120 / md 820 / sm 560 px wide), **frosted glass** (translucent + blur) over a soft scrim so the scene glows through, like a game menu),
   **Sheet** (the same panels on narrow screens < 600 px: bottom sheet, snap 40/60/92 %, drag handle, swipe down to close, also frosted),
-  **SidePanel** (`layout="dock"`: the Decorate tray, which you use WITH the tank: docked right, `clamp(320px, 30vw, 440px)`; the tank, HUD,
+  **SidePanel** (`layout="dock"`: only for docked cards; Decorate has no side bar: docked right, `clamp(320px, 30vw, 440px)`; the tank, HUD,
   dock, banners and toasts make room through `--panel-w`, so fish stay visible and playable),
   **Popover** (cards for things in the tank on a wide screen with a mouse: anchored to the fish / decor piece, follows it, arrow, flips and shifts to stay in the free area). `overlay/Card` picks: Popover (mouse, wide) → docked card (finger, wide: tank NOT shifted) → non-modal bottom sheet (narrow). Quick actions and the decor toolbar are small Popovers (no arrow).
 - **Structure for all** (`OverlayFrame`): sticky Header (title + ✕, optional pinned `tabs` row) → Body (the ONLY scrolling region,
@@ -514,7 +514,7 @@ One responsive system for every popup, panel and card (Phases 1–4).
   z-index values are only the `--z-*` tokens (`tokens.ts`); no literals.
 - **Every new overlay must be added to `e2e/overlays/registry.js` (and to `enforced.js` once it passes).** `e2e/overlays.spec.ts` opens every
   registered overlay on 19 screens (phones, tablets, desktops, and 125/150/200 % zoom) and fails when one is outside the viewport, scrolls while it
-  has a fit budget, has a hidden header/footer, has targets under 44 px (touch) / 32 px (mouse) or overlapping, text under 12 px or clipped, or (for the docked Decorate tray) leaves
+  has a fit budget, has a hidden header/footer, has targets under 44 px (touch) / 32 px (mouse) or overlapping, text under 12 px or clipped, or (for a docked panel) leaves
   < 55 % of the tank beside it. Browse windows are big on purpose; they only have to fit the screen. `node scripts/audit/overlays.mjs` + `node scripts/audit/overlay-report.mjs` write `qa/overlays/REPORT.md`.
 
 ## Out of scope (for now)

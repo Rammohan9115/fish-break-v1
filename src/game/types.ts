@@ -298,6 +298,8 @@ export interface Tank {
 export interface Settings {
   muted: boolean;
   reducedMotion: boolean;
+  /** The Tools tray is slid out (older saves lack it: closed). */
+  toolsOpen?: boolean;
 }
 
 export interface Stats {

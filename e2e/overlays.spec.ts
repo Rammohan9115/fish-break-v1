@@ -116,7 +116,7 @@ test('resizing from desktop to phone with a window open switches big window → 
   await expect(page.locator('.ov-window')).toBeVisible();
 });
 
-test('the Shop is a big window that takes most of the screen; the Decorate tray stays docked beside the tank', async ({ page }) => {
+test('the Shop is a big window that takes most of the screen; Decorate mode keeps the tank full size with no side bar', async ({ page }) => {
   await start(page, { w: 1366, h: 768 });
   await page.evaluate(RESET);
   await page.evaluate("window.__fishbowl.store.getState().openPanel('shop', 'fish')");
@@ -128,10 +128,16 @@ test('the Shop is a big window that takes most of the screen; the Decorate tray 
   expect(bg as string).toMatch(/rgba\(.*0\.\d+\)/);
   await page.evaluate(RESET);
   await page.evaluate("window.__fishbowl.store.getState().setMode('decorate')");
-  const dock = (await page.locator('.ov-sidepanel').boundingBox())!;
-  expect(dock.width / 1366).toBeLessThan(0.45);
+  await expect(page.locator('.ov-sidepanel')).toHaveCount(0);
   const tank = (await page.locator('.app .tank').boundingBox())!;
-  expect(tank.width / 1366).toBeGreaterThanOrEqual(0.55);
+  expect(tank.width).toBeGreaterThanOrEqual(1366 - 2);
+  const shelf = (await page.locator('.decor-shelf').boundingBox())!;
+  expect(shelf.y + shelf.height).toBeLessThanOrEqual(768);
+  // Layouts opens as a window on demand and closes again.
+  await page.getByRole('button', { name: /Layouts/ }).click();
+  await expect(page.locator('.decor-window')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.decor-window')).toHaveCount(0);
   // The renderer fitted itself to the smaller area: a click in the visible tank still works (toTank / tankToClient agree).
   const p = await page.evaluate("(() => { const r = window.__fishbowl.renderer(); const c = r.tankToClient(500, 300); return r.toTank(c.x, c.y); })()");
   expect(Math.round((p as any).x)).toBe(500);

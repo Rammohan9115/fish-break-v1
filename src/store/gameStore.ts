@@ -203,6 +203,7 @@ export interface GameStore {
   /** Marks activity in the current tool mode (resets the idle exit). */
   touchMode: () => void;
   setReducedMotion: (on: boolean) => void;
+  setToolsOpen: (open: boolean) => void;
   /** A pet session completed (the meter filled). Null if the fish is gone. */
   petFish: (fishId: string) => { rewarded: boolean; levelUp: BondLevelUp | null } | null;
   setPetProgress: (progress: { fishId: string; pct: number } | null) => void;
@@ -658,6 +659,11 @@ export const useGameStore = create<GameStore>()((set, get) => {
     touchMode: () => set({ modeTouchedAt: Date.now() }),
 
     setReducedMotion: (on) => set((s) => ({ game: { ...s.game, settings: { ...s.game.settings, reducedMotion: on } } })),
+
+    setToolsOpen: (open) => {
+      if ((get().game.settings.toolsOpen ?? false) === open) return;
+      set((s) => ({ game: { ...s.game, settings: { ...s.game.settings, toolsOpen: open } } }));
+    },
 
     petFish: (fishId) => {
       const result = completePetSession(get().game, fishId, Date.now());
