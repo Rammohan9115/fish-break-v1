@@ -977,7 +977,8 @@ body {
 .dock-tools {
   display: flex;
   gap: var(--space-2);
-  max-width: 640px;
+  /* Wide enough for every tool (Break, Mini Tank included); the pill keeps ~110px on the right. */
+  max-width: min(1100px, calc(100vw - 120px));
   overflow: hidden;
   padding: var(--space-2);
   border-radius: 18px;
