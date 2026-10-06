@@ -7,7 +7,7 @@ import { closeMini, miniSupport, openInGame, syncMiniTokens, toggleMini, useMini
 import { formatCount } from './format';
 
 /** The 🪟 Mini Tank button. Renders nothing where neither floating-window API exists. */
-export function MiniTankButton({ className = 'btn btn-sm', onToggle }: { className?: string; onToggle?: () => void }) {
+export function MiniTankButton({ className = 'btn btn-sm', onToggle, iconOnly = false }: { className?: string; onToggle?: () => void; iconOnly?: boolean }) {
   const support = useMemo(miniSupport, []);
   const floating = useMiniTank((s) => s.kind !== null);
   if (!support) return null;
@@ -17,12 +17,13 @@ export function MiniTankButton({ className = 'btn btn-sm', onToggle }: { classNa
       className={className}
       aria-pressed={floating}
       title={support === 'video' ? VIEW_ONLY_TIP : 'Float the tank over your other apps (P)'}
+      aria-label={iconOnly ? 'Mini Tank' : undefined}
       onClick={() => {
         toggleMini();
         onToggle?.();
       }}
     >
-      🪟 Mini Tank
+      {iconOnly ? '🪟' : '🪟 Mini Tank'}
     </button>
   );
 }

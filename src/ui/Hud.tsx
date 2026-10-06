@@ -13,6 +13,7 @@ import { SyncBadge } from './SyncIndicator';
 import { Icon } from './Icon';
 import { Button } from './kit';
 import { formatCount } from './format';
+import { MiniTankButton } from './MiniTankHost';
 
 /** Window event fired when a collected shell/pearl lands on its counter (detail: 'shell' | 'pearl'). */
 export const HUD_BUMP_EVENT = 'fishbowl-hud-bump';
@@ -89,6 +90,7 @@ export function Hud() {
               {isFullscreen ? '⤡' : '⤢'}
             </Button>
           )}
+          <MiniTankButton iconOnly className="btn btn-icon hud-round hud-desktop-only" />
           <Button variant="icon" className="hud-round" onClick={() => openPanel('settings')} aria-label="Settings">
             ⚙️
           </Button>

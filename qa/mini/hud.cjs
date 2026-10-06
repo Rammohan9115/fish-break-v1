@@ -1,0 +1,20 @@
+const { chromium } = require('@playwright/test');
+(async () => {
+  const browser = await chromium.launch({ channel: 'chrome', headless: false });
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 800 } });
+  const page = await ctx.newPage();
+  await page.route('http://localhost:54321/**', (r) => r.abort());
+  await page.goto('http://localhost:5198/');
+  await page.waitForFunction(() => '__fishbowl' in window, null, { timeout: 20000 });
+  await page.evaluate(`(() => { const { store, utils } = window.__fishbowl; const now = Date.now();
+    const fish = ['danio','guppy'].map((s,i)=>utils.makeFish({speciesId:s,stage:'adult',growth:99999,hunger:60,happiness:90,name:'F'+i,bornAt:now-1e7,lastDropAt:now,lastBredAt:null}));
+    store.getState().loadState(utils.makeState({fish, overrides:{level:14,shells:2000,lastTickAt:now,lastDailyGift:new Date().toISOString().slice(0,10)}})); store.setState({onboardingStep:null}); })()`);
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: 'qa/mini/hud.png', clip: { x: 0, y: 0, width: 400, height: 140 } });
+  const b = page.locator('.hud').getByRole('button', { name: 'Mini Tank' });
+  console.log('hud button', await b.count());
+  await b.click();
+  await page.waitForTimeout(2000);
+  console.log('floating', await page.locator('.mini-placeholder').count());
+  await browser.close();
+})();
