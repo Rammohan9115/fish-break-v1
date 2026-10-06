@@ -11,8 +11,8 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: ['icon.svg', 'icons/apple-touch-icon-180.png'],
       manifest: {
-        name: 'Offishal Break',
-        short_name: 'Offishal',
+        name: 'Tankquility',
+        short_name: 'Tankquility',
         description: 'A cozy aquarium for your 5-minute breaks.',
         start_url: '/',
         scope: '/',

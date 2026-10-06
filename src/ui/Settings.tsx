@@ -338,7 +338,7 @@ function About() {
       </Button>
       {open && (
         <div className="about">
-          <p>Offishal Break is a cozy fish tank for your 5-minute breaks.</p>
+          <p>Tankquility is a cozy fish tank for your 5-minute breaks.</p>
           <p className="meta">
             Fonts: Fredoka and Nunito (SIL Open Font License). Built with React, Zustand, Vite and Supabase (MIT / Apache-2.0).
             Sounds are generated in your browser. Full credits and licenses are in CREDITS.md in the project.

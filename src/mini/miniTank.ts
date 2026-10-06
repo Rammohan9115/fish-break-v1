@@ -106,7 +106,7 @@ async function openDocument(h: TankHandle): Promise<void> {
     return;
   }
   copyPageInto(win);
-  win.document.title = 'Offishal Break · Mini Tank';
+  win.document.title = 'Tankquility · Mini Tank';
   const root = win.document.createElement('div');
   root.className = 'mini-root';
   const stage = win.document.createElement('div');
