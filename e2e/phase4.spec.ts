@@ -47,12 +47,12 @@ test.describe('shop', () => {
     await expect(dialog).toHaveCount(0);
   });
 
-  test('a phone shows two columns', async ({ page }) => {
+  test('a phone shows 2–3 columns (3 with the compact UI default)', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await freshGame(page, { seed: true });
     await openShop(page);
     const cols = await page.evaluate("getComputedStyle(document.querySelector('.shop-grid')).gridTemplateColumns.split(' ').length");
-    expect(cols).toBe(2);
+    expect([2, 3]).toContain(cols);
   });
 });
 

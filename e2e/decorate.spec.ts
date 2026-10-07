@@ -6,7 +6,7 @@ test('Decorate mode: banner, tray, selecting a piece and flipping it, then Done'
   await openTools(page);
   await page.getByRole('button', { name: /Decorate/ }).first().click();
   await expect(page.getByText('Decorating')).toBeVisible();
-  await expect(page.getByRole('heading', { name: /Decorate/ })).toBeVisible(); // the tray
+  await expect(page.getByRole('region', { name: 'Decor shelf' })).toBeVisible();
   await page.evaluate(() => {
     const s = window.__fishbowl.store;
     s.getState().selectDecor(s.getState().game.tanks[0].decor[0].id);

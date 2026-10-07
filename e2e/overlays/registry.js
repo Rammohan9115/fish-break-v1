@@ -57,7 +57,7 @@ const OVERLAYS = [
   { id: 'settings', kind: 'panel', selector: '.settings', open: openWith("g.openPanel('settings');") },
   { id: 'settings-login', kind: 'panel', selector: '.settings', open: async (page) => { await page.evaluate(st("g.openPanel('settings');")); await clickText(page, /Save progress/); } },
   { id: 'decor-shelf', kind: 'banner', selector: '.decor-shelf', open: openWith("g.setMode('decorate');") },
-  { id: 'decor-box-window', kind: 'panel', selector: '.decor-window', open: async (page) => { await page.evaluate(st("g.setMode('decorate');")); await clickText(page, /^📦 Box/); } },
+  { id: 'decor-box-window', kind: 'panel', selector: '.decor-window', open: async (page) => { await page.evaluate(st("g.dev.giveAllDecor(); g.setMode('decorate');")); await clickText(page, /^📦 Box/); } },
   { id: 'decor-layouts-window', kind: 'panel', selector: '.decor-window', open: async (page) => { await page.evaluate(st("g.setMode('decorate');")); await clickText(page, /Layouts/); } },
   { id: 'decor-style-window', kind: 'panel', selector: '.decor-window', open: async (page) => { await page.evaluate(st("g.setMode('decorate');")); await clickText(page, /Style/); } },
   // ---- dialogs (fit budget: never scroll)
