@@ -1,4 +1,7 @@
+<!-- @format -->
+
 # Rescue Stories + Daily Tasks — Build Guide
+
 #use minial tokens please
 
 **Prerequisite:** the 5 starter species (cory, cherry_shrimp, kuhli_loach, hatchetfish, crab) must already
@@ -13,10 +16,12 @@ using the dev controls before moving on to the next.
 ---
 
 ## Part A — Optional image prompts (do these before Prompt 1)
+
 Upload your goldfish sprite as the style reference. Save to `public/assets/story/`. If you skip these,
 Prompt 1 draws simple placeholder versions in code.
 
 **pelican.png**
+
 ```
 Subject: a friendly cartoon pelican mail carrier wearing a tiny blue postal cap and a small satchel,
 holding a letter in its beak, kind eyes. Cute glossy cartoon game sprite, casual mobile/Facebook
@@ -27,6 +32,7 @@ no shadow, no text. 1024x1024.
 ```
 
 **dr_fisher.png** (portrait for letters and the Rescue Board)
+
 ```
 Subject: a portrait of Dr. Fisher, a kind, enthusiastic aquatic wildlife rescuer in his 40s, with messy
 brown hair, a short friendly beard, round glasses, a big warm smile, wearing a teal rescue-center vest
@@ -37,6 +43,7 @@ transparent background, no text. 1024x1024.
 ```
 
 **care_items_sheet.png** (slice with the existing slice script → soft_food.png, healing_moss.png, vitamin_flakes.png)
+
 ```
 A sprite sheet of 3 separate cute glossy cartoon game item icons side by side with LARGE empty space
 between them, not touching: 1) a small round jar of soft fish food with a heart label, 2) a glowing
@@ -49,6 +56,7 @@ top-left. Front view. Plain transparent background, no shadows, no text, no labe
 ---
 
 ## Prompt 1 — Rescue system + Rescue Board + daily tasks + Pinch (pilot story)
+
 ```
 Build a data-driven Rescue Stories system with a Rescue Board and Daily Tasks, then implement the first
 story (Pinch the Crab) as the pilot. Read CLAUDE.md first; follow the UX Rules, overlay primitives,
@@ -160,6 +168,7 @@ DESIGN PILLARS: cozy, no failure, nothing dies, progress never goes backward, an
 ---
 
 ## Prompt 2 — Noodle the Kuhli Loach: "Too Shy to Shine"
+
 ```
 Add a rescue story using the existing rescue framework (read docs/rescues.md). Only add data + the small
 special mechanics below; don't change the framework unless needed (if so, explain why first). It must
@@ -188,6 +197,7 @@ rescues/noodle.ts — Noodle the Kuhli Loach, "Too Shy to Shine"
 ---
 
 ## Prompt 3 — Cherry the Shrimp: "Lost Her Color"
+
 ```
 Add a rescue story using the existing rescue framework (read docs/rescues.md). Only add data + the
 special mechanics below. It must appear on the Rescue Board automatically.
@@ -214,6 +224,7 @@ rescues/cherry.ts — Cherry the Shrimp, "Lost Her Color"
 ---
 
 ## Prompt 4 — Skipper the Hatchetfish: "Afraid to Jump"
+
 ```
 Add a rescue story using the existing rescue framework (read docs/rescues.md). Only add data + the
 special mechanics below. It must appear on the Rescue Board automatically.
@@ -240,6 +251,7 @@ rescues/skipper.ts — Skipper the Hatchetfish, "Afraid to Jump"
 ---
 
 ## Prompt 5 — Professor Whiskers the Cory: "The Lonely Elder"
+
 ```
 Add a rescue story using the existing rescue framework (read docs/rescues.md). Only add data + the
 special mechanics below. It must appear on the Rescue Board automatically. This one reveals more about
@@ -272,6 +284,7 @@ rescues/professor_whiskers.ts — Professor Whiskers the Cory, "The Lonely Elder
 ---
 
 ## Prompt 6 (optional) — Balance & polish pass
+
 ```
 Review the rescue stories and daily tasks together as a player would. Using the dev tools and fake
 clock, run through all 5 rescues back to back (in a few different orders, including pausing and
