@@ -18,3 +18,9 @@ playwright-report
 
 # Overlay audit screenshots (large; regenerate with scripts/audit/overlays.mjs). REPORT.md and metrics.json stay.
 qa/overlays/*/*.png
+
+# Trailer pipeline: frames and intermediates are large; regenerate with `npm run trailer`
+trailer/frames/
+trailer/tmp/
+
+trailer/audio/

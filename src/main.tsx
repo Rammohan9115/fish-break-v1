@@ -23,7 +23,9 @@ if (import.meta.env.DEV) {
     import('./store/cloudSave'),
     import('./store/saveLock'),
     import('./pwa'),
-  ]).then(([store, utils, renderer, cloud, lock, pwa]) => {
+    // Trailer capture mode: only when scripts/trailer/inject.js put a virtual clock on the page first.
+    (window as unknown as { __vclock?: unknown }).__vclock ? import('./dev/capture') : Promise.resolve(null),
+  ]).then(([store, utils, renderer, cloud, lock, pwa, capture]) => {
     (window as unknown as { __fishbowl: unknown }).__fishbowl = {
       store: store.useGameStore,
       utils,
@@ -32,6 +34,7 @@ if (import.meta.env.DEV) {
       cloud: cloud.useCloudStore,
       saveLock: lock.useSaveLock,
       pwa: pwa.usePwaStore,
+      capture: capture?.installCapture({ store: store.useGameStore, utils, renderer: renderer.currentRenderer }),
     };
   });
 }

@@ -12,7 +12,10 @@
     "build:assets": "vite-node scripts/build-assets.ts",
     "build:icons": "vite-node scripts/build-icons.ts",
     "lint": "eslint .",
-    "test:e2e": "playwright test -c playwright.config.cjs"
+    "test:e2e": "playwright test -c playwright.config.cjs",
+    "trailer": "tsx scripts/trailer/audio.ts trailer/audio && tsx scripts/trailer/record.ts && bash scripts/trailer/edit.sh",
+    "trailer:record": "tsx scripts/trailer/record.ts",
+    "trailer:edit": "bash scripts/trailer/edit.sh"
   },
   "dependencies": {
     "@fontsource-variable/nunito": "^5.3.0",
@@ -29,8 +32,10 @@
     "@vitejs/plugin-react": "^4.7.0",
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^5.2.0",
+    "ffmpeg-static": "^5.3.0",
     "globals": "^17.13.0",
     "sharp": "^0.33.5",
+    "tsx": "^4.23.15",
     "typescript": "~5.6",
     "typescript-eslint": "^8.71.0",
     "vite": "^5.4.21",
