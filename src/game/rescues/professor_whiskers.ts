@@ -18,7 +18,7 @@ export const rescue: RescueDef = {
       story: 'The Professor is lonely. A friend would change everything.',
       visual: { elder: true, desaturate: 0.2 },
       tasks: [
-        { type: 'ownSpecies', speciesId: 'cory', count: 1, label: 'Get another Cory Catfish', hint: 'Shop 🛒 → Fish → Cory Catfish (or breed one). It counts any cory besides him', highlight: 'shop' },
+        { type: 'ownSpecies', speciesId: 'cory', count: 1, label: 'Get another Cory Catfish', hint: 'Buy one: Shop 🛒 → Fish → Cory Catfish, 20 🐚 (or breed one). It counts any cory besides him', highlight: 'shop' },
         { type: 'pet', count: 1, label: 'Pet the Professor', hint: 'Press and hold on him', highlight: 'pet' },
       ],
       letter: { title: 'The garage tank', body: 'The center started as one tank in my garage, a bucket, and a LOT of optimism. Professor Whiskers was the first resident. He supervised everything.\n— Dr. Fisher 🩺🐟' },
@@ -36,7 +36,7 @@ export const rescue: RescueDef = {
       story: 'A little herd! He follows his new friends around.',
       visual: { elder: true, desaturate: 0.1 },
       tasks: [
-        { type: 'ownSpecies', speciesId: 'cory', count: 2, label: 'Own 2 other Cory Catfish', hint: 'Shop 🛒 → Fish → Cory Catfish (or breed one)', highlight: 'shop' },
+        { type: 'ownSpecies', speciesId: 'cory', count: 2, label: 'Own 2 other Cory Catfish', hint: 'Buy one: Shop 🛒 → Fish → Cory Catfish, 20 🐚 (or breed one)', highlight: 'shop' },
         { type: 'keepCleanliness', min: 70, minutes: 10, label: 'Keep the tank 70%+ clean for 10 min', hint: 'Wipe algae with Clean 🧽', highlight: 'clean' },
       ],
       letter: { title: 'A strange report', body: 'Between us: fishermen keep reporting a strange glowing creature near the old pier. Probably nothing. Probably. I’ve packed a flashlight just in case.\n— Dr. Fisher 🩺🐟' },

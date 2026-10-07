@@ -8,6 +8,8 @@ import type { CareItemId, DailyTaskState, DecorId, GameState, Rng } from './type
 
 export const DAILY_TASK_COUNT = 3;
 export const DAILY_BONUS = { shells: 30 };
+/** A task kind that was drawn is skipped for this many days after. */
+export const KIND_COOLDOWN_DAYS = 3;
 export const WEEKLY_CHEST = { days: 5, window: 7, pearls: 2, itemEach: 1, rareDecorChance: 0.25 };
 const RARE_DECOR: DecorId[] = (Object.values(DECOR) as { id: DecorId; cost: { currency: string } }[]).filter((d) => d.cost.currency === 'pearls').map((d) => d.id);
 
@@ -17,6 +19,8 @@ interface GeneralKind {
   base: number;
   /** Lowest player level it appears at. */
   minLevel?: number;
+  /** Draw weight (default 1). */
+  weight?: number;
   event: (e: GameEvent) => number;
 }
 
@@ -26,10 +30,19 @@ export const GENERAL_KINDS: GeneralKind[] = [
   { kind: 'feed', label: (n) => `Feed ${n} pellets`, base: 8, event: (e) => (e.type === 'feed' ? 1 : 0) },
   { kind: 'clean', label: (n) => `Wipe ${n} algae spots`, base: 3, event: (e) => (e.type === 'algaeWiped' ? 1 : 0) },
   { kind: 'decor', label: () => 'Place a decor piece', base: 1, event: (e) => (e.type === 'decorPlaced' ? 1 : 0) },
-  { kind: 'hatch', label: () => 'Hatch an egg', base: 1, minLevel: 5, event: (e) => (e.type === 'hatched' ? 1 : 0) },
+  { kind: 'hatch', label: () => 'Hatch an egg', base: 1, minLevel: 5, weight: 0.5, event: (e) => (e.type === 'hatched' ? 1 : 0) },
   { kind: 'break', label: (n) => `${n} min in Break Mode`, base: 2, event: (e) => (e.type === 'breakMinutes' ? e.minutes : 0) },
-  { kind: 'bond', label: () => 'Raise a fish’s bond level', base: 1, minLevel: 3, event: (e) => (e.type === 'bondUp' ? 1 : 0) },
+  { kind: 'bond', label: () => 'Raise a fish’s bond level', base: 1, minLevel: 3, weight: 0.5, event: (e) => (e.type === 'bondUp' ? 1 : 0) },
 ];
+function pickKind(pool: GeneralKind[], rng: Rng): GeneralKind {
+  const total = pool.reduce((n, k) => n + (k.weight ?? 1), 0);
+  let r = rng() * total;
+  for (const k of pool) {
+    r -= k.weight ?? 1;
+    if (r < 0) return k;
+  }
+  return pool[pool.length - 1]!;
+}
 const FIXED_TARGET = new Set(['decor', 'hatch', 'bond']);
 
 const kindOf = (kind: string) => GENERAL_KINDS.find((k) => k.kind === kind);
@@ -60,6 +73,10 @@ export function seededRng(seed: number): Rng {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+
+/** Only the day's first care task pays an item (supply ≈ demand); the second pays a few extra shells. */
+const careReward = (level: number, n: number, item: CareItemId): DailyTaskState['reward'] =>
+  n === 0 ? { shells: 15 + level * 2, item } : { shells: 20 + level * 2 };
 
 function makeGeneral(kind: GeneralKind, level: number, rng: Rng, n: number): DailyTaskState {
   const target = FIXED_TARGET.has(kind.kind) ? kind.base : Math.max(1, Math.round(kind.base * (1 + Math.min(level, 30) / 15)));
@@ -92,20 +109,25 @@ export function ensureDaily(game: GameState, now: number): GameState {
         target: taskTarget(stage!.tasks[i]!),
         progress: 0,
         done: false,
-        reward: { shells: 15 + game.level * 2, item: CARE_ITEM_IDS[Math.floor(rng() * CARE_ITEM_IDS.length)]! },
+        reward: careReward(game.level, tasks.length, CARE_ITEM_IDS[Math.floor(rng() * CARE_ITEM_IDS.length)]!),
         care: { caseId: a.def.id, stage: a.c.stage, index: i },
       });
     }
   }
-  const pool = GENERAL_KINDS.filter((k) => (k.minLevel ?? 0) <= game.level);
+  const recent = new Set(game.daily.recentKinds ?? []);
+  const eligible = GENERAL_KINDS.filter((k) => (k.minLevel ?? 0) <= game.level && (k.kind !== 'hatch' || game.eggs.length > 0));
+  const fresh = eligible.filter((k) => !recent.has(k.kind));
+  const pool = fresh.length >= DAILY_TASK_COUNT ? fresh : eligible;
   while (tasks.length < DAILY_TASK_COUNT && pool.length > 0) {
     const used = new Set(tasks.map((t) => t.kind));
     const free = pool.filter((k) => !used.has(k.kind));
-    const kind = (free.length > 0 ? free : pool)[Math.floor(rng() * (free.length > 0 ? free : pool).length)]!;
+    const kind = pickKind(free.length > 0 ? free : pool, rng);
     tasks.push(makeGeneral(kind, game.level, rng, tasks.length));
   }
   const keep = pruneDays(game.daily.fullDays, today);
-  return { ...game, daily: { ...game.daily, date: today, tasks, rerolled: false, bonusClaimed: false, fullDays: keep } };
+  const drawn = tasks.filter((t) => !t.care).map((t) => t.kind);
+  const recentKinds = [...drawn, ...(game.daily.recentKinds ?? [])].slice(0, DAILY_TASK_COUNT * (KIND_COOLDOWN_DAYS - 1));
+  return { ...game, daily: { ...game.daily, date: today, recentKinds, tasks, rerolled: false, bonusClaimed: false, fullDays: keep } };
 }
 
 const dayNumber = (key: string): number => {
@@ -206,7 +228,7 @@ export function addCareTasks(game: GameState, now: number): GameState {
     target: taskTarget(t),
     progress: 0,
     done: false,
-    reward: { shells: 15 + s.level * 2, item: CARE_ITEM_IDS[(a.c.stage + n) % CARE_ITEM_IDS.length]! },
+    reward: careReward(s.level, n, CARE_ITEM_IDS[(a.c.stage + n) % CARE_ITEM_IDS.length]!),
     care: { caseId: a.def.id, stage: a.c.stage, index: i },
   }));
   return { ...s, daily: { ...s.daily, tasks: [...care, ...kept] } };

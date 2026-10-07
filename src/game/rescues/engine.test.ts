@@ -161,7 +161,7 @@ describe('daily tasks', () => {
   it('makes 3 seeded tasks, with the rescue care tasks mixed in', () => {
     const g = ensureDaily(started(), T0);
     expect(g.daily.tasks).toHaveLength(3);
-    const again = ensureDaily({ ...started(), daily: { ...g.daily, date: '' } }, T0);
+    const again = ensureDaily({ ...started(), daily: { ...g.daily, date: '', recentKinds: [] } }, T0);
     expect(again.daily.tasks.map((t) => t.kind)).toEqual(g.daily.tasks.map((t) => t.kind));
   });
 

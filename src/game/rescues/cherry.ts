@@ -27,7 +27,7 @@ export const rescue: RescueDef = {
       story: 'She’s pale pink. Easy on the pellets: nothing should rot on the sand today.',
       visual: {},
       tasks: [
-        { type: 'noDissolve', minutes: 30, label: 'No pellets dissolving on the sand (30 min of play)', hint: 'Feed small amounts. Corys eating landed pellets counts as success', highlight: 'feed' },
+        { type: 'noDissolve', minutes: 15, label: 'No pellets dissolving on the sand (15 min of play)', hint: 'Feed small amounts. Corys eating landed pellets counts as success', highlight: 'feed' },
         { type: 'useItem', itemId: 'vitamin_flakes', count: 1, label: 'Give vitamin flakes', hint: 'Pick Vitamin flakes in the Care tab, then tap Cherry', highlight: 'care' },
       ],
     },
@@ -35,7 +35,7 @@ export const rescue: RescueDef = {
       story: 'Pink at last! Corys keep the sand clean, which makes her feel safe.',
       visual: {},
       tasks: [
-        { type: 'ownSpecies', speciesId: 'cory', count: 1, label: 'Own a Cory Catfish', hint: 'Shop 🛒 → Fish → Cory Catfish: they keep the sand clean for her', highlight: 'shop' },
+        { type: 'ownSpecies', speciesId: 'cory', count: 1, label: 'Own a Cory Catfish', hint: 'Buy one: Shop 🛒 → Fish → Cory Catfish (20 🐚): they keep the sand clean for her', highlight: 'shop' },
         { type: 'useItem', itemId: 'healing_moss', count: 1, label: 'Give healing moss', hint: 'Pick Healing moss in the Care tab, then tap Cherry', highlight: 'care' },
       ],
       letter: { title: 'Pink!', body: 'She’s PINK. Properly pink. Please send a photo. Actually, I’ll come look.\n— Dr. Fisher 🩺🐟' },

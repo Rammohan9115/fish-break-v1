@@ -62,11 +62,11 @@ describe('Skipper', () => {
     expect(wantsAction(forceAdvance(g, 'x', T0).state, FIRST_LEAP_ACTION)).toBe(true);
   });
 
-  it('stage 3 needs 5 encouragements and a clean tank', () => {
+  it('stage 3 needs 4 encouragements and a clean tank', () => {
     let g = toStage(started(), 2);
-    for (let i = 0; i < 5; i++) g = ev(g, { type: 'interact', actionId: ENCOURAGE_ACTION });
+    for (let i = 0; i < 4; i++) g = ev(g, { type: 'interact', actionId: ENCOURAGE_ACTION });
     const a = activeCase(g)!;
-    expect(taskValue(g, a.def, a.c, 0)).toBe(5);
+    expect(taskValue(g, a.def, a.c, 0)).toBe(4);
     expect(a.c.stage).toBe(2);
   });
 

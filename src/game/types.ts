@@ -436,4 +436,6 @@ export interface DailyState {
   fullDays: string[];
   /** Week key of the last weekly chest, so it's claimed at most once per window. */
   chestClaimedOn: string | null;
+  /** General task kinds drawn on recent days (newest first), skipped for a few days. */
+  recentKinds?: string[];
 }

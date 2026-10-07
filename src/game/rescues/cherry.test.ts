@@ -51,7 +51,7 @@ describe('Cherry', () => {
     g = ev(g, { type: 'pelletDissolved' });
     expect(progress(g, 0)).toBe(0);
     g = ev(g, { type: 'play', seconds: 5000 });
-    expect(progress(g, 0)).toBe(1800);
+    expect(progress(g, 0)).toBe(900);
   });
 
   it('a real dissolved pellet breaks the streak but a cory eating it does not', () => {
