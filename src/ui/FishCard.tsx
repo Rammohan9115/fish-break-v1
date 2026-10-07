@@ -11,6 +11,7 @@ import { getSpecies, getVariant } from '../game/species';
 import type { Fish, GameState, Stage } from '../game/types';
 import { useGameStore } from '../store/gameStore';
 import { formatClock, formatEta } from './format';
+import { CareTab } from './rescue/CareTab';
 import { Badge, Button, ConfirmDialog, CurrencyTag, LockedOverlay, NameField, ProgressBar, Tabs } from './kit';
 import { Card } from './overlay/Card';
 import { FishPreview } from './Preview';
@@ -232,7 +233,7 @@ function FishMenu({ fish, game }: { fish: Fish; game: GameState }) {
   );
 }
 
-type FishTab = 'status' | 'bond' | 'breed';
+type FishTab = 'status' | 'bond' | 'breed' | 'care';
 
 export function FishCard() {
   const fish = useGameStore((s) => s.game.fish.find((f) => f.id === s.selectedFishId) ?? null);
@@ -244,10 +245,12 @@ export function FishCard() {
   const fishId = fish?.id ?? null;
 
   // A different fish starts on its Status tab.
+  // (a fish being rescued opens on its Care tab)
+  const recovering = fish?.rescue?.recovering ?? false;
   useEffect(() => {
-    setTab('status');
+    setTab(recovering ? 'care' : 'status');
     setFlag(false);
-  }, [fishId]);
+  }, [fishId, recovering]);
 
   const anchor = useCallback(() => {
     if (!fishId) return null;
@@ -259,7 +262,7 @@ export function FishCard() {
   if (!fish) return null;
   const species = getSpecies(fish.speciesId);
   const variant = getVariant(fish.speciesId, fish.variant);
-  const showPair = breedingUnlocked(game) && courtshipOf(game, fish.id) === null;
+  const showPair = !fish.rescue?.recovering && breedingUnlocked(game) && courtshipOf(game, fish.id) === null;
 
   return (
     <Card
@@ -282,20 +285,22 @@ export function FishCard() {
               <span className="fishcard-swatch" style={{ background: variant.body, borderColor: variant.outline }} aria-hidden="true" />
               {species.name} · {STAGE_LABEL[fish.stage]}
               {fish.shiny ? ' · ✨ Shiny' : ''}
+              {fish.rescue && !fish.rescue.recovering ? ' · 💚 Rescued' : ''}
             </span>
           </span>
         </span>
       }
-      headerExtra={<FishMenu fish={fish} game={game} />}
+      headerExtra={fish.rescue?.recovering ? undefined : <FishMenu fish={fish} game={game} />}
       tabs={
         <Tabs<FishTab>
           ariaLabel="Fish details"
           value={tab}
           onChange={setTab}
           items={[
+            ...(fish.rescue ? [{ id: 'care' as const, label: '💚 Care' }] : []),
             { id: 'status', label: '📊 Status' },
             { id: 'bond', label: '💗 Bond' },
-            { id: 'breed', label: '💕 Breed' },
+            ...(fish.rescue?.recovering ? [] : [{ id: 'breed' as const, label: '💕 Breed' }]),
           ]}
         />
       }
@@ -318,6 +323,7 @@ export function FishCard() {
           {species.special && <p className="fc-special">Special: {species.special}</p>}
         </>
       )}
+      {tab === 'care' && <CareTab fish={fish} />}
       {tab === 'bond' && <BondSection fish={fish} />}
       {tab === 'breed' && <BreedingTab fish={fish} game={game} flag={flag} />}
     </Card>

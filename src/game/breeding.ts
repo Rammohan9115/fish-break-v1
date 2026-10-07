@@ -4,7 +4,7 @@
 import { startBondFor } from './bond';
 import { BREEDING, MINUTE_MS, TANK_EDGE_MARGIN, TANK_WIDTH, UNLOCK_LEVEL } from './constants';
 import { stageProgress } from './sim';
-import { randomVariantKey, SPECIES } from './species';
+import { getVariant, randomVariantKey, SPECIES } from './species';
 import type { Courtship, Egg, Fish, GameState, Rng, SpeciesId } from './types';
 
 export function breedingUnlocked(state: GameState): boolean {
@@ -34,6 +34,7 @@ export function isCourting(state: GameState, fishId: string): boolean {
 /** A fish's own readiness: adult, happiness ≥ 70, hunger ≥ 40, rested. */
 export function canBreed(fish: Fish, now: number): boolean {
   return (
+    !fish.rescue?.recovering &&
     fish.stage === 'adult' &&
     fish.happiness >= BREEDING.minHappiness &&
     fish.hunger >= BREEDING.minHunger &&
@@ -194,8 +195,9 @@ export function startCourtship(
 /** 45% parent A's variant, 45% parent B's, 10% a random variant of the species. */
 export function offspringVariant(a: Fish, b: Fish, rng: Rng): string {
   const roll = rng();
-  if (roll < BREEDING.variantParentAChance) return a.variant;
-  if (roll < BREEDING.variantParentAChance + BREEDING.variantParentBChance) return b.variant;
+  const open = (key: string) => !getVariant(a.speciesId, key).rescueOnly;
+  if (roll < BREEDING.variantParentAChance && open(a.variant)) return a.variant;
+  if (roll >= BREEDING.variantParentAChance && roll < BREEDING.variantParentAChance + BREEDING.variantParentBChance && open(b.variant)) return b.variant;
   return randomVariantKey(a.speciesId, rng);
 }
 
@@ -210,12 +212,13 @@ export function offspringShiny(a: Fish, b: Fish, rng: Rng): boolean {
 
 /** Chance of each baby color for a pair (same rules as offspringVariant), largest first. */
 export function babyColorOdds(a: Fish, b: Fish): { variant: string; chance: number }[] {
-  const variants = SPECIES[a.speciesId].variants;
+  const variants = SPECIES[a.speciesId].variants.filter((x) => !x.rescueOnly);
   const random = 1 - BREEDING.variantParentAChance - BREEDING.variantParentBChance;
   const odds = new Map<string, number>();
   for (const v of variants) odds.set(v.key, random / variants.length);
-  odds.set(a.variant, (odds.get(a.variant) ?? 0) + BREEDING.variantParentAChance);
-  odds.set(b.variant, (odds.get(b.variant) ?? 0) + BREEDING.variantParentBChance);
+  const open = (f: Fish) => !getVariant(f.speciesId, f.variant).rescueOnly;
+  if (open(a)) odds.set(a.variant, (odds.get(a.variant) ?? 0) + BREEDING.variantParentAChance);
+  if (open(b)) odds.set(b.variant, (odds.get(b.variant) ?? 0) + BREEDING.variantParentBChance);
   return [...odds.entries()].map(([variant, chance]) => ({ variant, chance })).sort((x, y) => y.chance - x.chance);
 }
 

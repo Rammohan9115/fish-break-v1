@@ -1,5 +1,7 @@
 // Shop with Fish / Food / Decor / Tanks tabs. Locked items show 🔒 "Unlocks at Lv X"; items you can't
 // afford say how far away you are; every blocked Buy explains why on tap.
+import { CareIcon } from "./rescue/CareIcon";
+import { CARE_ITEM_IDS, CARE_ITEMS } from "../game/rescues/engine";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   CAPACITY_UPGRADE,
@@ -302,6 +304,7 @@ function FishTab({ game }: { game: GameState }) {
 
 function FoodTab({ game }: { game: GameState }) {
   const buyPremiumFood = useGameStore((s) => s.buyPremiumFood);
+  const buyCareItem = useGameStore((s) => s.buyCareItem);
   return (
     <>
       <p className="lead">
@@ -318,6 +321,19 @@ function FoodTab({ game }: { game: GameState }) {
           game={game}
           onBuy={buyPremiumFood}
         />
+        {CARE_ITEM_IDS.map((id) => (
+          <ShopItem
+            key={id}
+            title={CARE_ITEMS[id].name}
+            art={<CareIcon item={id} size={56} />}
+            price={{ currency: "shells", amount: CARE_ITEMS[id].price }}
+            unlockLevel={1}
+            error={economy.canAfford(game, { currency: "shells", amount: CARE_ITEMS[id].price }) ? null : "cost"}
+            game={game}
+            note={`For rescued animals. You have ${game.rescue.careItems[id]}.`}
+            onBuy={() => buyCareItem(id)}
+          />
+        ))}
       </div>
     </>
   );

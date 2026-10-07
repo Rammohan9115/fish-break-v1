@@ -117,6 +117,7 @@ export function sellFish(state: GameState, fishId: string): Result {
   const fish = state.fish.find((f) => f.id === fishId);
   if (!fish) return fail('notFound');
   if (isCourting(state, fishId)) return fail('courting');
+  if (fish.rescue?.recovering) return fail('notSellable');
   const value = sellValue(fish);
   if (value === null) return fail('notSellable');
   return ok({ ...state, shells: state.shells + value, fish: state.fish.filter((f) => f.id !== fishId) });
@@ -497,6 +498,7 @@ export function checkMoveFish(state: GameState, fishId: string, tankId: string):
   const tank = state.tanks.find((t) => t.id === tankId);
   if (!fish || !tank || fish.tankId === tankId) return 'notFound';
   if (isCourting(state, fishId)) return 'courting';
+  if (fish.rescue?.recovering) return 'notFound';
   const need = SPECIES[fish.speciesId].themeOnly;
   if (need && tank.theme !== need) return 'theme';
   if (!tankHasRoom(state, tank, fish.speciesId)) return 'full';

@@ -298,6 +298,8 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
 
       { ...v('sunny', 'Sunny', '#ffb02e', '#fff0c4', '#ffd070', '#c46a0a', '#b0700a'), hue: 40 },
       { ...v('blue', 'Blue', '#4a9cff', '#d8ecff', '#8ac0ff', '#1a4ab8', '#1d4f9e'), hue: 225 },
+      // Rescue reward (Cherry): deep glossy ruby red.
+      { ...v('ruby', 'Ruby', '#d3122e', '#ffd9de', '#f0405a', '#7a0618', '#8a0c20'), hue: 350, rescueOnly: true },
     ],
   },
   kuhli_loach: {
@@ -321,6 +323,7 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
 
       { ...v('gold', 'Gold', '#ffd25a', '#fff4c4', '#ffe08a', '#6a4a14', '#b08a1a'), hue: 25 },
       { ...v('rose', 'Rose', '#ff8aa8', '#ffe4ec', '#ffb0c4', '#5a1a30', '#b0405a'), hue: 320 },
+      { ...v('shadow_stripe', 'Shadow Stripe', '#3a3a44', '#8a8a96', '#55555f', '#16161c', '#ffb02e'), dark: 0.62, rescueOnly: true },
     ],
   },
   hatchetfish: {
@@ -344,6 +347,8 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
 
       { ...v('violet', 'Violet', '#c8b0ff', '#f4eeff', '#a888f0', '#5a3ab0', '#7a5ac0'), hue: 50 },
       { ...v('teal', 'Teal', '#8aece0', '#e8fffb', '#5ad0c4', '#1a7a70', '#2a9a90'), hue: 320 },
+      // Rescue reward (Skipper): silver with a soft sky-blue iridescent sheen.
+      { ...v('sky_silver', 'Sky Silver', '#d4e4f4', '#ffffff', '#9ad4ff', '#4a7aa8', '#6ab4f0'), hue: 8, rescueOnly: true },
     ],
   },
   crab: {
@@ -367,6 +372,8 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
 
       { ...v('orange', 'Orange', '#ff9a3a', '#ffe0b8', '#ffba6a', '#b05a0a', '#b0600a'), hue: 35 },
       { ...v('violet', 'Violet', '#b07aff', '#efe2ff', '#c8a4ff', '#5a2ab0', '#6a36b8'), hue: 270 },
+      // Rescue reward (Pinch): deep coral-red, pearly belly.
+      { ...v('stormshell', 'Stormshell', '#d8203c', '#fff0f4', '#f0506a', '#8a0c28', '#8a1230'), hue: 345, rescueOnly: true },
     ],
   },
 };
@@ -389,6 +396,6 @@ export function getVariant(speciesId: SpeciesId, variantKey: string): FishVarian
 }
 
 export function randomVariantKey(speciesId: SpeciesId, rng: Rng): string {
-  const variants = SPECIES[speciesId].variants;
+  const variants = SPECIES[speciesId].variants.filter((x) => !x.rescueOnly);
   return variants[Math.floor(rng() * variants.length)]!.key;
 }

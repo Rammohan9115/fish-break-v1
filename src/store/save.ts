@@ -18,6 +18,7 @@ import {
 } from '../game/constants';
 import { validPlane } from '../game/decor';
 import { baseCapacity } from '../game/economy';
+import { emptyDaily, emptyRescueState, welcomeLetter } from '../game/rescues/init';
 import { createInitialState, simulateOffline, type OfflineSummary } from '../game/sim';
 import type { GameState, Rng } from '../game/types';
 import { isSaveLocked } from './saveLock';
@@ -121,6 +122,14 @@ export const migrations: Record<number, Migration> = {
       : data.tanks;
     return { ...data, tanks };
   },
+  // v8 → v9: Rescue Stories (no rescue yet, care items none), Dr. Fisher's mailbox with a welcome letter, the journal, daily tasks.
+  8: (data) => ({
+    ...data,
+    rescue: emptyRescueState(),
+    mail: [welcomeLetter(isNum(data.lastTickAt) ? data.lastTickAt : Date.now())],
+    journal: [],
+    daily: emptyDaily(),
+  }),
 };
 
 /** The v3 capacity rules, needed to read old saves: base 6, +2 per upgrade, at most 3 upgrades. */
@@ -187,6 +196,8 @@ export function isValidGameState(v: unknown): v is GameState {
   if (!Array.isArray(v.ownedThemes) || !v.ownedThemes.every(isStr)) return false;
   if (v.lastBreakXpAt !== null && !isNum(v.lastBreakXpAt)) return false;
   if (!isObject(v.decorInventory) || !Array.isArray(v.ownedStyles)) return false;
+  if (!isObject(v.rescue) || !isObject(v.rescue.cases) || !isObject(v.rescue.careItems)) return false;
+  if (!Array.isArray(v.mail) || !Array.isArray(v.journal) || !isObject(v.daily) || !Array.isArray(v.daily.tasks)) return false;
   return isStr(v.activeTankId) && v.tanks.some((t) => isObject(t) && t.id === v.activeTankId);
 }
 

@@ -83,6 +83,10 @@ export interface FishVariant {
   outline: string;
   /** Sprite species drawn from one master sprite (jellyfish): hue rotation in degrees for this variant. */
   hue?: number;
+  /** 0..1 darkening (and desaturation) of the sprite, for charcoal-style variants. */
+  dark?: number;
+  /** Only obtainable through a rescue: never picked at random (shop, offspring). */
+  rescueOnly?: boolean;
 }
 
 export type SpeciesTrait = 'darts' | 'flowyTail' | 'chubby' | 'glowStripe' | 'schools' | 'bigFins' | 'tall' | 'inflates' | 'walksOnSand' | 'smiles' | 'jelly' | 'surface' | 'sandDweller' | 'halfSlot' | 'sideways' | 'burrows' | 'climbs';
@@ -191,6 +195,8 @@ export interface Fish {
   lastPelletEatAt?: number;
   /** Crab: when it last dug up shells (ms); starts when it becomes an adult. */
   lastDigAt?: number;
+  /** Set when this fish is (or was) a rescue case: recovering = in the recovery corner (not counted, can't be sold/moved/bred). */
+  rescue?: { caseId: string; recovering: boolean };
 }
 
 export type BondLevel = 0 | 1 | 2 | 3 | 4 | 5;
@@ -360,4 +366,74 @@ export interface GameState {
   decorInventory: Partial<Record<DecorId, number>>;
   /** Tank style options bought (option ids); reusable on every tank. Free options aren't listed. */
   ownedStyles: string[];
+  /** Rescue Stories: cases, care items. Daily tasks, Dr. Fisher's letters and the journal live beside it. */
+  rescue: RescueState;
+  mail: Letter[];
+  journal: JournalEntry[];
+  daily: DailyState;
+}
+
+export type CareItemId = 'soft_food' | 'healing_moss' | 'vitamin_flakes';
+
+export interface RescueCaseState {
+  status: 'active' | 'paused' | 'done';
+  /** Index of the stage being cared for (= stages.length once done). */
+  stage: number;
+  /** Local date ('YYYY-MM-DD') the last stage was completed: the next one unlocks the day after. */
+  stageDoneOn: string | null;
+  /** Progress per task of the current stage (numbers; meaning depends on the task type). */
+  progress: number[];
+  fishId: string | null;
+  /** The animal while the case is paused (it's back at Dr. Fisher's center, out of the tank). */
+  away: Fish | null;
+}
+
+export interface RescueState {
+  activeId: string | null;
+  cases: Record<string, RescueCaseState>;
+  careItems: Record<CareItemId, number>;
+  /** The starter care kit was handed out. */
+  kitGiven: boolean;
+}
+
+export interface Letter {
+  id: string;
+  /** The rescue it belongs to, or null (welcome letter). */
+  caseId: string | null;
+  title: string;
+  body: string;
+  at: number;
+  read: boolean;
+  /** A button on the letter (the welcome letter opens the Rescue Board). */
+  action?: 'rescueBoard';
+}
+
+export interface JournalEntry {
+  id: string;
+  text: string;
+  at: number;
+}
+
+export interface DailyTaskState {
+  id: string;
+  /** Care tasks mirror a rescue task (rescue id + task index); general tasks have a kind and a target. */
+  kind: string;
+  target: number;
+  progress: number;
+  done: boolean;
+  /** Reward: shells (+ optional pearls / care item). */
+  reward: { shells: number; pearls?: number; item?: CareItemId };
+  care?: { caseId: string; stage: number; index: number };
+}
+
+export interface DailyState {
+  /** Local date the tasks were made for. */
+  date: string;
+  tasks: DailyTaskState[];
+  rerolled: boolean;
+  bonusClaimed: boolean;
+  /** Local dates (last 7 kept) on which all tasks were done. */
+  fullDays: string[];
+  /** Week key of the last weekly chest, so it's claimed at most once per window. */
+  chestClaimedOn: string | null;
 }

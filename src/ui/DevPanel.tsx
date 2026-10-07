@@ -1,4 +1,5 @@
 // Dev/art-preview panel. Loaded lazily; shown in production while DEV_TOOLS_IN_PRODUCTION is true.
+import { RESCUES } from '../game/rescues/registry';
 import { useState } from 'react';
 import { SPECIES, SPECIES_LIST } from '../game/species';
 import type { BondLevel, SpeciesId, ThemeId } from '../game/types';
@@ -52,6 +53,26 @@ function BondTools() {
         </button>
         <button type="button" onClick={dev.greet}>
           👋 Play greeting
+        </button>
+      </div>
+      <div className="dev-label">Rescues</div>
+      <div className="dev-buttons">
+        {RESCUES.map((r) => (
+          <button key={r.id} type="button" onClick={() => dev.startRescue(r.id)}>
+            🩺 Start {r.name}
+          </button>
+        ))}
+        <button type="button" onClick={dev.completeRescueStage}>
+          ✅ Complete stage
+        </button>
+        <button type="button" onClick={dev.advanceDay}>
+          📅 Next day
+        </button>
+        <button type="button" onClick={dev.giveCareItems}>
+          🎁 Care items
+        </button>
+        <button type="button" onClick={dev.resetDaily}>
+          📋 Reset daily tasks
         </button>
       </div>
       <div className="dev-label">Decor</div>

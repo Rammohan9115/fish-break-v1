@@ -6,6 +6,8 @@ import { breedingUnlocked } from '../game/breeding';
 import { UNLOCK_LEVEL } from '../game/constants';
 import { useGameStore, type ToolMode } from '../store/gameStore';
 import { localDateKey } from '../game/economy';
+import { careAvailable } from '../game/rescues/engine';
+import { dailyPending } from '../game/dailyTasks';
 import { useNow, useQuestStep } from './useBreeding';
 import { Badge, LockedOverlay } from './kit';
 import { miniSupport, toggleMini, useMiniTank, VIEW_ONLY_TIP } from '../mini/miniTank';
@@ -77,6 +79,12 @@ export function Toolbar() {
   const openBreeding = useGameStore((s) => s.openBreeding);
   const toolsOpen = useGameStore((s) => s.game.settings.toolsOpen ?? false);
   const setToolsOpen = useGameStore((s) => s.setToolsOpen);
+  const unread = useGameStore((s) => s.game.mail.filter((l) => !l.read).length);
+  const tasksLeft = useGameStore((s) => dailyPending(s.game));
+  const careDot = useGameStore((s) => careAvailable(s.game, localDateKey(new Date(s.clock()))));
+  const highlight = useGameStore((s) => s.careHighlight);
+  const setCareHighlight = useGameStore((s) => s.setCareHighlight);
+  const openRescue = useGameStore((s) => s.openRescue);
   const quest = useQuestStep();
   const now = useNow(60_000);
   const questTool = quest?.step === 'getPair' ? 'shop' : quest?.step === 'makeReady' ? 'feed' : null;
@@ -85,7 +93,7 @@ export function Toolbar() {
   // An active Feed/Clean mode keeps the tray shut so the tank is free.
   const open = toolsOpen && !modePill;
   const giftReady = onboardingStep !== 0 && lastDailyGift !== localDateKey(new Date(now));
-  const showDot = !open && !modePill && (giftReady || nurseryCount > 0);
+  const showDot = !open && !modePill && (giftReady || nurseryCount > 0 || unread > 0);
 
   // The first tip points at the Feed button, so show the tools while it's up.
   useEffect(() => {
@@ -127,6 +135,13 @@ export function Toolbar() {
   const miniAvailable = useMemo(() => miniSupport() !== null, []);
   const miniOpen = useMiniTank((s) => s.kind !== null);
 
+  // A "How?" pointer fades on its own.
+  useEffect(() => {
+    if (!highlight) return;
+    const t = window.setTimeout(() => setCareHighlight(null), 8000);
+    return () => window.clearTimeout(t);
+  }, [highlight, setCareHighlight]);
+
   const pick = (action: () => void) => {
     action();
     setToolsOpen(false);
@@ -139,8 +154,8 @@ export function Toolbar() {
       <div className="dock-tools" id="dock-tools" aria-hidden={!open}>
         <ToolButton icon="🍤" label="Feed" active={mode === 'feed'} hidden={!open} pulse={questTool === 'feed'} onClick={() => toggle('feed')} onboarding="feed" />
         <ToolButton icon="🌟" label="Premium" active={mode === 'premium'} badge={premiumFood} hidden={!open} onClick={() => toggle('premium')} />
-        <ToolButton icon="🧽" label="Clean" active={mode === 'clean'} hidden={!open} onClick={() => toggle('clean')} />
-        <ToolButton icon="🎨" label="Decorate" active={mode === 'decorate'} hidden={!open} onClick={() => toggle('decorate')} />
+        <ToolButton icon="🧽" label="Clean" active={mode === 'clean'} hidden={!open} pulse={highlight === 'clean'} onClick={() => toggle('clean')} />
+        <ToolButton icon="🎨" label="Decorate" active={mode === 'decorate'} hidden={!open} pulse={highlight === 'decorate'} onClick={() => toggle('decorate')} />
         <ToolButton icon="🛒" label="Shop" active={panel === 'shop'} hidden={!open} pulse={questTool === 'shop'} onClick={() => togglePanel('shop')} />
         <ToolButton
           icon="💕"
@@ -155,6 +170,9 @@ export function Toolbar() {
           }
         />
         <ToolButton icon="🐟" label="My Fish" active={panel === 'myfish'} hidden={!open} onClick={() => pick(() => openPanel(panel === 'myfish' ? null : 'myfish'))} />
+        <ToolButton icon="🩺" label="Rescue" active={panel === 'rescue'} hidden={!open} onClick={() => pick(() => (panel === 'rescue' ? openPanel(null) : openRescue(null)))} />
+        <ToolButton icon="📬" label="Mail" active={panel === 'mail'} badge={unread > 0 ? unread : undefined} hidden={!open} onClick={() => pick(() => openPanel(panel === 'mail' ? null : 'mail'))} />
+        <ToolButton icon="📋" label="Tasks" active={panel === 'tasks'} badge={tasksLeft > 0 ? tasksLeft : undefined} hidden={!open} onClick={() => pick(() => openPanel(panel === 'tasks' ? null : 'tasks'))} />
         <ToolButton icon="🏠" label="Tanks" active={panel === 'tanks'} hidden={!open} onClick={() => togglePanel('tanks')} />
         <ToolButton icon="☕" label="Break" active={panel === 'break'} hidden={!open} onClick={() => togglePanel('break')} />
         {miniAvailable && <ToolButton icon="🪟" label="Mini Tank" title={miniSupport() === 'video' ? VIEW_ONLY_TIP : undefined} active={miniOpen} hidden={!open} onClick={() => pick(toggleMini)} />}
@@ -177,6 +195,7 @@ export function Toolbar() {
           </span>
           <span>Tools</span>
           {showDot && <span className="dock-dot" aria-hidden="true" />}
+          {!open && !modePill && careDot && <span className="dock-care" role="img" aria-label="A care task is waiting">💚</span>}
         </button>
       )}
     </nav>

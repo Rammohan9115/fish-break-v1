@@ -1,6 +1,13 @@
 // Hosts the tank canvas and the renderer. React never draws fish; it only mounts the canvas
 // and routes input: collect a drop > sponge (Clean) / drop food (Feed/Premium) > fish (tap, double-tap trick,
 // hold to pet) > decor (hold to pick up, then drag). Keyboard: arrows pick a fish, hold Space to pet it.
+import { NO_RESCUE_VIEW } from '../render/rescueFx';
+import { addEncourageTap } from '../game/rescues/courage';
+import { pickTip } from '../game/rescues/elder';
+import { perksOf } from '../game/rescues/registry';
+import { tipBubbles } from '../render/rescueFx';
+import { activeCase, stageVisual, taskDone, wantsAction } from '../game/rescues/engine';
+import type { StageVisual } from '../game/rescues/types';
 import { useEffect, useRef } from 'react';
 import {
   BOND,
@@ -15,6 +22,12 @@ import {
   PAN_TIP_KEY,
   PET_HOLD_MS,
   PET_TIP_KEY,
+  ENCOURAGE_ACTION,
+  TIP_BUBBLE_MS,
+  FIRST_LEAP_ACTION,
+  SIT_ACTION,
+  SIT_HOLD_MS,
+  SIT_RADIUS,
   SAND_Y,
   XP,
 } from '../game/constants';
@@ -119,6 +132,12 @@ function tapFish(fishId: string): void {
     }
     return;
   }
+  // A care item is picked: tapping the rescued animal gives it.
+  if (store.careItem && store.game.fish.find((f) => f.id === fishId)?.rescue?.recovering) {
+    if (store.giveCareItem(fishId)) sound.play('bloop');
+    return;
+  }
+  if (fish && perksOf(fish).tips) tipBubbles.set(fishId, { text: pickTip(Math.random()), until: performance.now() + TIP_BUBBLE_MS });
   lastTap = { fishId, at: now };
   showPetTip();
   // Tapping the same fish again opens its full card; the first tap shows quick actions next to it.
@@ -350,6 +369,18 @@ export function TankView() {
         const s = useGameStore.getState();
         return { decorating: s.mode === 'decorate', tryDecor: s.tryDecor, stylePreview: s.stylePreview };
       },
+      getRescueView: () => {
+        const st = useGameStore.getState();
+        const recovering = st.game.fish.some((f) => f.rescue?.recovering);
+        if (!recovering && !st.pelican && !st.healFx) return NO_RESCUE_VIEW;
+        const visuals = new Map<string, StageVisual>();
+        for (const f of st.game.fish) {
+          if (!f.rescue?.recovering) continue;
+          const v = stageVisual(st.game, f.id);
+          if (v) visuals.set(f.id, v.leap ? { ...v, leap: wantsAction(st.game, FIRST_LEAP_ACTION) } : v);
+        }
+        return { visuals, pelican: st.pelican, heal: st.healFx };
+      },
       onPetComplete: (fishId) => {
         const result = useGameStore.getState().petFish(fishId);
         if (result) {
@@ -427,10 +458,61 @@ export function TankView() {
   const touchesRef = useRef(new Map<number, number>());
   const twoFingerRef = useRef<number | null>(null);
 
+  /** "Sit with him": a 5 s hold near (not on) the rescued animal's burrow. */
+  const sitRef = useRef<{ timer: number; beat: number; win: Window } | null>(null);
+  const stopSit = () => {
+    const s = sitRef.current;
+    if (!s) return;
+    s.win.clearTimeout(s.timer);
+    s.win.clearInterval(s.beat);
+    sitRef.current = null;
+  };
+  const startSit = (renderer: Renderer, clientX: number, clientY: number, win: Window) => {
+    const st = useGameStore.getState();
+    const a = activeCase(st.game);
+    if (!a || !a.c.fishId || st.mode !== 'look') return;
+    const fishId = a.c.fishId;
+    const wants = a.def.stages[a.c.stage]?.tasks.some((t, i) => t.type === 'interact' && t.actionId === SIT_ACTION && !taskDone(st.game, a.def, a.c, i));
+    const { x, y } = renderer.toTank(clientX, clientY);
+    if (!wants || !renderer.restingFishNear(fishId, x, y, SIT_RADIUS)) return;
+    const beat = win.setInterval(() => renderer.sitHearts(fishId), 600);
+    const timer = win.setTimeout(() => {
+      stopSit();
+      useGameStore.getState().rescueInteract(SIT_ACTION, fishId);
+      sound.play('bloop');
+    }, SIT_HOLD_MS);
+    sitRef.current = { timer, beat, win };
+  };
+
+  /** "Encourage" (3 taps just above him within 5 s) and the first-leap ring tap. */
+  const encourageRef = useRef<number[]>([]);
+  const courageTap = (renderer: Renderer, clientX: number, clientY: number) => {
+    const st = useGameStore.getState();
+    const a = activeCase(st.game);
+    if (!a || !a.c.fishId || st.mode !== 'look') return;
+    const fishId = a.c.fishId;
+    const { x, y } = renderer.toTank(clientX, clientY);
+    if (wantsAction(st.game, FIRST_LEAP_ACTION) && renderer.leapTap(fishId, x, y)) {
+      st.rescueInteract(FIRST_LEAP_ACTION, fishId);
+      sound.play('bloop');
+      return;
+    }
+    if (!wantsAction(st.game, ENCOURAGE_ACTION) || !renderer.tapAbove(fishId, x, y)) return;
+    const r = addEncourageTap(encourageRef.current, performance.now());
+    encourageRef.current = r.taps;
+    if (!r.fired) return;
+    renderer.encourage(fishId);
+    st.rescueInteract(ENCOURAGE_ACTION, fishId);
+    sound.play('bloop');
+  };
+
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
     const renderer = rendererRef.current;
     if (!renderer) return;
+    stopSit();
+    courageTap(renderer, e.clientX, e.clientY);
+    startSit(renderer, e.clientX, e.clientY, (e.currentTarget.ownerDocument.defaultView ?? window) as Window);
     if (e.pointerType === 'touch') {
       const touches = touchesRef.current;
       touches.set(e.pointerId, performance.now());
@@ -591,6 +673,7 @@ export function TankView() {
   };
 
   const endGesture = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    stopSit();
     const touches = touchesRef.current;
     touches.delete(e.pointerId);
     const twoAt = twoFingerRef.current;

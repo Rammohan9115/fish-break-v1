@@ -149,28 +149,43 @@ export function hueRotatePixels(data: Uint8ClampedArray, deg: number): void {
 }
 
 /** Hue-rotated copies of a sprite (one per variant), made once and cached. */
+/** Darkens and mutes the colors (alpha untouched): `amount` 0..1. */
+export function darkenPixels(data: Uint8ClampedArray, amount: number): void {
+  const keep = 1 - amount;
+  for (let i = 0; i < data.length; i += 4) {
+    const grey = (data[i]! + data[i + 1]! + data[i + 2]!) / 3;
+    const mute = 0.6 * amount;
+    data[i] = (data[i]! * (1 - mute) + grey * mute) * keep;
+    data[i + 1] = (data[i + 1]! * (1 - mute) + grey * mute) * keep;
+    data[i + 2] = (data[i + 2]! * (1 - mute) + grey * mute) * keep;
+  }
+}
+
 const huedCache = new WeakMap<Sprite, Map<number, Sprite>>();
 
 /** The sprite recolored by `deg` degrees of hue (the sprite itself for 0). */
-export function huedSprite(s: Sprite, deg: number): Sprite {
+export function huedSprite(s: Sprite, deg: number, dark = 0): Sprite {
   const hue = ((Math.round(deg) % 360) + 360) % 360;
-  if (hue === 0) return s;
+  const shade = Math.round(Math.max(0, Math.min(1, dark)) * 100);
+  if (hue === 0 && shade === 0) return s;
+  const key = hue + shade * 360;
   let byHue = huedCache.get(s);
   if (!byHue) {
     byHue = new Map();
     huedCache.set(s, byHue);
   }
-  const hit = byHue.get(hue);
+  const hit = byHue.get(key);
   if (hit) return hit;
   const canvas = makeCanvas(s.w, s.h);
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return s;
   ctx.drawImage(s.canvas, 0, 0);
   const pixels = ctx.getImageData(0, 0, s.w, s.h);
-  hueRotatePixels(pixels.data, hue);
+  if (hue !== 0) hueRotatePixels(pixels.data, hue);
+  if (shade > 0) darkenPixels(pixels.data, shade / 100);
   ctx.putImageData(pixels, 0, 0);
   const out: Sprite = { canvas, w: s.w, h: s.h };
-  byHue.set(hue, out);
+  byHue.set(key, out);
   return out;
 }
 

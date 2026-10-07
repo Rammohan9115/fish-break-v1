@@ -43,7 +43,18 @@ import {
 import { breedingChecklist, compatiblePartners, startCourtship } from '../game/breeding';
 import * as economy from '../game/economy';
 import { clampZ } from '../game/decor';
+import { addCareTasks, rerollTask as rerollDailyTask } from '../game/dailyTasks';
+import { applyGameEvent } from '../game/events';
 import { grantXp } from '../game/levels';
+import {
+  CARE_ITEMS,
+  forceAdvance,
+  perksOf,
+  takeRescue as engineTake,
+  useCareItem as engineUseItem,
+  type GameEvent,
+} from '../game/rescues/engine';
+import { getRescue } from '../game/rescues/registry';
 import { getSpecies } from '../game/species';
 import {
   eatPellet as simEatPellet,
@@ -56,7 +67,7 @@ import {
   wipeAlgae as wipeAlgaeRule,
   type SimEvent,
 } from '../game/sim';
-import type { BondLevel, DecorId, DepthPlane, GameState, PlacedDecor, TankStyle, Rng, SpeciesId, Stage, ThemeId } from '../game/types';
+import type { BondLevel, CareItemId, Fish, DecorId, DepthPlane, GameState, PlacedDecor, TankStyle, Rng, SpeciesId, Stage, ThemeId } from '../game/types';
 import {
   browserEnv,
   formatOfflineSummary,
@@ -107,7 +118,7 @@ export function mergeToast(toasts: Toast[], text: string, id: number, action?: T
 export type ToolMode = 'look' | 'feed' | 'premium' | 'clean' | 'decorate';
 
 /** Overlay panel currently open. */
-export type Panel = 'shop' | 'tanks' | 'break' | 'settings' | 'breeding' | 'myfish' | null;
+export type Panel = 'shop' | 'tanks' | 'break' | 'settings' | 'breeding' | 'myfish' | 'rescue' | 'mail' | 'tasks' | null;
 export type BreedingTab = 'pairs' | 'nursery';
 
 /** An active Break Mode session (UI-only; not saved). */
@@ -182,6 +193,19 @@ export interface GameStore {
   trayTab: TrayTab;
   /** Dev: the October event is forced on (shop and purchases behave as if it's October). */
   eventForced: boolean;
+  /** Dev fake clock: days skipped ahead for the rescue/daily systems (not saved). */
+  dayShift: number;
+  /** Care item picked to use on the rescued animal (tap the animal next). */
+  careItem: CareItemId | null;
+  /** The case file open on the Rescue Board. */
+  rescueCaseId: string | null;
+  /** The pelican is delivering this animal (renderer plays it once). */
+  pelican: { fishId: string; at: number } | null;
+  /** A toolbar button the Care tab's "How?" is pointing at. */
+  careHighlight: string | null;
+  setCareHighlight: (target: string | null) => void;
+  /** A sparkle-heal to play on this fish (stage or rescue done). */
+  healFx: { fishId: string; done: boolean; at: number } | null;
 
   loadState: (game: GameState) => void;
   /** Runs fixed 1s sim ticks up to `now`; long gaps use offline catch-up. */
@@ -277,6 +301,19 @@ export interface GameStore {
   exitBreak: () => void;
   /** Opens today's gift if available (the gift box UI comes later). */
   claimDailyGift: () => economy.DailyGiftContents | null;
+  /** Rescue Stories. */
+  takeRescue: (id: string) => boolean;
+  openRescue: (caseId?: string | null) => void;
+  selectCareItem: (item: CareItemId | null) => void;
+  /** Uses the picked care item on the rescued animal (a tap on it, or the Care tab's button). */
+  giveCareItem: (fishId: string) => boolean;
+  buyCareItem: (item: CareItemId) => boolean;
+  /** A story-specific action, e.g. 'leave_him_be'. */
+  rescueInteract: (actionId: string, fishId?: string) => void;
+  readLetter: (letterId: string) => void;
+  rerollTask: (taskId: string) => void;
+  /** The game clock for rescues and daily tasks (real time + the dev day shift). */
+  clock: () => number;
   /** Dev-only helpers for previewing art (used by the dev panel). */
   dev: DevActions;
 }
@@ -306,6 +343,12 @@ export interface DevActions {
   giveAllDecor: () => void;
   /** Pretend it's October (the Halloween event) until turned off. Not saved. */
   forceEvent: (on: boolean) => void;
+  /** Rescue test helpers. */
+  startRescue: (id: string) => void;
+  completeRescueStage: () => void;
+  advanceDay: () => void;
+  giveCareItems: () => void;
+  resetDaily: () => void;
   /** Depth-plane preview: decor on the back / mid / front planes and a few shell and pearl drops on each (some behind decor). */
   spawnPlaneDemo: () => void;
 }
@@ -394,17 +437,24 @@ const nearPellets = new Map<string, readonly string[]>();
 
 /** Friendly+ fish in the active tank (they greet you after a long time away). */
 function greeters(game: GameState): string[] {
-  return game.fish.filter((f) => f.tankId === game.activeTankId && f.bondLevel >= 2).map((f) => f.id);
+  return game.fish.filter((f) => f.tankId === game.activeTankId && !f.rescue?.recovering && (f.bondLevel >= 2 || perksOf(f).greets)).map((f) => f.id);
 }
 
 export const trickKey = (fishId: string, trick: TrickId): string => `${fishId}:${trick}`;
+
+/** A full pet meter takes this long (the shy-pet limit compares against it). */
+const PET_FULL_SECONDS = 3;
+const PET_MIN_SECONDS = 1;
+let petStart: { fishId: string; at: number } | null = null;
+let petDone: string | null = null;
 
 let toastSeq = 0;
 let pelletSeq = 0;
 let devFishSeq = 0;
 
 /** Whether a fish's bond level unlocks this trick. */
-function unlockedTrick(level: BondLevel, trick: TrickId): boolean {
+function unlockedTrick(level: BondLevel, trick: TrickId, fish?: Fish): boolean {
+  if (fish && perksOf(fish).tricks?.includes(trick)) return true;
   return TRICKS.some((t) => t.id === trick && level >= t.level);
 }
 
@@ -458,6 +508,20 @@ export const useGameStore = create<GameStore>()((set, get) => {
     const unlock = levelUnlockText(levelUp.to, fish.speciesId);
     get().addToast(`${fish.name} is now your ${bondName(levelUp.to)}! 🎉${unlock ? ` ${unlock.replace('Trick:', 'New trick:')}` : ''}`);
     emitBond({ type: 'levelUp', fishId: fish.id, to: levelUp.to });
+    emitEvent({ type: 'bondUp' });
+  };
+
+  let dayShiftMs = 0;
+  const clock = () => Date.now() + dayShiftMs;
+
+  /** Feeds a game moment to the active rescue and today's daily tasks; shows their toasts. */
+  const emitEvent = (ev: GameEvent) => {
+    const before = get().game;
+    const r = applyGameEvent(before, ev, clock(), Math.random);
+    if (r.state !== before) set({ game: r.state });
+    for (const text of r.toasts) get().addToast(text);
+    const heal = r.healed[0];
+    if (heal) set({ healFx: { ...heal, at: Date.now() } });
   };
 
   const levelUpsFrom = (events: SimEvent[]) => events.flatMap((e) => (e.type === 'levelUp' ? [e.level] : []));
@@ -489,6 +553,13 @@ export const useGameStore = create<GameStore>()((set, get) => {
     stylePreview: null,
     trayTab: 'box',
     eventForced: false,
+    dayShift: 0,
+    careItem: null,
+    rescueCaseId: null,
+    pelican: null,
+    healFx: null,
+    careHighlight: null,
+    setCareHighlight: (careHighlight) => set({ careHighlight }),
 
     loadState: (game) =>
       set({
@@ -533,6 +604,12 @@ export const useGameStore = create<GameStore>()((set, get) => {
       }
       set({ game });
       announceLevelUps(levelUpsFrom(events));
+      if (gap < OFFLINE_STEP_MS) {
+        for (const e of events) if (e.type === 'pelletDissolved') emitEvent({ type: 'pelletDissolved' });
+        // Live play: counts toward "keep it clean for N minutes", and rolls the daily tasks over at midnight.
+        emitEvent({ type: 'play', seconds: Math.min(gap, 5000) / 1000 });
+        for (const e of events) if (e.type === 'hatched') emitEvent({ type: 'hatched' });
+      }
       if (gap < OFFLINE_STEP_MS && events.length > 0) {
         for (const text of breedingToasts(events, game)) get().addToast(text);
         for (const listener of simListeners) listener(events);
@@ -563,6 +640,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
           tanks: game.tanks.map((t) => (t.id === game.activeTankId ? { ...t, pellets: [...t.pellets, pellet] } : t)),
         },
       });
+      emitEvent({ type: 'feed', hour: new Date(clock()).getHours() });
       return true;
     },
 
@@ -591,6 +669,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
       const next = economy.collectDrop(get().game, dropId);
       if (!next) return false;
       commitWithXp(next, XP.shellCollected);
+      emitEvent({ type: 'shellCollected' });
       get().completeOnboardingStep(2);
       return true;
     },
@@ -599,6 +678,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
       const next = wipeAlgaeRule(get().game, spotId);
       if (!next) return false;
       commitWithXp(next, XP.algaeWiped);
+      emitEvent({ type: 'algaeWiped' });
       return true;
     },
 
@@ -679,12 +759,27 @@ export const useGameStore = create<GameStore>()((set, get) => {
       announceLevelUps(result.levelsGained);
       announceBondLevelUp(result.levelUp);
       get().completeOnboardingStep(3);
+      petDone = fishId;
+      emitEvent({ type: 'pet', fishId, seconds: PET_FULL_SECONDS });
       return { rewarded: result.rewarded, levelUp: result.levelUp };
     },
 
     setPetProgress: (petProgress) => {
       const prev = get().petProgress;
       if (prev?.fishId === petProgress?.fishId && prev?.pct === petProgress?.pct) return;
+      if (petProgress && (!prev || prev.fishId !== petProgress.fishId)) {
+        petStart = { fishId: petProgress.fishId, at: Date.now() };
+        petDone = null;
+      }
+      if (!petProgress && prev && petStart?.fishId === prev.fishId) {
+        // Let go early: a short pet still counts for a rescued animal (it's shy).
+        const seconds = (Date.now() - petStart.at) / 1000;
+        const fish = get().game.fish.find((f) => f.id === prev.fishId);
+        if (fish?.rescue?.recovering && petDone !== prev.fishId && seconds >= PET_MIN_SECONDS) {
+          emitEvent({ type: 'pet', fishId: prev.fishId, seconds });
+        }
+        petStart = null;
+      }
       set({ petProgress });
     },
 
@@ -694,7 +789,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
       const now = Date.now();
       const key = trickKey(fishId, trick);
       if ((get().trickCooldowns[key] ?? 0) > now) return false;
-      if (!unlockedTrick(fish.bondLevel, trick)) return false;
+      if (!unlockedTrick(fish.bondLevel, trick, fish)) return false;
       set((s) => ({ trickCooldowns: { ...s.trickCooldowns, [key]: now + TRICK_COOLDOWN_MS } }));
       emitBond({ type: 'trick', fishId, trick });
       return true;
@@ -702,7 +797,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
 
     toggleFollow: (fishId) => {
       const fish = get().game.fish.find((f) => f.id === fishId);
-      if (!fish || !unlockedTrick(fish.bondLevel, 'follow')) return;
+      if (!fish || !unlockedTrick(fish.bondLevel, 'follow', fish)) return;
       const now = Date.now();
       const current = get().follow;
       if (current && current.fishId === fishId && current.until > now) {
@@ -930,6 +1025,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
       get().recordDecor();
       const tank = result.state.tanks.find((t) => t.id === before.activeTankId)!;
       set({ game: result.state, selectedDecorId: tank.decor[tank.decor.length - 1]?.id ?? null });
+      emitEvent({ type: 'decorPlaced' });
       return true;
     },
 
@@ -1004,7 +1100,10 @@ export const useGameStore = create<GameStore>()((set, get) => {
       const { decorId, x, ...look } = t;
       const name = DECOR[decorId].name;
       const ok = commitResult(economy.buyAndPlaceDecor(get().game, decorId, x, look, eventClock(), Math.random), `🪴 ${name} placed!`);
-      if (ok) set({ tryDecor: null });
+      if (ok) {
+        set({ tryDecor: null });
+        emitEvent({ type: 'decorPlaced' });
+      }
       return ok;
     },
 
@@ -1035,9 +1134,74 @@ export const useGameStore = create<GameStore>()((set, get) => {
         announceLevelUps(result.levelsGained);
       }
       set({ breakSession: { ...session, result: { xp: result.xp } } });
+      emitEvent({ type: 'breakMinutes', minutes: Math.round(session.durationMs / MINUTE_MS) });
     },
 
     exitBreak: () => set({ breakSession: null }),
+
+    clock,
+
+    takeRescue: (id) => {
+      const r = engineTake(get().game, id, clock(), Math.random);
+      if (!r.ok) {
+        if (r.reason === 'done') get().addToast('💚 You already rescued this one!');
+        return false;
+      }
+      set({ game: addCareTasks(r.state, clock()), pelican: { fishId: r.arrived, at: Date.now() }, panel: null, rescueCaseId: null, selectedFishId: null });
+      for (const t of r.toasts) get().addToast(t);
+      return true;
+    },
+
+    openRescue: (caseId = null) => set({ panel: 'rescue', rescueCaseId: caseId, mode: 'look', pairingFishId: null }),
+
+    selectCareItem: (careItem) => set((s) => ({ careItem: careItem && s.game.rescue.careItems[careItem] > 0 ? careItem : null })),
+
+    giveCareItem: (fishId) => {
+      const item = get().careItem;
+      if (!item) return false;
+      const game = get().game;
+      const today = economy.localDateKey(new Date(clock()));
+      const r = engineUseItem(game, item, fishId, today, clock());
+      if (!r.ok) {
+        const name = game.fish.find((f) => f.id === fishId)?.name ?? 'He';
+        const text = { none: `No ${CARE_ITEMS[item].name.toLowerCase()} left.`, wrongFish: 'Care items are for the animal Dr. Fisher sent.', notNeeded: `${name} doesn’t need that right now.`, wait: `${name} needs a rest. Next stage tomorrow 🌙` }[r.reason];
+        get().addToast(text);
+        return false;
+      }
+      const result = r.result;
+      set({ game: result.state });
+      get().addToast(`${CARE_ITEMS[item].icon} ${CARE_ITEMS[item].name} given!`);
+      for (const t of result.toasts) get().addToast(t);
+      if (result.state.rescue.careItems[item] <= 0) set({ careItem: null });
+      // Daily tasks listen too (care tasks mirror the rescue's).
+      emitEvent({ type: 'check' });
+      const heal = result.healed[0];
+      if (heal) set({ healFx: { ...heal, at: Date.now() } });
+      return true;
+    },
+
+    buyCareItem: (item) => {
+      const game = get().game;
+      const price = CARE_ITEMS[item].price;
+      if (game.shells < price) {
+        get().addToast(PURCHASE_ERROR_TEXT.cost);
+        return false;
+      }
+      set({ game: { ...game, shells: game.shells - price, rescue: { ...game.rescue, careItems: { ...game.rescue.careItems, [item]: game.rescue.careItems[item] + 1 } } } });
+      get().addToast(`${CARE_ITEMS[item].icon} +1 ${CARE_ITEMS[item].name}`);
+      return true;
+    },
+
+    rescueInteract: (actionId, fishId) => emitEvent({ type: 'interact', actionId, fishId }),
+
+    readLetter: (letterId) =>
+      set((s) => ({ game: { ...s.game, mail: s.game.mail.map((l) => (l.id === letterId && !l.read ? { ...l, read: true } : l)) } })),
+
+    rerollTask: (taskId) => {
+      const next = rerollDailyTask(get().game, taskId, Math.random);
+      if (next) set({ game: next });
+      else get().addToast('No reroll left today.');
+    },
 
     claimDailyGift: () => {
       const result = economy.claimDailyGift(get().game, economy.localDateKey(new Date()), Math.random);
@@ -1048,6 +1212,30 @@ export const useGameStore = create<GameStore>()((set, get) => {
     },
 
     dev: {
+      startRescue: (id) => {
+        if (getRescue(id)) get().takeRescue(id);
+      },
+      completeRescueStage: () => {
+        const today = economy.localDateKey(new Date(clock()));
+        const r = forceAdvance(get().game, today, clock());
+        set({ game: r.state });
+        for (const t of r.toasts) get().addToast(t);
+        const heal = r.healed[0];
+        if (heal) set({ healFx: { ...heal, at: Date.now() } });
+      },
+      advanceDay: () => {
+        dayShiftMs += 24 * 60 * 60 * 1000;
+        set({ dayShift: dayShiftMs });
+        emitEvent({ type: 'check' });
+        get().addToast(`📅 Dev: +${Math.round(dayShiftMs / 86_400_000)} day(s)`);
+      },
+      giveCareItems: () =>
+        set((s) => ({ game: { ...s.game, rescue: { ...s.game.rescue, careItems: { soft_food: 9, healing_moss: 9, vitamin_flakes: 9 } } } })),
+      resetDaily: () => {
+        set((s) => ({ game: { ...s.game, daily: { ...s.game.daily, date: '', rerolled: false } } }));
+        emitEvent({ type: 'check' });
+        set((s) => ({ game: addCareTasks(s.game, clock()) }));
+      },
       spawnFish: ({ speciesId, stage, variant, shiny }) => {
         const now = Date.now();
         devFishSeq += 1;

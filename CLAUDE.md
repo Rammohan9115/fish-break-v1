@@ -532,5 +532,8 @@ One responsive system for every popup, panel and card (Phases 1–4).
   has a fit budget, has a hidden header/footer, has targets under 44 px (touch) / 32 px (mouse) or overlapping, text under 12 px or clipped, or (for a docked panel) leaves
   < 55 % of the tank beside it. Browse windows are big on purpose; they only have to fit the screen. `node scripts/audit/overlays.mjs` + `node scripts/audit/overlay-report.mjs` write `qa/overlays/REPORT.md`.
 
+## Rescue Stories
+Dr. Fisher's rescue cases, the Rescue Board, mailbox, care items and daily tasks: see `docs/rescues.md`. Rescues are data in `src/game/rescues/<id>.ts`.
+
 ## Out of scope (for now)
 Custom backend servers, multiplayer/visiting friends, payments, leaderboards.

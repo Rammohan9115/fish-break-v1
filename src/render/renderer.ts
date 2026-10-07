@@ -60,10 +60,15 @@ import {
   type FishActor,
   type FoodTarget,
   type JellyZone,
+  waterSpan,
 } from './behavior';
+import type { StageVisual } from '../game/rescues/types';
 import type { JellyDrawState } from './drawJelly';
 import { jellySize } from './jellyMotion';
-import { SAND_FOOT_EMBED } from '../game/constants';
+import { HATCHET_HOP_MS, LEAP_GAP_MS, PRACTICE_HOP_SCALE, SAND_FOOT_EMBED } from '../game/constants';
+import { isLonely, nearestFriend } from '../game/rescues/elder';
+import { clampToZone, isAboveTap, isLeapTap, leapRingAt } from '../game/rescues/courage';
+import { perksOf } from '../game/rescues/registry';
 import { drawFish, drawStar, fishHalfHeight, FISH_ART, fishScale, mouthOffset, setFishViewBoost } from './drawFish';
 import { eatSquash, pokeBounce, speedFraction } from './fishMotion';
 import { dropShadow } from './paint';
@@ -98,6 +103,7 @@ import type { Courtship, Egg } from '../game/types';
 import type { SimEvent } from '../game/sim';
 import { drawDrop, drawPellet, Particles } from './particles';
 import { BondFx, type PetOutcome } from './bondFx';
+import { burrowAmount, deliveryAlpha, drawBandage, drawCracks, drawEyeStalks, drawGlasses, drawGreyWhiskers, drawHeal, drawLonelyCloud, drawPelican, drawTipBubble, flightProgress, NO_RESCUE_VIEW, tipBubbles, type Box, type RescueView } from './rescueFx';
 import { DecorVisits } from './ambient/decorVisits';
 import { SetEffects } from './ambient/setEffects';
 import { drawLightingTint, drawWaterTint, SubstrateLayer } from './drawSubstrate';
@@ -129,6 +135,8 @@ export interface RendererDeps {
   onPetComplete?: (fishId: string) => PetOutcome | null;
   /** Decorate mode, the shop's "Try it" ghost, and a live Tank Style preview (read once per frame). */
   getDecorView?: () => DecorView;
+  /** Rescue visuals (bandage, cracks…), the pelican delivery and sparkle-heal (read once per frame). */
+  getRescueView?: () => RescueView;
   /** The pet meter moved (0..1), or petting stopped (null). */
   onPetProgress?: (fishId: string, progress: number | null) => void;
 }
@@ -240,6 +248,9 @@ export class Renderer {
   private seenPellets: Set<string> | null = null;
   private day: DayLight = dayLight(12);
   private breeding: BreedingView = NO_BREEDING;
+  private rescueView: RescueView = NO_RESCUE_VIEW;
+  /** Recovering elders with no friend near (drives the rain cloud and the lonely posture). */
+  private lonelyIds = new Set<string>();
   /** When each newborn arrived (it does a little happy spin). */
   private readonly spinAt = new Map<string, number>();
   /** Jelly tentacle areas this frame (fish steer around them), pooled; and per-jelly draw state. */
@@ -807,6 +818,85 @@ export class Renderer {
     this.bond.setFollow(fishId, until);
   }
 
+  /** Rescue fish near a point but not under it (the "sit with him" hold): its id, or null. */
+  restingFishNear(fishId: string, x: number, y: number, radius: number): boolean {
+    return this.fishNear(x, y, radius).includes(fishId) && this.fishToPet(x, y) !== fishId;
+  }
+
+  /** Hatchetfish hop rules: a recovering one stays down (no hops) or practices; a rescued one hops more often (perk); the guided leap forces a jump every few seconds. */
+  private applyCourage(f: Fish, actor: FishActor, visual: StageVisual | undefined, now: number, reduced: boolean): void {
+    const c = actor.crit!;
+    const rate = perksOf(f).hopRate ?? 1;
+    const hops = visual?.hops ?? 'full';
+    c.hopOn = hops !== 'none';
+    c.hopScale = hops === 'practice' ? PRACTICE_HOP_SCALE : visual?.leap ? 1.5 : 1;
+    c.hopGapMul = hops === 'practice' ? 0.12 : 1 / rate;
+    if (visual?.leap && c.landed && !reduced) c.nextHopAt = Math.min(c.nextHopAt, Math.max(now, c.hopAt + HATCHET_HOP_MS) + LEAP_GAP_MS);
+  }
+
+  /** The Professor: lonely (cloud, shy posture) with no cory near; with friends he follows the nearest one around. */
+  private followFriends(f: Fish, actor: FishActor, fish: Fish[], now: number): void {
+    const others = fish.filter((o) => o.id !== f.id && o.speciesId === 'cory' && !o.rescue?.recovering).map((o) => this.actors.get(o.id)).filter((a): a is FishActor => !!a);
+    if (isLonely(actor, others)) {
+      this.lonelyIds.add(f.id);
+      return;
+    }
+    this.lonelyIds.delete(f.id);
+    const friend = nearestFriend(actor, others)!;
+    const gap = actor.x < friend.x ? -44 : 44;
+    actor.targetX = friend.x + gap;
+    actor.targetY = friend.y;
+    actor.nextWanderAt = now + 900;
+  }
+
+  /** Keeps a recovering hatchetfish inside its stage's depth band (he eases back if pushed out). */
+  private holdZone(actor: FishActor, visual: StageVisual, dt: number): void {
+    const { top, bottom } = waterSpan();
+    actor.targetY = clampToZone(actor.targetY, visual, top, bottom);
+    const y = clampToZone(actor.y, visual, top, bottom);
+    actor.y += (y - actor.y) * Math.min(1, dt * 4);
+  }
+
+  /** Encouragement: a determined little wiggle and a swim upward (a bit higher than the stage's rest depth). */
+  encourage(fishId: string): void {
+    const actor = this.actors.get(fishId);
+    if (!actor) return;
+    const now = performance.now();
+    actor.pokeAt = now;
+    actor.dartUntil = now + 700;
+    actor.y -= 26;
+    for (let i = 0; i < 3; i++) this.particles.spawnHeart(actor.x + (Math.random() - 0.5) * 30, actor.y - 18);
+  }
+
+  /** Whether a tank point is in the water just above this fish (an "encourage" tap). */
+  tapAbove(fishId: string, x: number, y: number): boolean {
+    const a = this.actors.get(fishId);
+    return !!a && isAboveTap(a, { x, y });
+  }
+
+  /** The leap ring above this fish, only while he is (about to be) in the air. */
+  leapRing(fishId: string): { x: number; y: number; hot: boolean } | null {
+    const a = this.actors.get(fishId);
+    const c = a?.crit;
+    const view = this.rescueView.visuals.get(fishId);
+    if (!a || !c || !view?.leap) return null;
+    const now = performance.now();
+    const air = !c.landed || now - c.hopAt < HATCHET_HOP_MS + 500;
+    return { ...leapRingAt(a, waterSpan().top), hot: air };
+  }
+
+  /** A tap on the glowing ring while he jumps. */
+  leapTap(fishId: string, x: number, y: number): boolean {
+    const ring = this.leapRing(fishId);
+    return !!ring && ring.hot && isLeapTap(ring, { x, y });
+  }
+
+  /** A few hearts float up from this fish (the "sit with him" hold). */
+  sitHearts(fishId: string): void {
+    const actor = this.actors.get(fishId);
+    if (actor) this.particles.spawnHeart(actor.x + (Math.random() - 0.5) * 24, actor.y - 20);
+  }
+
   /** Welcome back: these fish swim to the front and wiggle hello. */
   greet(fishIds: readonly string[]): void {
     this.bond.greet(fishIds, this.camX + this.viewW / 2, performance.now());
@@ -932,6 +1022,7 @@ export class Renderer {
     if (tank) {
       this.breeding = this.deps.getBreedingView?.() ?? NO_BREEDING;
       this.decorView = this.deps.getDecorView?.() ?? NO_DECOR_VIEW;
+      this.rescueView = this.deps.getRescueView?.() ?? NO_RESCUE_VIEW;
       this.update(game, tank, t, dt);
       this.draw(game, tank, t, dt);
     }
@@ -958,6 +1049,14 @@ export class Renderer {
       const mates = getSpecies(f.speciesId).traits.includes('schools')
         ? fish.filter((o) => o.speciesId === f.speciesId).map((o) => this.actors.get(o.id)!)
         : [];
+      // A burrowed rescue (Noodle) stays put in the sand while the stage says so.
+      const sunk = this.rescueView.visuals.get(f.id);
+      if (actor.crit && sunk?.burrow !== undefined && sunk.burrow >= 0.5) {
+        actor.crit.mode = 'buried';
+        actor.crit.modeUntil = now + 1000;
+      }
+      if (sunk?.elder) this.followFriends(f, actor, fish, now);
+      if (actor.crit && f.speciesId === 'hatchetfish') this.applyCourage(f, actor, sunk, now, reduced);
       const eaten = updateActor(actor, {
         fish: f,
         now,
@@ -975,6 +1074,7 @@ export class Renderer {
         perches: getSpecies(f.speciesId).traits.includes('climbs') ? perches : undefined,
         ...this.steer(f.id, now, reduced),
       });
+      if (actor.crit && sunk?.zone) this.holdZone(actor, sunk, dt);
       if (actor.crit) for (const kind of drainFx(actor.crit)) this.spawnCritterFx(kind, actor, f, reduced);
       this.updateGaze(actor, food, dt);
       if (eaten) {
@@ -1232,6 +1332,8 @@ export class Renderer {
         const moving = Math.min(1, speedFraction(actor.speed, getSpecies(f.speciesId).speed) * 1.6);
         const cp = critterPose(actor.crit, f.speciesId, now, actor.facing, timeSec, moving, reduced, f.stage === 'baby');
         winking = cp.winking;
+        const burrowed = this.rescueView.visuals.get(f.id);
+        if (burrowed?.burrow !== undefined) cp.burrow = reduced ? burrowed.burrow : burrowAmount(burrowed, timeSec);
         if (traits.includes('sandDweller')) {
           const geo = depthGeometry(actor.crit.z);
           const feetY = actor.y + hh * geo.scale * SAND_FOOT_EMBED;
@@ -1260,6 +1362,19 @@ export class Renderer {
         ctx.scale(pose.scale, pose.scale);
         ctx.translate(-actor.x, -actor.y);
       }
+      // Rescue states: delivery fade-in, shy (smaller), grey (desaturated), molting (hidden but for eye stalks).
+      const rv = this.rescueView.visuals.get(f.id);
+      const flight = flightProgress(this.rescueView, f.id, reduced);
+      const rescueBox: Box = { x: actor.x, y: actor.y + bob, halfW: mouthOffset(f.speciesId, f.stage) * 0.9, halfH: fishHalfHeight(f.speciesId, f.stage), facing: f.speciesId === 'crab' ? 1 : actor.facing >= 0 ? 1 : -1 };
+      if (flight !== null) ctx.globalAlpha *= deliveryAlpha(flight);
+      const lonely = !!rv?.elder && this.lonelyIds.has(f.id);
+      if (rv?.shy || lonely) {
+        ctx.translate(actor.x, actor.y);
+        ctx.scale(0.86, 0.86);
+        ctx.translate(-actor.x, -actor.y);
+      }
+      if (rv?.desaturate) ctx.filter = `grayscale(${rv.desaturate})`;
+      if (rv?.hidden) ctx.globalAlpha *= 0.1;
       drawFish(ctx, actor.x, actor.y + bob, {
         speciesId: f.speciesId,
         variant: getVariant(f.speciesId, f.variant),
@@ -1285,6 +1400,22 @@ export class Renderer {
         jelly: this.jellyState(actor, now),
         claws: f.speciesId === 'crab' ? this.crabClaws(f, actor, now, timeSec, reduced) : undefined,
       });
+      const glasses = rv?.elder || perksOf(f).glasses;
+      if (rv || glasses) {
+        ctx.filter = 'none';
+        ctx.globalAlpha = this.decorView.decorating ? 0.5 : 1;
+        if (glasses) drawGlasses(ctx, rescueBox, getSpecies(f.speciesId).eye[f.stage === 'baby' ? 'baby' : 'adult'], px);
+        if (rv?.elder) drawGreyWhiskers(ctx, rescueBox, px);
+      }
+      if (rv) {
+        ctx.filter = 'none';
+        ctx.globalAlpha = this.decorView.decorating ? 0.5 : 1;
+        if (rv.hidden) drawEyeStalks(ctx, rescueBox, px);
+        else {
+          if (rv.cracks) drawCracks(ctx, rescueBox, px);
+          if (rv.bandage) drawBandage(ctx, rescueBox, rv.bandage, px);
+        }
+      }
       ctx.restore();
     };
     // Sand dwellers stand on a depth plane: perspective scale and haze by depth, drawn between the decor pieces
@@ -1354,6 +1485,7 @@ export class Renderer {
     drawMerged(order.front, dropsFront, paintDecor, paintDrop, dwellerItems(true));
     if (this.snapGuide !== null) this.drawSnapGuide(this.snapGuide, view, px);
     if (!picture) drawFrontPlants(ctx, pal, sceneTime, px, view);
+    this.drawRescueFx(game, tank, reduced);
     // Eggs sit in front of everything on the sand, so they're never hidden behind decor or fish.
     const wallNow = Date.now();
     for (const egg of game.eggs) {
@@ -1529,6 +1661,51 @@ export class Renderer {
     ctx.fillText('◀', x - w / 2 - pad - 10, baseY - h / 2);
     ctx.fillText('▶', x + w / 2 + pad + 10, baseY - h / 2);
     ctx.restore();
+  }
+
+  /** The pelican delivering a rescued animal, and the sparkle-heal after a stage. */
+  private drawRescueFx(game: GameState, tank: Tank, reduced: boolean): void {
+    const { pelican, heal } = this.rescueView;
+    const at = (id: string) => {
+      const f = game.fish.find((x) => x.id === id && x.tankId === tank.id);
+      const a = f && this.actors.get(id);
+      return f && a ? { x: a.x, y: a.y, r: fishHalfHeight(f.speciesId, f.stage) * 1.4 } : null;
+    };
+    if (pelican) {
+      const t = flightProgress(this.rescueView, pelican.fishId, reduced);
+      const target = at(pelican.fishId);
+      if (t !== null && target) drawPelican(this.ctx, t, target, TANK_WIDTH);
+    }
+    const nowMs = performance.now();
+    for (const id of this.lonelyIds) {
+      const a = this.actors.get(id);
+      if (a && this.rescueView.visuals.has(id) && !reduced) drawLonelyCloud(this.ctx, a.x, a.y - 34, (nowMs / 2600 + a.phase) % 1, 1 / this.scale);
+    }
+    for (const [id, tip] of tipBubbles) {
+      const a = this.actors.get(id);
+      if (!a || nowMs > tip.until) tipBubbles.delete(id);
+      else drawTipBubble(this.ctx, a.x, a.y - 30, tip.text, 1 / this.scale);
+    }
+    for (const id of this.rescueView.visuals.keys()) {
+      const ring = this.leapRing(id);
+      if (!ring) continue;
+      const ctx = this.ctx;
+      const pulse = 0.5 + 0.5 * Math.sin(performance.now() / (ring.hot ? 90 : 260));
+      ctx.save();
+      ctx.globalAlpha = ring.hot ? 0.95 : 0.4 + 0.2 * pulse;
+      ctx.lineWidth = 5 + 3 * pulse;
+      ctx.strokeStyle = '#ffe066';
+      ctx.shadowColor = '#fff3a8';
+      ctx.shadowBlur = ring.hot ? 26 : 12;
+      ctx.beginPath();
+      ctx.arc(ring.x, ring.y, 34 + 4 * pulse, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (heal) {
+      const target = at(heal.fishId);
+      if (target) drawHeal(this.ctx, this.rescueView, target, reduced);
+    }
   }
 
   /** Soft pulsing ring behind a fish: white dashes for the selected one, a pink glow for pairing partners. */

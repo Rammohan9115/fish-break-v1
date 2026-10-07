@@ -1190,7 +1190,7 @@ export function drawFish(ctx: Ctx, x: number, y: number, p: FishDrawParams): voi
   }
   const sprite = fishSprite(p.speciesId, p.stage);
   if (sprite) {
-    const hued = huedSprite(sprite, p.variant.hue ?? 0);
+    const hued = huedSprite(sprite, p.variant.hue ?? 0, p.variant.dark ?? 0);
     const cfg = clawConfig(p.speciesId, spriteArtFor(p.stage));
     const split = cfg ? splitSprite(hued, cfg) : null;
     drawSpriteFish(ctx, x, y, p, split ? split.body : hued, split);

@@ -1,7 +1,7 @@
 // All balance numbers live here. Logic must not contain magic numbers.
 import type { CollectionDef, CollectionId, DecorDef, DecorId, DecorSize, Price, StyleCategory, StyleOption, TankStyle, ThemeId } from './types';
 
-export const SAVE_VERSION = 8;
+export const SAVE_VERSION = 9;
 
 // ---------------------------------------------------------------------------
 // Time
@@ -493,6 +493,23 @@ export const DECOR_LONG_PRESS_MS = 450;
 export const LONG_PRESS_SLOP_PX = 10;
 /** Hold a fish this long to start petting it (shorter is a tap). */
 export const PET_HOLD_MS = 250;
+/** Rescue "sit with him": hold the water near (not on) the animal this long, within this radius (tank units). */
+export const SIT_ACTION = 'sit_with_him';
+export const SIT_HOLD_MS = 5000;
+export const SIT_RADIUS = 140;
+/** Rescue "encourage" (Skipper): this many taps just above him within the window = one encouragement. */
+export const ENCOURAGE_ACTION = 'encourage';
+export const FIRST_LEAP_ACTION = 'first_leap';
+export const ENCOURAGE_TAPS = 3;
+export const ENCOURAGE_WINDOW_MS = 5000;
+/** A tap counts when it lands this far above him (min, max) and within this sideways reach (tank units). */
+export const ENCOURAGE_ABOVE = [8, 170] as const;
+export const ENCOURAGE_REACH_X = 90;
+/** The first-leap ring: how far above the water line it glows, its tap radius, and how often he jumps while it is wanted (ms). */
+export const LEAP_RING_RADIUS = 56;
+export const LEAP_GAP_MS = 5000;
+/** A practice hop is this fraction of a full hop's height. */
+export const PRACTICE_HOP_SCALE = 0.35;
 /** The pet meter fills in this long while holding still… */
 export const PET_METER_MS = 3 * SECOND_MS;
 /** …and this much faster while stroking back and forth. */
@@ -1106,6 +1123,10 @@ export const SHRIMP_FLICK_COOLDOWN_MS = 4_000;
 /** Helper roles. Cory: lets a landed pellet sit this long before eating it, then waits this long (ms) before the next. */
 export const CORY_EAT_DELAY_MS = 2_500;
 export const CORY_EAT_COOLDOWN_MS = 10_000;
+/** Professor Whiskers: another cory counts as "near" him within this distance (tank units); beyond it he is lonely. */
+export const LONELY_RADIUS = 260;
+export const GROUP_PHOTO_ACTION = 'group_photo';
+export const TIP_BUBBLE_MS = 4000;
 /** Hunger a cory regains from a pellet it cleans up. */
 export const CORY_EAT_HUNGER = 8;
 /** Shrimp: cleanliness per minute each (non-baby) shrimp adds, and the tank-wide cap. */

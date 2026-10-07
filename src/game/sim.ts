@@ -75,6 +75,8 @@ import {
 import { completeCourtships } from './breeding';
 import { applyXp, levelUpReward } from './levels';
 import { randomName } from './names';
+import { perksOf } from './rescues/registry';
+import { emptyDaily, emptyRescueState, welcomeLetter } from './rescues/init';
 import { getSpecies, randomVariantKey, slotWeight } from './species';
 import type { AlgaeSpot, Egg, Fish, GameState, Rng, SpeciesId, Stage, Tank } from './types';
 
@@ -136,7 +138,7 @@ export function stageForGrowth(speciesId: SpeciesId, growth: number): Exclude<St
 /** Hatched fish in a tank. Eggs (and Nursery babies) don't take up room. */
 export function tankOccupancy(state: GameState, tankId: string): number {
   let used = 0;
-  for (const f of state.fish) if (f.tankId === tankId) used += slotWeight(f.speciesId);
+  for (const f of state.fish) if (f.tankId === tankId && !f.rescue?.recovering) used += slotWeight(f.speciesId);
   return used;
 }
 
@@ -219,12 +221,19 @@ function randomAlgaeSize(rng: Rng): number {
   return ALGAE_MIN_SIZE + rng() * (ALGAE_MAX_SIZE - ALGAE_MIN_SIZE);
 }
 
+/** A cory's pellet cooldown: 25% shorter for all corys while a recovered Professor Whiskers (group bonus) is in the tank. */
+export function coryEatCooldownMs(corys: readonly Fish[]): number {
+  const bonus = Math.max(0, ...corys.map((c) => perksOf(c).groupEatBonus ?? 0));
+  return CORY_EAT_COOLDOWN_MS / (1 + bonus);
+}
+
 /** Pellets sink, land on the sand, and dissolve after sitting there. */
 function updatePellets(ctx: TickCtx, tank: Tank): void {
   const dtSec = ctx.dtMs / SECOND_MS;
   const dissolveMs = PELLET_DISSOLVE_SECONDS * SECOND_MS;
   const remaining = [];
   const corys = ctx.state.fish.filter((f) => f.tankId === tank.id && f.speciesId === 'cory');
+  const coryCooldownMs = coryEatCooldownMs(corys);
   for (const pellet of tank.pellets) {
     if (pellet.landedAt === null) {
       pellet.y += pellet.vy * dtSec;
@@ -238,7 +247,7 @@ function updatePellets(ctx: TickCtx, tank: Tank): void {
     }
     // A cory cleans up a landed pellet before it dissolves (one pellet per cory per cooldown), so it never fouls the tank.
     if (pellet.landedAt !== null && ctx.now - pellet.landedAt >= CORY_EAT_DELAY_MS) {
-      const cory = corys.find((c) => ctx.now - (c.lastPelletEatAt ?? -Infinity) >= CORY_EAT_COOLDOWN_MS);
+      const cory = corys.find((c) => ctx.now - (c.lastPelletEatAt ?? -Infinity) >= coryCooldownMs);
       if (cory) {
         cory.lastPelletEatAt = ctx.now;
         cory.hunger = clamp(cory.hunger + CORY_EAT_HUNGER, HUNGER_MIN, HUNGER_MAX);
@@ -358,7 +367,7 @@ function updateFish(ctx: TickCtx, fish: Fish, tank: Tank, occupancy: number): vo
     }
     // A crab also digs up a shell or two now and then (counts toward the same drop cap).
     if (fish.speciesId === 'crab') {
-      const digMs = CRAB_DIG_MINUTES * MINUTE_MS;
+      const digMs = (CRAB_DIG_MINUTES * MINUTE_MS) / (perksOf(fish).digBonus ?? 1);
       fish.lastDigAt ??= ctx.now;
       while (ctx.now - fish.lastDigAt >= digMs) {
         fish.lastDigAt += digMs;
@@ -642,6 +651,10 @@ export function createInitialState(now: number = Date.now(), rng: Rng = Math.ran
     lastBreakXpAt: null,
     decorInventory: {},
     ownedStyles: [],
+    rescue: emptyRescueState(),
+    mail: [welcomeLetter(now)],
+    journal: [],
+    daily: emptyDaily(),
   };
 }
 

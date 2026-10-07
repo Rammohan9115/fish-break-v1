@@ -72,6 +72,10 @@ export interface CritterState {
   winkUntil: number;
   nextHopAt: number;
   hopAt: number;
+  /** Rescue hop control (hatchetfish): 0 = no hops, 1 = normal; gap multiplier (<1 = more often); hop height multiplier. */
+  hopOn: boolean;
+  hopGapMul: number;
+  hopScale: number;
   /** False while a hatchetfish is in the air (the landing splash is still to come). */
   landed: boolean;
   /** Shrimp flick: which way (±1) it darts, when it may flick again. */
@@ -105,6 +109,9 @@ export function createCritter(speciesId: SpeciesId, now: number, rng: Rng): Crit
     winkUntil: 0,
     nextHopAt: now + rand(rng, HATCHET_FIRST_HOP),
     hopAt: -Infinity,
+    hopOn: true,
+    hopGapMul: 1,
+    hopScale: 1,
     landed: true,
     flickDir: -1,
     nextFlickAt: 0,
@@ -247,10 +254,11 @@ function stepShrimp(c: CritterState, now: number, rng: Rng, reduced: boolean): C
 
 function stepHatchet(c: CritterState, now: number, rng: Rng, reduced: boolean): void {
   if (reduced) return;
-  if (c.landed && now >= c.nextHopAt) {
+  if (c.landed && now >= c.nextHopAt && !c.hopOn) c.nextHopAt = now + 1000;
+  else if (c.landed && now >= c.nextHopAt) {
     c.hopAt = now;
     c.landed = false;
-    c.nextHopAt = now + rand(rng, HATCHET_HOP_GAP);
+    c.nextHopAt = now + rand(rng, HATCHET_HOP_GAP) * c.hopGapMul;
     c.fx.push('splash', 'ripple');
   } else if (!c.landed && now - c.hopAt >= HATCHET_HOP_MS) {
     c.landed = true;
@@ -267,7 +275,7 @@ export function hopProgress(c: CritterState, now: number): number {
 /** How far above its swim line a hatchetfish is while hopping (tank units; 0 when not hopping). */
 export function hopHeight(c: CritterState, now: number): number {
   const t = hopProgress(c, now);
-  return t > 0 ? Math.sin(Math.PI * t) * HATCHET_HOP_HEIGHT : 0;
+  return t > 0 ? Math.sin(Math.PI * t) * HATCHET_HOP_HEIGHT * c.hopScale : 0;
 }
 
 export interface CritterPose {

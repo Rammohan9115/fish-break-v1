@@ -29,6 +29,9 @@ import { Toolbar } from './ui/Toolbar';
 import { BreedingGuide } from './ui/BreedingGuide';
 import { BreedingPanel } from './ui/BreedingPanel';
 import { MyFish } from './ui/MyFish';
+import { DailyTasks } from './ui/rescue/DailyTasks';
+import { Mailbox } from './ui/rescue/Mailbox';
+import { RescueBoard } from './ui/rescue/RescueBoard';
 import { DecorTray } from './ui/DecorTray';
 import { DecorToolbar } from './ui/DecorToolbar';
 import { TankFrame } from './ui/TankFrame';
@@ -184,6 +187,9 @@ export function App() {
           <TankSwitcher />
           <BreedingPanel />
           <MyFish />
+          <RescueBoard />
+          <Mailbox />
+          <DailyTasks />
           <DecorTray />
           <DecorToolbar />
           <PairingBanner />

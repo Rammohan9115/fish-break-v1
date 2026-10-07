@@ -266,6 +266,11 @@ export function sandCenterY(plane: DepthPlane, speciesId: SpeciesId, stage: Fish
   return SAND_Y + geo.dy - fishHalfHeight(speciesId, stage) * geo.scale * SAND_FOOT_EMBED;
 }
 
+/** The water column's top and bottom (tank units): the surface and the sand line. */
+export function waterSpan(): { top: number; bottom: number } {
+  return { top: swimExtent.minY, bottom: SAND_Y };
+}
+
 /** The water's top share where surface dwellers (hatchetfish) swim. */
 function surfaceZoneBottom(): number {
   return swimExtent.minY + (SAND_Y - swimExtent.minY) * SURFACE_ZONE_FRACTION;
