@@ -201,7 +201,7 @@ rescues/cherry.ts — Cherry the Shrimp, "Lost Her Color"
 - Visuals: stage 1 = almost white/translucent; stage 2 = pale pink; stage 3 = pink; stage 4 = bright ruby
   red (sparkle-heal).
 - Stage 1: keepCleanliness(75, 10 min) · placeDecor(moss_ball)
-- Stage 2: interact("no_overfeeding": a day where no pellets dissolve on the sand, shown as a live
+- Stage 2: noDissolve(15 min of play with no pellets dissolving on the sand, shown as a live
   checkbox; corys eating landed pellets count as success) · useItem(vitamin_flakes, 1)
 - Stage 3: ownSpecies(cory, 1) ("corys keep the sand clean for her") · useItem(healing_moss, 1)
 - Stage 4: keepCleanliness(80, 10 min) · pet(2)
@@ -229,7 +229,7 @@ rescues/skipper.ts — Skipper the Hatchetfish, "Afraid to Jump"
   practice hops; stage 4 = full surface zone and a big leap (sparkle-heal + rainbow splash).
 - Stage 1: placeDecor(lily_pad) ("shade makes the surface feel safe") · useItem(soft_food, 1)
 - Stage 2: interact("encourage", 3)
-- Stage 3: interact("encourage", 5) · keepCleanliness(65, 10 min)
+- Stage 3: interact("encourage", 4) · keepCleanliness(65, 10 min)
 - Stage 4: interact("first_leap": a short guided moment where the player taps a glowing ring above the
   water as he jumps) · pet(2)
 - Rewards: Skipper with the "Sky Silver" variant (silver with a soft sky-blue iridescent sheen), the jump

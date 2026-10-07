@@ -5,7 +5,7 @@ test('rescue flow: board → take Pinch → care → stage 1 → next day → sw
   await freshGame(page, { seed: true });
   const st = () => page.evaluate(() => window.__fishbowl.store.getState().game.rescue);
   await page.evaluate(() => window.__fishbowl.store.getState().openRescue(null));
-  await page.locator('.rescue-card').first().click();
+  await page.locator('.rescue-card', { hasText: 'Pinch' }).click();
   await page.getByRole('button', { name: /Take this rescue/ }).click();
   await expect.poll(async () => (await st()).activeId).toBe('pinch');
 

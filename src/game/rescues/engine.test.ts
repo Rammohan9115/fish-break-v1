@@ -3,7 +3,7 @@ import { constRng, makeFish, T0 } from '../testUtils';
 import { createInitialState } from '../sim';
 import { localDateKey } from '../economy';
 import { applyGameEvent } from '../events';
-import { ensureDaily, rerollTask, seededRng, WEEKLY_CHEST } from '../dailyTasks';
+import { addCareTasks, DAILY_TASK_COUNT, ensureDaily, GENERAL_KINDS, rerollTask, seededRng, WEEKLY_CHEST } from '../dailyTasks';
 import { migrate } from '../../store/save';
 import { activeCase, careAvailable, forceAdvance, pauseRescue, takeRescue, taskValue, useCareItem } from './engine';
 import { getRescue, RESCUES } from './registry';
@@ -163,6 +163,29 @@ describe('daily tasks', () => {
     expect(g.daily.tasks).toHaveLength(3);
     const again = ensureDaily({ ...started(), daily: { ...g.daily, date: '', recentKinds: [] } }, T0);
     expect(again.daily.tasks.map((t) => t.kind)).toEqual(g.daily.tasks.map((t) => t.kind));
+  });
+
+  it('switching rescues on the same day drops the old care tasks and keeps 3 tasks', () => {
+    let g = started();
+    g = addCareTasks(g, T0);
+    expect(g.daily.tasks.some((t) => t.care?.caseId === 'pinch')).toBe(true);
+    const r = takeRescue(g, 'noodle', T0, constRng(0.5));
+    if (!r.ok) throw new Error(r.reason);
+    g = addCareTasks(r.state, T0);
+    expect(g.daily.tasks).toHaveLength(DAILY_TASK_COUNT);
+    expect(g.daily.tasks.filter((t) => t.care).every((t) => t.care!.caseId === 'noodle')).toBe(true);
+  });
+
+  it('a reroll never draws a hatch task without an egg, nor a recently drawn kind', () => {
+    const g = { ...ensureDaily({ ...createInitialState(T0, constRng(0.5)), level: 30 }, T0), eggs: [] };
+    const recent = g.daily.recentKinds ?? [];
+    for (let seed = 1; seed < 40; seed++) {
+      const next = rerollTask({ ...g, daily: { ...g.daily, rerolled: false } }, g.daily.tasks[0]!.id, seededRng(seed))!;
+      const kind = next.daily.tasks[0]!.kind;
+      expect(kind).not.toBe('hatch');
+      expect(GENERAL_KINDS.some((k) => k.kind === kind)).toBe(true);
+      expect(recent.includes(kind) && recent.length < GENERAL_KINDS.length - 2).toBe(false);
+    }
   });
 
   it('rerolls a general task once a day, never a care task', () => {

@@ -34,6 +34,10 @@ export const GENERAL_KINDS: GeneralKind[] = [
   { kind: 'break', label: (n) => `${n} min in Break Mode`, base: 2, event: (e) => (e.type === 'breakMinutes' ? e.minutes : 0) },
   { kind: 'bond', label: () => 'Raise a fish’s bond level', base: 1, minLevel: 3, weight: 0.5, event: (e) => (e.type === 'bondUp' ? 1 : 0) },
 ];
+/** Kinds that may be drawn now: level-gated, no hatch task without an egg. */
+const eligibleKinds = (game: GameState): GeneralKind[] =>
+  GENERAL_KINDS.filter((k) => (k.minLevel ?? 0) <= game.level && (k.kind !== 'hatch' || game.eggs.length > 0));
+
 function pickKind(pool: GeneralKind[], rng: Rng): GeneralKind {
   const total = pool.reduce((n, k) => n + (k.weight ?? 1), 0);
   let r = rng() * total;
@@ -115,7 +119,7 @@ export function ensureDaily(game: GameState, now: number): GameState {
     }
   }
   const recent = new Set(game.daily.recentKinds ?? []);
-  const eligible = GENERAL_KINDS.filter((k) => (k.minLevel ?? 0) <= game.level && (k.kind !== 'hatch' || game.eggs.length > 0));
+  const eligible = eligibleKinds(game);
   const fresh = eligible.filter((k) => !recent.has(k.kind));
   const pool = fresh.length >= DAILY_TASK_COUNT ? fresh : eligible;
   while (tasks.length < DAILY_TASK_COUNT && pool.length > 0) {
@@ -141,9 +145,11 @@ export function rerollTask(game: GameState, taskId: string, rng: Rng): GameState
   const t = game.daily.tasks.find((x) => x.id === taskId);
   if (!t || t.care || t.done || game.daily.rerolled) return null;
   const used = new Set(game.daily.tasks.map((x) => x.kind));
-  const pool = GENERAL_KINDS.filter((k) => (k.minLevel ?? 0) <= game.level && !used.has(k.kind));
+  const recent = new Set(game.daily.recentKinds ?? []);
+  const open = eligibleKinds(game).filter((k) => !used.has(k.kind));
+  const pool = open.some((k) => !recent.has(k.kind)) ? open.filter((k) => !recent.has(k.kind)) : open;
   if (pool.length === 0) return null;
-  const kind = pool[Math.floor(rng() * pool.length)]!;
+  const kind = pickKind(pool, rng);
   const fresh = { ...makeGeneral(kind, game.level, rng, game.daily.tasks.length), id: t.id };
   return { ...game, daily: { ...game.daily, rerolled: true, tasks: game.daily.tasks.map((x) => (x.id === taskId ? fresh : x)) } };
 }
@@ -219,9 +225,11 @@ export function addCareTasks(game: GameState, now: number): GameState {
   const stage = a.def.stages[a.c.stage];
   if (!stage) return s;
   const open = stage.tasks.map((t, i) => ({ t, i })).filter(({ i }) => !taskDone(s, a.def, a.c, i)).slice(0, 2);
-  const tasks = s.daily.tasks.filter((t) => !t.care);
-  const drop = tasks.filter((t) => !t.done).slice(-open.length).map((t) => t.id);
-  const kept = s.daily.tasks.filter((t) => !drop.includes(t.id));
+  // Care tasks of another rescue or an older stage are stale (they were already paid): drop them.
+  const current = s.daily.tasks.filter((t) => !t.care || (t.care.caseId === a.def.id && t.care.stage === a.c.stage));
+  const general = current.filter((t) => !t.care);
+  const drop = general.filter((t) => !t.done).slice(-open.length).map((t) => t.id);
+  const kept = current.filter((t) => !drop.includes(t.id));
   const care: DailyTaskState[] = open.map(({ t, i }, n) => ({
     id: `task-care-${a.c.stage}-${n}`,
     kind: 'care',
@@ -231,5 +239,14 @@ export function addCareTasks(game: GameState, now: number): GameState {
     reward: careReward(s.level, n, CARE_ITEM_IDS[(a.c.stage + n) % CARE_ITEM_IDS.length]!),
     care: { caseId: a.def.id, stage: a.c.stage, index: i },
   }));
-  return { ...s, daily: { ...s.daily, tasks: [...care, ...kept] } };
+  const tasks = [...care, ...kept];
+  // Dropping stale tasks can leave fewer than 3: top up from the general pool.
+  const rng = seededRng(hash(`${today}:${s.level}:${a.def.id}:fill`));
+  const fresh = eligibleKinds(s).filter((k) => !tasks.some((t) => t.kind === k.kind));
+  while (tasks.length < DAILY_TASK_COUNT && fresh.length > 0) {
+    const kind = pickKind(fresh, rng);
+    fresh.splice(fresh.indexOf(kind), 1);
+    tasks.push(makeGeneral(kind, s.level, rng, tasks.length));
+  }
+  return { ...s, daily: { ...s.daily, tasks } };
 }
