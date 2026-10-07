@@ -37,7 +37,7 @@ export const rescue: RescueDef = {
       visual: { elder: true, desaturate: 0.1 },
       tasks: [
         { type: 'ownSpecies', speciesId: 'cory', count: 2, label: 'Own 2 other Cory Catfish', hint: 'Buy one: Shop 🛒 → Fish → Cory Catfish, 20 🐚 (or breed one)', highlight: 'shop' },
-        { type: 'keepCleanliness', min: 70, minutes: 10, label: 'Keep the tank 70%+ clean for 10 min', hint: 'Wipe algae with Clean 🧽', highlight: 'clean' },
+        { type: 'keepCleanliness', min: 70, minutes: 3, label: 'Keep the tank 70%+ clean for 3 min', hint: 'Wipe algae with Clean 🧽', highlight: 'clean' },
       ],
       letter: { title: 'A strange report', body: 'Between us: fishermen keep reporting a strange glowing creature near the old pier. Probably nothing. Probably. I’ve packed a flashlight just in case.\n— Dr. Fisher 🩺🐟' },
     },

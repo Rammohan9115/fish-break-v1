@@ -46,12 +46,12 @@ describe('Cherry', () => {
 
   it('no-overfeeding counts quiet play and restarts when a pellet dissolves', () => {
     let g = toStage(started(), 1);
-    g = ev(g, { type: 'play', seconds: 600 });
-    expect(progress(g, 0)).toBe(600);
+    g = ev(g, { type: 'play', seconds: 200 });
+    expect(progress(g, 0)).toBe(200);
     g = ev(g, { type: 'pelletDissolved' });
     expect(progress(g, 0)).toBe(0);
     g = ev(g, { type: 'play', seconds: 5000 });
-    expect(progress(g, 0)).toBe(900);
+    expect(progress(g, 0)).toBe(300);
   });
 
   it('a real dissolved pellet breaks the streak but a cory eating it does not', () => {

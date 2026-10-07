@@ -29,7 +29,7 @@ export const rescue: RescueDef = {
       visual: { burrow: 0.6 },
       tasks: [
         { type: 'breakModeMinutes', minutes: 3, label: 'Spend 3 min in Break Mode', hint: 'Start Break ☕ and just sit quietly', highlight: 'break' },
-        { type: 'keepCleanliness', min: 65, minutes: 10, label: 'Keep the tank 65%+ clean for 10 min', hint: 'Wipe algae with Clean 🧽', highlight: 'clean' },
+        { type: 'keepCleanliness', min: 65, minutes: 3, label: 'Keep the tank 65%+ clean for 3 min', hint: 'Wipe algae with Clean 🧽', highlight: 'clean' },
       ],
     },
     {

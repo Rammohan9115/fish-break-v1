@@ -269,7 +269,7 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     themeOnly: null,
     traits: ['sandDweller', 'smiles'],
     motion: { waveAmp: 0.5, waveSpeed: 1.4, gait: 'swim' },
-    eye: { adult: { x: 0.86, y: 0.42, size: 0.15 }, baby: { x: 0.84, y: 0.46, size: 0.2 } },
+    eye: { adult: { x: 0.821, y: 0.587, size: 0.17 }, baby: { x: 0.835, y: 0.591, size: 0.155 } },
     variants: [
       v('cream', 'Cream', '#f4e2bc', '#fff8e8', '#e8cfa0', '#6a4020', '#8a6a3a'),
 
@@ -292,7 +292,7 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     themeOnly: null,
     traits: ['sandDweller', 'halfSlot', 'climbs'],
     motion: { waveAmp: 0.4, waveSpeed: 1.2, gait: 'walk' },
-    eye: { adult: { x: 0.82, y: 0.4, size: 0.14 }, baby: { x: 0.8, y: 0.44, size: 0.2 } },
+    eye: { adult: { x: 0.756, y: 0.509, size: 0.11 }, baby: { x: 0.699, y: 0.608, size: 0.16 } },
     variants: [
       v('cherry', 'Cherry', '#ff3a4a', '#ffd0d4', '#ff7a84', '#a81a2a', '#a01a2c'),
 
@@ -317,7 +317,7 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     themeOnly: null,
     traits: ['sandDweller', 'burrows'],
     motion: { waveAmp: 1.6, waveSpeed: 0.9, gait: 'swim', fullBody: true },
-    eye: { adult: { x: 0.9, y: 0.45, size: 0.12 }, baby: { x: 0.86, y: 0.48, size: 0.17 } },
+    eye: { adult: { x: 0.822, y: 0.5, size: 0.32 }, baby: { x: 0.865, y: 0.575, size: 0.24 } },
     variants: [
       v('salmon', 'Salmon', '#ff9a5c', '#ffe0c4', '#ffb87a', '#4a2a14', '#a8481c'),
 
@@ -341,7 +341,7 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     themeOnly: null,
     traits: ['surface', 'darts'],
     motion: { waveAmp: 0.5, waveSpeed: 2.0, gait: 'swim' },
-    eye: { adult: { x: 0.85, y: 0.36, size: 0.18 }, baby: { x: 0.83, y: 0.42, size: 0.22 } },
+    eye: { adult: { x: 0.872, y: 0.42, size: 0.13 }, baby: { x: 0.831, y: 0.451, size: 0.26 } },
     variants: [
       v('silver', 'Silver', '#b8d8ff', '#f0f8ff', '#8ab8f0', '#3a6ab0', '#4a7ab8'),
 

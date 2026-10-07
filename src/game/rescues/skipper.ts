@@ -35,7 +35,7 @@ export const rescue: RescueDef = {
       visual: { zone: { top: 0.08, bottom: 0.3 }, hops: 'practice' },
       tasks: [
         { type: 'interact', actionId: ENCOURAGE_ACTION, count: 4, label: 'Encourage him ×4', hint: 'Tap the water just above Skipper 3 times within 5 seconds, four times', highlight: 'care' },
-        { type: 'keepCleanliness', min: 65, minutes: 10, label: 'Keep the tank 65%+ clean for 10 min', hint: 'Wipe algae with Clean 🧽', highlight: 'clean' },
+        { type: 'keepCleanliness', min: 65, minutes: 3, label: 'Keep the tank 65%+ clean for 3 min', hint: 'Wipe algae with Clean 🧽', highlight: 'clean' },
       ],
       letter: { title: 'Practice hops!', body: 'He HOPPED. A tiny one, about the size of a pea, but a hop is a hop. I’m framing this report.\n— Dr. Fisher 🩺🐟' },
     },

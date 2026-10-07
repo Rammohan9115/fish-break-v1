@@ -26,7 +26,7 @@ export const rescue: RescueDef = {
       story: 'He’s less shy now. Keep the water clean and keep your pets short and sweet.',
       visual: { cracks: true, bandage: { x: 0.8, y: 0.45 } },
       tasks: [
-        { type: 'keepCleanliness', min: 70, minutes: 10, label: 'Keep the tank 70%+ clean for 10 min', hint: 'Wipe algae with Clean 🧽', highlight: 'clean' },
+        { type: 'keepCleanliness', min: 70, minutes: 3, label: 'Keep the tank 70%+ clean for 3 min', hint: 'Wipe algae with Clean 🧽', highlight: 'clean' },
         { type: 'pet', count: 2, maxSecondsPerPet: 3, label: 'Short pets ×2 (he’s shy)', hint: 'Hold on Pinch, then let go quickly', highlight: 'pet' },
       ],
     },

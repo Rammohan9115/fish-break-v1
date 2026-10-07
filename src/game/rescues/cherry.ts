@@ -18,7 +18,7 @@ export const rescue: RescueDef = {
       story: 'Cherry is almost white and see-through. Clean water and a moss ball to nibble on will help.',
       visual: {},
       tasks: [
-        { type: 'keepCleanliness', min: 75, minutes: 10, label: 'Keep the tank 75%+ clean for 10 min', hint: 'Wipe algae with Clean 🧽', highlight: 'clean' },
+        { type: 'keepCleanliness', min: 75, minutes: 3, label: 'Keep the tank 75%+ clean for 3 min', hint: 'Wipe algae with Clean 🧽', highlight: 'clean' },
         { type: 'placeDecor', decorIds: ['moss_ball'], label: 'Place a moss ball', hint: 'Decorate 🎨 → place a Moss Ball (Shop → Decor)', highlight: 'decorate' },
       ],
       letter: { title: 'A hint of pink!', body: 'Is that… a blush? Cherry’s shell just got the faintest pink. I did a little dance. The pelican judged me.\n— Dr. Fisher 🩺🐟' },
@@ -27,7 +27,7 @@ export const rescue: RescueDef = {
       story: 'She’s pale pink. Easy on the pellets: nothing should rot on the sand today.',
       visual: {},
       tasks: [
-        { type: 'noDissolve', minutes: 15, label: 'No pellets dissolving on the sand (15 min of play)', hint: 'Feed small amounts. Corys eating landed pellets counts as success', highlight: 'feed' },
+        { type: 'noDissolve', minutes: 5, label: 'No pellets dissolving on the sand (5 min of play)', hint: 'Feed small amounts. Corys eating landed pellets counts as success', highlight: 'feed' },
         { type: 'useItem', itemId: 'vitamin_flakes', count: 1, label: 'Give vitamin flakes', hint: 'Pick Vitamin flakes in the Care tab, then tap Cherry', highlight: 'care' },
       ],
     },
@@ -44,7 +44,7 @@ export const rescue: RescueDef = {
       story: 'Nearly there! One last stretch of sparkling water and a gentle pet.',
       visual: {},
       tasks: [
-        { type: 'keepCleanliness', min: 80, minutes: 10, label: 'Keep the tank 80%+ clean for 10 min', hint: 'Wipe algae with Clean 🧽', highlight: 'clean' },
+        { type: 'keepCleanliness', min: 80, minutes: 3, label: 'Keep the tank 80%+ clean for 3 min', hint: 'Wipe algae with Clean 🧽', highlight: 'clean' },
         { type: 'pet', count: 2, label: 'Pet Cherry ×2', hint: 'Press and hold on Cherry', highlight: 'pet' },
       ],
     },
