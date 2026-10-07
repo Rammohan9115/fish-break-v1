@@ -41,7 +41,7 @@ for (const vp of VIEWPORTS) {
         await settle(page);
         const m = await page.evaluate(measureOverlay, { selector: o.selector ?? '.sheet', touch: !!vp.touch });
         const fails = judge({ ...m, kind: o.kind, fit: !!o.fit });
-        if (fails.length) failures.push(`${o.id}: ${fails.join(', ')} ${JSON.stringify({ over: m.scrollOverflow, small: m.smallTargets?.slice(0, 2), clipped: m.clippedSamples })}`);
+        if (fails.length) failures.push(`${o.id}: ${fails.join(', ')} ${JSON.stringify({ over: m.scrollOverflow, small: m.smallTargets?.slice(0, 2), clipped: m.clippedSamples, overlap: m.overlappingTargets?.slice(0, 2) })}`);
       }
       expect(failures, `\n${failures.join('\n')}`).toEqual([]);
     });

@@ -34,6 +34,10 @@ function measureOverlay({ selector, touch }) {
 
   // Interactive targets inside the overlay.
   const min = touch ? 44 : 32;
+  // Compact density (the default on small phones) keeps buttons at 44px through a hit area, but text fields,
+  // inline links and guide dots may be 36px / 32px tall (decided: compact stays the default).
+  const compact = document.querySelector('.app')?.getAttribute('data-density') === 'compact' || document.documentElement.dataset.display === 'compact';
+  const minFor = (el) => (!compact || !touch ? min : el.matches('a[href]') ? 32 : el.matches('input, select, textarea, .guide-dot') ? 36 : min);
   const targets = [...root.querySelectorAll('button, [role=button], [role=radio], [role=tab], a[href], input:not([type=hidden]), select, textarea')]
     .filter((el) => {
       const b = el.getBoundingClientRect();
@@ -57,7 +61,7 @@ function measureOverlay({ selector, touch }) {
   };
   const small = targets
     .map((t) => ({ ...t, hit: hitSize(t.el, t.b) }))
-    .filter(({ hit }) => Math.min(hit.w, hit.h) < min - 0.5)
+    .filter(({ el, hit }) => Math.min(hit.w, hit.h) < minFor(el) - 0.5)
     .map(({ el, hit }) => `${el.tagName.toLowerCase()}.${(el.className || '').toString().split(' ')[0]} ${Math.round(hit.w)}x${Math.round(hit.h)}`);
   const overlapping = [];
   for (let i = 0; i < targets.length; i++) {
@@ -86,7 +90,7 @@ function measureOverlay({ selector, touch }) {
     // Screen-reader-only text (1px boxes) isn't visible text.
     if (b.width <= 2 || b.height <= 2) continue;
     minFont = Math.min(minFont, parseFloat(cs.fontSize));
-    if (el.scrollWidth > el.clientWidth + 1 && cs.overflowX !== 'visible' && cs.textOverflow !== 'ellipsis') {
+    if (el.scrollWidth > el.clientWidth + 1 && cs.overflowX !== 'visible' && cs.textOverflow !== 'ellipsis' && !(cs.webkitLineClamp && cs.webkitLineClamp !== 'none')) {
       clipped++;
       if (clippedSamples.length < 3) clippedSamples.push(`${el.tagName.toLowerCase()}.${(el.className || '').toString().split(' ')[0]} "${n.textContent.trim().slice(0, 18)}" ${el.scrollWidth}>${el.clientWidth}`);
     }
