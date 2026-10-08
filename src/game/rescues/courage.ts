@@ -1,13 +1,16 @@
 // Skipper's "courage": taps just above him build up to an encouragement; stages limit how high he swims.
-import { ENCOURAGE_ABOVE, ENCOURAGE_REACH_X, ENCOURAGE_TAPS, ENCOURAGE_WINDOW_MS, LEAP_RING_RADIUS } from '../constants';
+import { ENCOURAGE_ABOVE, ENCOURAGE_BESIDE_X, ENCOURAGE_BESIDE_Y, ENCOURAGE_REACH_X, ENCOURAGE_TAPS, ENCOURAGE_WINDOW_MS, LEAP_RING_RADIUS } from '../constants';
 import type { StageVisual } from './types';
 
 type Pt = { x: number; y: number };
 
-/** A tap lands in the water just above him (not on him). */
+/** A tap lands in the water just above him, or just beside him (not on him). */
 export function isAboveTap(fish: Pt, tap: Pt): boolean {
   const above = fish.y - tap.y;
-  return above >= ENCOURAGE_ABOVE[0] && above <= ENCOURAGE_ABOVE[1] && Math.abs(tap.x - fish.x) <= ENCOURAGE_REACH_X;
+  const dx = Math.abs(tap.x - fish.x);
+  const overHead = above >= ENCOURAGE_ABOVE[0] && above <= ENCOURAGE_ABOVE[1] && dx <= ENCOURAGE_REACH_X;
+  const beside = dx >= ENCOURAGE_BESIDE_X[0] && dx <= ENCOURAGE_BESIDE_X[1] && Math.abs(above) <= ENCOURAGE_BESIDE_Y;
+  return overHead || beside;
 }
 
 /** Adds a tap; `fired` when 3 taps fall inside the window (the list then resets). */

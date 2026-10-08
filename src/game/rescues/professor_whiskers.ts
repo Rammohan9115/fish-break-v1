@@ -27,7 +27,7 @@ export const rescue: RescueDef = {
       story: 'He grew up on soft sand. Let’s make him feel at home.',
       visual: { elder: true, desaturate: 0.15 },
       tasks: [
-        { type: 'changeSubstrate', substrateIds: ['golden_sand', 'white_sand'], label: 'Switch to soft sand', hint: 'Decorate 🎨 → ✨ Style → Substrate: Golden or White Sand', highlight: 'decorate' },
+        { type: 'changeSubstrate', substrateIds: ['substrate:white'], label: 'Switch to White Sand', hint: 'Decorate 🎨 → ✨ Style → Substrate → White Sand (free)', highlight: 'decorate' },
         { type: 'useItem', itemId: 'soft_food', count: 1, label: 'Give soft food', hint: 'Pick Soft food in the Care tab, then tap the Professor', highlight: 'care' },
       ],
       letter: { title: 'Pelican problems', body: 'The pelican joined in year two. He was supposed to deliver ONE letter. He never left. I’m not complaining; the mail is very fast.\n— Dr. Fisher 🩺🐟' },

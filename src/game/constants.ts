@@ -505,6 +505,9 @@ export const ENCOURAGE_WINDOW_MS = 5000;
 /** A tap counts when it lands this far above him (min, max) and within this sideways reach (tank units). */
 export const ENCOURAGE_ABOVE = [8, 170] as const;
 export const ENCOURAGE_REACH_X = 90;
+/** Near the surface there is no water above him (the HUD is there), so a tap just beside him counts too: this far sideways (min, max) and no more than this far up or down. */
+export const ENCOURAGE_BESIDE_X = [40, 140] as const;
+export const ENCOURAGE_BESIDE_Y = 60;
 /** The first-leap ring: how far above the water line it glows, its tap radius, and how often he jumps while it is wanted (ms). */
 export const LEAP_RING_RADIUS = 56;
 export const LEAP_GAP_MS = 5000;

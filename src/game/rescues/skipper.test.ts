@@ -41,6 +41,13 @@ describe('Skipper', () => {
     expect(s.taps).toHaveLength(2);
   });
 
+  it('taps just beside him count too (near the surface there is no room above)', () => {
+    const fish = { x: 300, y: 90 };
+    expect(isAboveTap(fish, { x: 380, y: 95 })).toBe(true);
+    expect(isAboveTap(fish, { x: 220, y: 70 })).toBe(true);
+    expect(isAboveTap(fish, { x: 450, y: 90 })).toBe(false);
+  });
+
   it('only taps above him (not on him or below) count', () => {
     const fish = { x: 300, y: 200 };
     expect(isAboveTap(fish, { x: 310, y: 120 })).toBe(true);

@@ -44,17 +44,22 @@ Create `rescues/<id>.ts` exporting `rescue`. Reuse the task types; add a species
 ## Skipper (hatchetfish, "Afraid to Jump")
 - **Courage zones** (`StageVisual.zone`, fractions of the water, 0 surface … 1 sand): stages 1–3 hold him low → mid → just under the surface; stage 4 has no zone (the normal surface strip). `renderer.holdZone` clamps target and position; `clampToZone` (`rescues/courage.ts`) is the pure rule.
 - **Hops** (`StageVisual.hops`): `none` (stays down), `practice` (tiny hops, more often), `full`. Applied to the critter by `renderer.applyCourage` via `hopOn/hopGapMul/hopScale`.
-- **Encourage** (`ENCOURAGE_ACTION`): 3 taps within 5 s in the water just above him = one encouragement (`addEncourageTap`, `isAboveTap`; handled in `TankView.courageTap`), with a wiggle and a small swim upward. Stage 2 needs 3, stage 3 needs 5.
+- **Encourage** (`ENCOURAGE_ACTION`): 3 taps within 5 s in the water just above him or beside him (near the surface the HUD covers the space above) = one encouragement (`addEncourageTap`, `isAboveTap`; handled in `TankView.courageTap`), with a wiggle and a small swim upward. Stage 2 needs 3, stage 3 needs 5.
 - **First leap** (`FIRST_LEAP_ACTION`): while the task is wanted he jumps every ~5 s and a glowing ring above the water marks where to tap; it counts only while he is airborne (`renderer.leapTap`).
 - **Rewards:** `sky_silver` variant (rescue-only), `perks.tricks: ['signature']` (Rainbow Splash now), `perks.hopRate: 2`.
 
 ## Professor Whiskers (cory, "The Lonely Elder")
 - **Lonely mood** (`rescues/elder.ts`, `renderer.followFriends`): while recovering, no other cory within `LONELY_RADIUS` → a 🌧️ puff above him and a smaller posture; with friends near he follows the nearest one. `StageVisual.elder` adds the grey whisker highlights.
+- **Soft sand** (stage 2): the task needs White Sand (`substrate:white`), set in Shop → Styles → Substrate.
 - **Glasses** (`perks.glasses`): drawn in code over the eye (`drawGlasses`) while recovering and forever after. He keeps his own colors: `rewards.variant` is optional.
 - **Group bonus** (`perks.groupEatBonus`): `coryEatCooldownMs` in `sim.ts` shortens every cory's pellet cooldown by 25% while a recovered Professor is in the tank.
 - **Tips** (`perks.tips`): tapping him shows a speech bubble with one of 20 tips (`TIPS`, `tipBubbles` in `rescueFx.ts`).
 - **Letters:** every stage has one (4 + completion). `RescueStage.journal` adds a journal entry on completing a stage (stage 4: the group photo card, `{n}` = his cory friends).
 - **Group photo:** the Care tab button fires `group_photo`.
+
+## Tests
+- `src/game/rescues/definitions.test.ts` checks every task points at real decor, substrate styles, species and interactions (a typo there makes a story impossible to finish).
+- `e2e/rescue-<story>.spec.ts` plays each of the 5 stories start to finish using only the UI and the fake clock (`e2e/rescue-helpers.ts`).
 
 ## Dev tools
 Dev panel → Rescues: start any rescue, complete stage, next day (fake clock via `store.dayShift`), care items, reset daily tasks.

@@ -440,7 +440,9 @@ export class Renderer {
       const actor = this.actors.get(id)!;
       const f = fish.find((ff) => ff.id === id);
       if (!f) continue;
-      const rx = FISH_ART[f.speciesId].mouthX * fishScale(f.stage) * 1.2 + pad;
+      // Species whose mouth sits at the center (the crab, mouthX 0) still need a body-wide hit area.
+      const art = FISH_ART[f.speciesId];
+      const rx = Math.max(art.mouthX, art.spriteLen * 0.45) * fishScale(f.stage) * 1.2 + pad;
       const ry = fishHalfHeight(f.speciesId, f.stage) * 1.1 + pad;
       if (((x - actor.x) / rx) ** 2 + ((y - actor.y) / ry) ** 2 <= 1) return id;
     }

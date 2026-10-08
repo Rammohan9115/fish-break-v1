@@ -444,7 +444,8 @@ export const trickKey = (fishId: string, trick: TrickId): string => `${fishId}:$
 
 /** A full pet meter takes this long (the shy-pet limit compares against it). */
 const PET_FULL_SECONDS = 3;
-const PET_MIN_SECONDS = 1;
+// A quick press-and-hold counts for a rescued animal; the meter only starts after the ~0.25 s hold, so 1 s of meter meant a ~1.3 s press.
+const PET_MIN_SECONDS = 0.5;
 let petStart: { fishId: string; at: number } | null = null;
 let petDone: string | null = null;
 
